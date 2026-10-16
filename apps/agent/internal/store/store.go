@@ -21,6 +21,7 @@ import (
 type Store struct {
 	writer, reader *sql.DB
 	writeMu        sync.Mutex
+	activity       chan struct{}
 }
 
 func Open(ctx context.Context, path string) (*Store, error) {
@@ -43,7 +44,7 @@ func Open(ctx context.Context, path string) (*Store, error) {
 	}
 	writer.SetMaxOpenConns(1)
 	writer.SetMaxIdleConns(1)
-	s := &Store{writer: writer}
+	s := &Store{writer: writer, activity: make(chan struct{}, 1)}
 	ok := false
 	defer func() {
 		if !ok {
@@ -92,6 +93,18 @@ func dsn(path string, readOnly bool) string {
 // ReadDB is query-only on every connection, including replacements in the pool.
 // Callers must close rows and propagate request cancellation.
 func (s *Store) ReadDB() *sql.DB { return s.reader }
+
+// Coordinate excludes cleanup from an entire collection round, including its
+// network phase, without holding a SQL transaction or blocking HTTP readers.
+func (s *Store) Coordinate(ctx context.Context, fn func() error) error {
+	select {
+	case s.activity <- struct{}{}:
+		defer func() { <-s.activity }()
+		return fn()
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
 
 // Write serializes transactional mutations; network I/O must happen before calling it.
 func (s *Store) Write(ctx context.Context, fn func(*sql.Tx) error) error {

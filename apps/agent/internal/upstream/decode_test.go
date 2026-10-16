@@ -46,6 +46,10 @@ func TestDecodeVerifiedShape(t *testing.T) {
 	if err != nil || len(s.Earnings) != 1 {
 		t.Fatalf("identical duplicates: %v", err)
 	}
+	body := strings.Replace(fixture(t, "duplicate-identical.json"), `"count": 2`, `"count": 1`, 1)
+	if duplicate, err := Decode(strings.NewReader(body), 50, "acct_example"); err != nil || len(duplicate.Earnings) != 1 {
+		t.Fatalf("duplicate exceeded unique lifetime count: %v", err)
+	}
 }
 func TestDecodeRejectsInvalidSnapshot(t *testing.T) {
 	for _, name := range []string{"duplicate-conflict.json", "missing-amount.json", "overflow.json", "malformed.json", "unauthorized.json"} {

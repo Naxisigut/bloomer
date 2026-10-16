@@ -32,6 +32,7 @@ const (
 func Windows() []int { return []int{50, 100, 300, 1000} }
 
 type Config struct {
+	CollectionEnabled      bool   `json:"collection_enabled"`
 	DataDir                string `json:"data_dir"`
 	LogDir                 string `json:"log_dir"`
 	Listen                 string `json:"listen"`
@@ -48,7 +49,8 @@ func Defaults() (Config, error) {
 	}
 	data := filepath.Join(home, "Library", "Application Support", "Bloomer", "agent")
 	return Config{
-		DataDir: data, LogDir: filepath.Join(home, "Library", "Logs", "Bloomer", "agent"),
+		CollectionEnabled: true,
+		DataDir:           data, LogDir: filepath.Join(home, "Library", "Logs", "Bloomer", "agent"),
 		Listen: "127.0.0.1:17890", UpstreamURL: "https://api.darkbloom.dev/v1/provider/account-earnings",
 		UpstreamCredentialFile: filepath.Join(home, ".darkbloom", "auth_token"),
 	}, nil

@@ -27,7 +27,7 @@ Bloomer/
 └── .gitignore                         # 生成文件与私有数据排除规则
 ```
 
-以上是目标结构。P0/P1 已创建 `apps/agent`、`contracts/openapi.yaml` 草案、验证脚本、项目入口和排除规则；`apps/dashboard` 尚未创建，后续按实际选型实施。
+以上是目标结构。P0～P3 已创建采集、恢复、维护与健康模块，以及 `apps/agent`、`contracts/openapi.yaml` 草案、验证脚本、项目入口和排除规则；`apps/dashboard` 尚未创建，后续按实际选型实施。
 
 ## 3. 目录职责
 

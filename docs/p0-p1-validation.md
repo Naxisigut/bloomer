@@ -1,5 +1,7 @@
 # P0 / P1 实施与验证记录
 
+本文件保留 P0/P1 完成时的验收结果；当前进展见 [P2/P3 验收记录](p2-p3-validation.md)。
+
 日期：2026-10-16（Asia/Shanghai）。范围按 [实施计划](agent-development-plan.md) 的 P0 与 P1。
 
 ## 完成情况

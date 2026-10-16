@@ -10,11 +10,15 @@ import (
 	"net/http"
 	"time"
 
+	"bloomer/agent/internal/collector"
 	"bloomer/agent/internal/config"
+	"bloomer/agent/internal/health"
 	"bloomer/agent/internal/httpapi"
 	"bloomer/agent/internal/localfs"
 	"bloomer/agent/internal/logging"
+	"bloomer/agent/internal/retention"
 	"bloomer/agent/internal/store"
+	"bloomer/agent/internal/upstream"
 )
 
 func Run(ctx context.Context, c config.Config, version string) (result error) {
@@ -51,13 +55,42 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 		return fmt.Errorf("listen: %w", err)
 	}
 	defer listener.Close()
+	state, err := db.LoadState(ctx, c.AccountID)
+	if err != nil {
+		return fmt.Errorf("restore collection state: %w", err)
+	}
 	if err = db.RecordStartup(ctx, time.Now()); err != nil {
 		return err
 	}
-	server := &http.Server{Handler: httpapi.New(db, token, version, c.AccountID), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError)}
+	runtime := health.New()
+	if state.LastError != "" {
+		runtime.Collection("degraded", state.LastError, state.RecoveryReason)
+	}
+	if state.CleanupError != "" {
+		runtime.Cleanup("failed", state.CleanupError)
+	}
+	client, err := upstream.NewClient(c.UpstreamURL, c.UpstreamCredentialFile, nil)
+	if err != nil {
+		return err
+	}
+	clock := WallClock{}
+	var collect roundWorker = &collector.Collector{Store: db, Source: client, AccountID: c.AccountID, Now: clock.Now, Runtime: runtime, Logger: logger}
+	if !c.CollectionEnabled {
+		collect = disabledCollector{}
+		runtime.Collection("disabled", "", "")
+	}
+	cleaner := &retention.Cleaner{Store: db, AccountID: c.AccountID, Now: clock.Now, Runtime: runtime, Logger: logger}
+	server := &http.Server{Handler: httpapi.New(db, token, version, c.AccountID, runtime), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError)}
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.Serve(listener) }()
-	logger.Info("agent started", "version", version, "phase", "P1", "listen", c.Listen, "collection_state", "disabled")
+	jobsCtx, cancelJobs := context.WithCancel(ctx)
+	defer cancelJobs()
+	jobsDone := make(chan struct{})
+	go func() {
+		defer close(jobsDone)
+		Scheduler{Collector: collect, Cleaner: cleaner, Clock: clock}.Run(jobsCtx)
+	}()
+	logger.Info("agent started", "version", version, "phase", "P3", "listen", c.Listen, "collection_enabled", c.CollectionEnabled)
 	select {
 	case <-ctx.Done():
 	case err = <-serverErrors:
@@ -65,7 +98,10 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 			result = err
 		}
 	}
-	// Future collectors must stop and finish their transactions before this point.
+	// Cancel network/maintenance work and wait for transaction commit/rollback
+	// before persisting shutdown or closing the database.
+	cancelJobs()
+	<-jobsDone
 	shutdownCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
 	if err = server.Shutdown(shutdownCtx); err != nil {
@@ -78,4 +114,10 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 	}
 	logger.Info("agent stopped")
 	return result
+}
+
+type disabledCollector struct{}
+
+func (disabledCollector) RunOnce(context.Context) (collector.Result, error) {
+	return collector.Result{Skipped: true}, nil
 }

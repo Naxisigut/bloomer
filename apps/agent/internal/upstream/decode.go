@@ -1,4 +1,4 @@
-// Package upstream defines the verified wire format. The HTTP collector is P2.
+// Package upstream defines the verified wire format and read-only HTTP client.
 package upstream
 
 import (
@@ -70,8 +70,11 @@ func Decode(r io.Reader, limit int, expectedAccount string) (Snapshot, error) {
 		return out, errors.New("unsupported response limit")
 	}
 	body, err := io.ReadAll(io.LimitReader(r, config.MaxResponseBytes+1))
-	if err != nil || len(body) > config.MaxResponseBytes {
-		return out, errors.New("response cannot be read or exceeds size limit")
+	if err != nil {
+		return out, &readError{cause: err}
+	}
+	if len(body) > config.MaxResponseBytes {
+		return out, errors.New("response exceeds size limit")
 	}
 	// encoding/json accepts duplicate object members. Reject these before decoding
 	// so conflicting amounts cannot silently become last-key-wins.
@@ -86,9 +89,9 @@ func Decode(r io.Reader, limit int, expectedAccount string) (Snapshot, error) {
 		return out, errors.New("missing required snapshot field")
 	}
 	if expectedAccount != "" && *wire.AccountID != expectedAccount {
-		return out, errors.New("upstream account mismatch")
+		return out, ErrAccountMismatch
 	}
-	if *wire.Count < 0 || *wire.Count < int64(len(*wire.Earnings)) || *wire.RecentCount != len(*wire.Earnings) || len(*wire.Earnings) > limit || *wire.HistoryLimit < 1 || *wire.HistoryLimit > 1000 {
+	if *wire.Count < 0 || *wire.RecentCount != len(*wire.Earnings) || len(*wire.Earnings) > limit || *wire.HistoryLimit != limit {
 		return out, errors.New("invalid upstream record counts")
 	}
 	out.Summary = Summary{*wire.AccountID, *wire.Count, *wire.Total, *wire.Available, *wire.Withdrawable}
@@ -101,7 +104,7 @@ func Decode(r io.Reader, limit int, expectedAccount string) (Snapshot, error) {
 			return Snapshot{}, errors.New("missing required earning field")
 		}
 		if *v.AccountID != out.Summary.AccountID {
-			return Snapshot{}, errors.New("earning account mismatch")
+			return Snapshot{}, ErrAccountMismatch
 		}
 		if *v.Prompt < 0 || *v.Completion < 0 {
 			return Snapshot{}, errors.New("negative token count")
@@ -124,8 +127,16 @@ func Decode(r io.Reader, limit int, expectedAccount string) (Snapshot, error) {
 		seen[id] = record
 		out.Earnings = append(out.Earnings, record)
 	}
+	if *wire.Count < int64(len(out.Earnings)) {
+		return Snapshot{}, errors.New("invalid upstream unique record count")
+	}
 	return out, nil
 }
+
+type readError struct{ cause error }
+
+func (e *readError) Error() string { return "upstream response read failed" }
+func (e *readError) Unwrap() error { return e.cause }
 
 func decodeID(raw json.RawMessage) (string, error) {
 	if len(raw) == 0 {

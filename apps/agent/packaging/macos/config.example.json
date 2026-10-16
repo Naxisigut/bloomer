@@ -1,4 +1,5 @@
 {
+  "collection_enabled": true,
   "data_dir": "~/Library/Application Support/Bloomer/agent",
   "log_dir": "~/Library/Logs/Bloomer/agent",
   "listen": "127.0.0.1:17890",

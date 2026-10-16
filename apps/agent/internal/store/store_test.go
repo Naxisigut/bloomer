@@ -12,6 +12,7 @@ import (
 	"testing/fstest"
 	"time"
 
+	"bloomer/agent/internal/upstream"
 	"bloomer/agent/migrations"
 )
 
@@ -33,7 +34,7 @@ func TestSchemaConnectionsAndAtomicWrites(t *testing.T) {
 	ctx := context.Background()
 	s, path := openTest(t)
 	version, err := s.SchemaVersion(ctx)
-	if err != nil || version != 1 {
+	if err != nil || version != 2 {
 		t.Fatalf("schema: %d %v", version, err)
 	}
 	st, _ := os.Stat(path)
@@ -149,9 +150,14 @@ func TestMigrationRollbackUpgradeAndVersionRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	second, err := fs.ReadFile(migrations.Files, "002_collection.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	files := fstest.MapFS{
-		"001_initial.sql": &fstest.MapFile{Data: initial},
-		"002_upgrade.sql": &fstest.MapFile{Data: []byte("CREATE TABLE should_rollback(id INTEGER); INVALID SQL;")},
+		"001_initial.sql":    &fstest.MapFile{Data: initial},
+		"002_collection.sql": &fstest.MapFile{Data: second},
+		"003_upgrade.sql":    &fstest.MapFile{Data: []byte("CREATE TABLE should_rollback(id INTEGER); INVALID SQL;")},
 	}
 	if err = migrate(ctx, s.writer, files, path); err == nil {
 		t.Fatal("broken migration succeeded")
@@ -163,19 +169,19 @@ func TestMigrationRollbackUpgradeAndVersionRejection(t *testing.T) {
 	if err = s.writer.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if count != 0 || v != 1 {
+	if count != 0 || v != 2 {
 		t.Fatal("migration did not roll back DDL and version")
 	}
-	backups, _ := filepath.Glob(path + ".pre-v2-*.bak")
+	backups, _ := filepath.Glob(path + ".pre-v3-*.bak")
 	if len(backups) != 1 {
 		t.Fatal("upgrade backup missing")
 	}
-	files["002_upgrade.sql"].Data = []byte("CREATE TABLE upgraded(id INTEGER) STRICT;")
+	files["003_upgrade.sql"].Data = []byte("CREATE TABLE upgraded(id INTEGER) STRICT;")
 	if err = migrate(ctx, s.writer, files, path); err != nil {
 		t.Fatal(err)
 	}
 	s.writer.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v)
-	if v != 2 {
+	if v != 3 {
 		t.Fatal("schema version did not advance")
 	}
 	if _, err = s.writer.ExecContext(ctx, "PRAGMA user_version=99"); err != nil {
@@ -243,5 +249,63 @@ func TestRejectUnversionedForeignDatabase(t *testing.T) {
 	if s, err := Open(ctx, path); err == nil {
 		s.Close()
 		t.Fatal("foreign database silently adopted")
+	}
+}
+
+func TestP1DatabaseUpgradePreservesCheckpoints(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "p1.db")
+	db, err := sql.Open("sqlite", dsn(path, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial, err := fs.ReadFile(migrations.Files, "001_initial.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = migrate(ctx, db, fstest.MapFS{"001_initial.sql": &fstest.MapFile{Data: initial}}, path); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.ExecContext(ctx, `INSERT INTO sync_state(account_id,last_successful_sync_at_us,coverage_status) VALUES('a',1234567,'partial'); UPDATE maintenance_state SET retry_not_before_us=7654321,last_clean_shutdown_at_us=4567890`); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	state, err := s.LoadState(ctx, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.AccountID != "a" || state.LastSuccess.UnixMicro() != 1234567 || state.RetryNotBefore.UnixMicro() != 7654321 || state.LastShutdown.UnixMicro() != 4567890 {
+		t.Fatalf("upgrade lost checkpoints: %+v", state)
+	}
+	backups, _ := filepath.Glob(path + ".pre-v2-*.bak")
+	if len(backups) != 1 {
+		t.Fatal("P1 upgrade backup missing")
+	}
+}
+
+func TestFailedAttemptDoesNotBindAnAccount(t *testing.T) {
+	s, _ := openTest(t)
+	ctx := context.Background()
+	at := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
+	if err := s.RecordAttempt(ctx, "failed-config-account", at, "initial", "first_import"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LoadState(ctx, "a"); err != nil {
+		t.Fatal("uncommitted account became bound:", err)
+	}
+	if _, err := s.CommitRound(ctx, Round{AccountID: "a", StartedAt: at, CompletedAt: at, Mode: "initial", Summary: upstream.Summary{AccountID: "a"}}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.LoadState(ctx, "failed-config-account"); !errors.Is(err, ErrAccountMismatch) {
+		t.Fatal("successful account was not bound")
+	}
+	var count int
+	if err := s.ReadDB().QueryRow("SELECT count(*) FROM sync_state").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("failed account state leaked into bound database: %d %v", count, err)
 	}
 }

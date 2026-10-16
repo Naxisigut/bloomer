@@ -1,10 +1,10 @@
 openapi: 3.0.3
 info:
   title: Bloomer Agent API
-  version: 0.1.0-draft
+  version: 0.2.0-draft
   description: |
-    P0 contract draft. P1 implements authenticated GET /v1/health only.
-    Earnings collection is disabled in P1. Other paths are planned for P4 and
+    P3 contract draft. Authenticated GET /v1/health is implemented, including
+    live collection, recovery, throttling and cleanup status. Other paths are planned for P4 and
     currently return 404; their schemas remain subject to implementation review.
     This API reads local SQLite; requests never initiate an upstream collection.
     Money is an integer number of micro-USD encoded as a decimal string. Record
@@ -20,11 +20,11 @@ paths:
   /v1/health:
     get:
       operationId: getHealth
-      x-implementation-stage: P1
+      x-implementation-stage: P3
       summary: Process health and collection freshness
       description: |
-        In P1 collection_state is disabled, data_stale is true and cleanup.state
-        is not_implemented. Online process health does not imply fresh data.
+        Collection is enabled by default; collection_enabled=false disables only
+        collection. Cleanup remains scheduled. Online process health does not imply fresh data.
         Missing history is expressed as null, never a synthetic successful sync.
       responses:
         '200':
@@ -293,6 +293,11 @@ components:
               reason:
                 type: string
             description: Observed interruption bounds, not exact bounds of missing earnings
+        gap_count:
+          type: integer
+          format: int64
+          minimum: 0
+          description: Count of suspected gaps intersecting the current retention range
     DataMetadata:
       type: object
       required: [last_successful_sync_at, data_stale, retention_start, effective_from, effective_to, range_truncated, coverage]
@@ -325,7 +330,7 @@ components:
           type: string
         phase:
           type: string
-          example: P1
+          example: P3
         schema_version:
           type: integer
           minimum: 1
@@ -341,6 +346,25 @@ components:
         last_error:
           type: string
           nullable: true
+        last_attempt_at:
+          type: string
+          format: date-time
+          nullable: true
+        last_clean_shutdown_at:
+          type: string
+          format: date-time
+          nullable: true
+        sync_mode:
+          type: string
+          nullable: true
+          enum: [initial, normal, recovery, null]
+        recovery_reason:
+          type: string
+          nullable: true
+        retry_not_before:
+          type: string
+          format: date-time
+          nullable: true
         retention_start:
           type: string
           format: date-time
@@ -352,10 +376,13 @@ components:
           properties:
             state:
               type: string
-              enum: [not_implemented, idle, running, failed]
+              enum: [idle, running, failed]
             last_success_at:
               type: string
               format: date-time
+              nullable: true
+            last_error:
+              type: string
               nullable: true
     OfficialSummary:
       type: object
@@ -423,13 +450,13 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     OriginForbidden:
-      description: Browser origin is not configured; no CORS origins are enabled in P1
+      description: Browser origin is not configured; no CORS origins are enabled
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
     NotImplementedYet:
-      description: This planned P4 endpoint is unavailable in the current P1 build
+      description: This planned P4 endpoint is unavailable in the current P3 build
       content:
         application/json:
           schema:

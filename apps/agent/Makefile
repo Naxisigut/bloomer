@@ -1,5 +1,5 @@
 GO ?= go
-VERSION ?= 0.1.0-dev
+VERSION ?= 0.2.0-dev
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell test -z "$$(git status --porcelain 2>/dev/null)" || printf '%s' '-dirty')
 
 .PHONY: check test race build

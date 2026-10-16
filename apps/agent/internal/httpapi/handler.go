@@ -1,4 +1,4 @@
-// Package httpapi exposes the P1 authenticated process health endpoint.
+// Package httpapi exposes authenticated process and collection health.
 // Earnings queries will be implemented and finalized in P4.
 package httpapi
 
@@ -6,7 +6,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/subtle"
-	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"bloomer/agent/internal/config"
+	"bloomer/agent/internal/health"
 	"bloomer/agent/internal/store"
 )
 
@@ -21,10 +21,11 @@ type Handler struct {
 	store              *store.Store
 	tokenHash          [32]byte
 	version, accountID string
+	runtime            *health.Runtime
 }
 
-func New(s *store.Store, token, version, accountID string) http.Handler {
-	return &Handler{store: s, tokenHash: sha256.Sum256([]byte(token)), version: version, accountID: accountID}
+func New(s *store.Store, token, version, accountID string, runtime *health.Runtime) http.Handler {
+	return &Handler{store: s, tokenHash: sha256.Sum256([]byte(token)), version: version, accountID: accountID, runtime: runtime}
 }
 
 type APIError struct {
@@ -79,32 +80,59 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failure(w, 503, "database_unavailable", "Local database is unavailable", requestID)
 		return
 	}
-	var success *string
-	var coverageStart *string
-	coverage := "uninitialized"
-	if h.accountID != "" {
-		var last, start sql.NullInt64
-		err = h.store.ReadDB().QueryRowContext(ctx, "SELECT last_successful_sync_at_us, coverage_start_us, coverage_status FROM sync_state WHERE account_id=?", h.accountID).Scan(&last, &start, &coverage)
-		if err != nil && err != sql.ErrNoRows {
-			failure(w, 503, "database_unavailable", "Local database is unavailable", requestID)
-			return
-		}
-		success = formatTime(last)
-		coverageStart = formatTime(start)
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	state, coverage, err := h.store.LoadHealth(ctx, h.accountID, now)
+	if err != nil {
+		failure(w, 503, "database_unavailable", "Local collection state is unavailable", requestID)
+		return
 	}
-	// P1 intentionally runs without an upstream client or a scheduler.
+	runtime := h.runtime.Snapshot()
+	code := runtime.LastError
+	if code == "" {
+		code = state.LastError
+	}
+	collectionState := runtime.CollectionState
+	if collectionState != "disabled" && collectionState != "collecting" {
+		if code != "" {
+			collectionState = "degraded"
+		}
+		if state.RetryNotBefore.After(now) {
+			collectionState = "rate_limited"
+		}
+	}
+	reason := runtime.RecoveryReason
+	if reason == "" {
+		reason = state.RecoveryReason
+	}
+	cleanupState := runtime.CleanupState
+	cleanupError := runtime.CleanupError
+	if cleanupError == "" {
+		cleanupError = state.CleanupError
+	}
+	if cleanupError != "" {
+		cleanupState = "failed"
+	}
+	stale := state.LastSuccess.IsZero() || state.LastSuccess.After(now) || now.Sub(state.LastSuccess) > config.StaleAfter
 	writeJSON(w, 200, map[string]any{
-		"version": h.version, "phase": "P1", "collection_state": "disabled", "schema_version": schema,
-		"last_successful_sync_at": success, "data_stale": true, "last_error": nil,
-		"retention_start": time.Now().UTC().Add(-config.Retention).Format(time.RFC3339Nano),
-		"coverage":        map[string]any{"status": coverage, "start": coverageStart},
-		"cleanup":         map[string]any{"state": "not_implemented", "last_success_at": nil},
+		"version": h.version, "phase": "P3", "collection_state": collectionState, "schema_version": schema,
+		"last_successful_sync_at": formatTime(state.LastSuccess), "data_stale": stale, "last_error": optionalString(code),
+		"last_attempt_at": formatTime(state.LastAttempt), "last_clean_shutdown_at": formatTime(state.LastShutdown),
+		"sync_mode": optionalString(state.LastMode), "recovery_reason": optionalString(reason), "retry_not_before": formatTime(state.RetryNotBefore),
+		"retention_start": now.Add(-config.Retention).Format(time.RFC3339Nano),
+		"coverage":        map[string]any{"status": coverage.Status, "start": formatTime(coverage.Start), "gap_count": coverage.GapCount},
+		"cleanup":         map[string]any{"state": cleanupState, "last_success_at": formatTime(state.LastCleanup), "last_error": optionalString(cleanupError)},
 	})
 }
-func formatTime(v sql.NullInt64) *string {
-	if !v.Valid {
+func formatTime(v time.Time) *string {
+	if v.IsZero() {
 		return nil
 	}
-	s := time.UnixMicro(v.Int64).UTC().Format(time.RFC3339Nano)
+	s := v.UTC().Format(time.RFC3339Nano)
 	return &s
+}
+func optionalString(v string) any {
+	if v == "" {
+		return nil
+	}
+	return v
 }

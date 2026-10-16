@@ -61,10 +61,10 @@ def main():
             token = (state / "access.token").read_text().strip()
             with request(token) as response:
                 health = json.load(response)
-            assert health["collection_state"] == "disabled"
+            assert health["collection_state"] in {"idle", "collecting", "degraded", "rate_limited"}
             assert health["data_stale"] is True
             assert health["last_successful_sync_at"] is None
-            assert health["schema_version"] == 1
+            assert health["schema_version"] == 2
             return process, token
 
         def timestamp():
@@ -85,6 +85,15 @@ def main():
         try:
             first, token = start()
             assert timestamp() is None
+            deadline = time.monotonic() + 5
+            while time.monotonic() < deadline:
+                with request(token) as response:
+                    health = json.load(response)
+                if health["last_error"] == "credential_unavailable" and health["cleanup"]["last_success_at"]:
+                    break
+                time.sleep(0.02)
+            else:
+                raise RuntimeError("collection failure and cleanup were not exposed")
             duplicate = subprocess.run(command, capture_output=True, timeout=5)
             assert duplicate.returncode != 0 and b"lock" in duplicate.stderr
             stop(first)
@@ -103,7 +112,28 @@ def main():
                 assert token not in log.read_text()
             assert (state / "agent.db").stat().st_mode & 0o777 == 0o600
             assert state.stat().st_mode & 0o777 == 0o700
-            print("Offline lifecycle smoke passed: auth, single instance, SIGTERM, SIGKILL restart, persistence, private paths")
+            # Persisted throttling must gate the first round after a real restart.
+            database = sqlite3.connect(str(state / "agent.db"))
+            try:
+                previous_attempt = database.execute("SELECT last_attempt_at_us FROM maintenance_state").fetchone()[0]
+                deadline_us = int((time.time() + 120) * 1_000_000)
+                database.execute("UPDATE maintenance_state SET retry_not_before_us=?", (deadline_us,))
+                database.commit()
+            finally:
+                database.close()
+            fourth, _ = start()
+            time.sleep(0.05)
+            with request(token) as response:
+                limited = json.load(response)
+            assert limited["collection_state"] == "rate_limited"
+            database = sqlite3.connect(str(state / "agent.db"))
+            try:
+                current_attempt = database.execute("SELECT last_attempt_at_us FROM maintenance_state").fetchone()[0]
+            finally:
+                database.close()
+            assert previous_attempt == current_attempt
+            stop(fourth)
+            print("Lifecycle smoke passed: auth, credential failure, cleanup, single instance, SIGTERM, SIGKILL restart, persisted throttling, private paths")
         finally:
             for process in processes:
                 if process.poll() is None:
