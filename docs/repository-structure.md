@@ -6,7 +6,7 @@
 
 Bloomer 采用轻量 monorepo：在根目录维护一个 Git 仓库，包含设备端和看板端两个独立项目。两端可以使用不同的语言和构建工具，分别管理依赖、测试、构建及版本发布。
 
-设备端功能与验收要求见[设备端开发目标](agent-development-goals.md)。看板的技术栈和产品形态尚未最终确定，后续单独维护其开发目标文档。
+设备端功能与验收要求见[设备端开发目标](agent-development-goals.md)，具体实施见[设备端开发方案与实施计划](agent-development-plan.md)。看板的技术栈和产品形态尚未最终确定，后续单独维护其开发目标文档。
 
 ## 2. 目标目录
 
@@ -20,13 +20,14 @@ Bloomer/
 │   └── openapi.yaml                   # 两端共享接口契约
 ├── docs/
 │   ├── agent-development-goals.md      # 设备端开发目标
+│   ├── agent-development-plan.md       # 设备端开发方案与实施计划
 │   └── repository-structure.md         # 仓库组织与目录约定
 ├── scripts/                           # 构建、安装、发布辅助脚本
 ├── README.md                          # 项目入口与开发说明
 └── .gitignore                         # 生成文件与私有数据排除规则
 ```
 
-以上是目标结构；目前已初始化根目录 Git 仓库并创建两份文档，其他目录与配置在开发对应项目时按需创建。
+以上是目标结构；目前已初始化根目录 Git 仓库并创建三份文档，其他目录与配置在开发对应项目时按需创建。
 
 ## 3. 目录职责
 
