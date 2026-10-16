@@ -111,9 +111,18 @@ func (s *Store) RetainedTotals(ctx context.Context, account string, now, from, t
 }
 
 type VisibleCoverage struct {
-	Status   string
-	Start    time.Time
-	GapCount int64
+	Status        string
+	Start         time.Time
+	GapCount      int64
+	Gaps          []CoverageGap
+	GapsTruncated bool
+}
+
+type CoverageGap struct {
+	DetectedAt string `json:"detected_at"`
+	From       string `json:"from"`
+	To         string `json:"to"`
+	Reason     string `json:"reason"`
 }
 
 type rowQuerier interface {
@@ -142,7 +151,7 @@ func (s *Store) LoadHealth(ctx context.Context, account string, now time.Time) (
 	return state, coverage, tx.Commit()
 }
 func readCoverage(ctx context.Context, q rowQuerier, state State, now time.Time) (VisibleCoverage, error) {
-	out := VisibleCoverage{Status: state.CoverageStatus}
+	out := VisibleCoverage{Status: state.CoverageStatus, Gaps: make([]CoverageGap, 0)}
 	if state.AccountID == "" {
 		return out, nil
 	}
@@ -154,6 +163,31 @@ func readCoverage(ctx context.Context, q rowQuerier, state State, now time.Time)
 		return out, err
 	}
 	out.Start = timestamp(start)
+	if out.GapCount > 0 {
+		query, ok := q.(interface {
+			QueryContext(context.Context, string, ...any) (*sql.Rows, error)
+		})
+		if !ok {
+			return out, errors.New("coverage query unavailable")
+		}
+		rows, err := query.QueryContext(ctx, "SELECT discovered_at_us,max(interruption_start_us,?),interruption_end_us,reason FROM coverage_gaps WHERE account_id=? AND interruption_end_us>=? ORDER BY interruption_start_us DESC LIMIT 100", cutoff, state.AccountID, cutoff)
+		if err != nil {
+			return out, err
+		}
+		defer rows.Close()
+		for rows.Next() {
+			var detected, from, to int64
+			var reason string
+			if err = rows.Scan(&detected, &from, &to, &reason); err != nil {
+				return out, err
+			}
+			out.Gaps = append(out.Gaps, CoverageGap{time.UnixMicro(detected).UTC().Format(time.RFC3339Nano), time.UnixMicro(from).UTC().Format(time.RFC3339Nano), time.UnixMicro(to).UTC().Format(time.RFC3339Nano), reason})
+		}
+		if err = rows.Err(); err != nil {
+			return out, err
+		}
+		out.GapsTruncated = out.GapCount > int64(len(out.Gaps))
+	}
 	if out.GapCount > 0 {
 		out.Status = "possible_gap"
 	} else if out.Status != "uninitialized" {

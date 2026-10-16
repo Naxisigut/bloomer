@@ -1,26 +1,26 @@
 openapi: 3.0.3
 info:
   title: Bloomer Agent API
-  version: 0.2.0-draft
+  version: 1.0.0
   description: |
-    P3 contract draft. Authenticated GET /v1/health is implemented, including
-    live collection, recovery, throttling and cleanup status. Other paths are planned for P4 and
-    currently return 404; their schemas remain subject to implementation review.
+    All four versioned read-only endpoints are implemented. Health includes live
+    collection, recovery, throttling and cleanup status. A successful response
+    may contain stale or partial history, as described by its metadata.
     This API reads local SQLite; requests never initiate an upstream collection.
     Money is an integer number of micro-USD encoded as a decimal string. Record
     IDs are opaque strings. Official lifetime totals and local retained totals
     have different scopes and must not be added across devices for one account.
-  x-status: draft
+  x-status: stable
 servers:
   - url: http://127.0.0.1:17890
-    description: Local loopback; publish privately using Tailscale Serve in P5
+    description: Local loopback; the macOS installer publishes privately through Tailscale Serve
 security:
   - bearerAuth: []
 paths:
   /v1/health:
     get:
       operationId: getHealth
-      x-implementation-stage: P3
+      x-implementation-stage: P4
       summary: Process health and collection freshness
       description: |
         Collection is enabled by default; collection_enabled=false disables only
@@ -69,14 +69,16 @@ paths:
                         $ref: '#/components/schemas/Money'
                   meta:
                     $ref: '#/components/schemas/DataMetadata'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/OriginForbidden'
-        '404':
-          $ref: '#/components/responses/NotImplementedYet'
         '503':
           $ref: '#/components/responses/Unavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
   /v1/earnings:
     get:
       operationId: listEarnings
@@ -134,8 +136,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/OriginForbidden'
-        '404':
-          $ref: '#/components/responses/NotImplementedYet'
         '503':
           $ref: '#/components/responses/Unavailable'
         '504':
@@ -149,7 +149,10 @@ paths:
         Uses [from,to), the 365-day retention filter and IANA time zone rules.
         Local days and months are calendar intervals, not fixed 24-hour durations.
         Unobserved intervals must not be interpreted as zero official earnings.
-        Implementations must stream/batch required columns with bounded memory.
+        Rows are streamed with bounded memory and at most 10000 output groups.
+        Group keys for repeated local hours include the UTC offset. Missing groups
+        are not filled with synthetic zeros. Aggregate amounts use exact integers;
+        a final sum outside int64 returns amount_out_of_range (503).
       parameters:
         - $ref: '#/components/parameters/From'
         - $ref: '#/components/parameters/To'
@@ -183,6 +186,7 @@ paths:
                     type: string
                   items:
                     type: array
+                    maxItems: 10000
                     items:
                       type: object
                       required: [key, from, to, record_count, amount_micro_usd]
@@ -213,8 +217,12 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           $ref: '#/components/responses/OriginForbidden'
-        '404':
-          $ref: '#/components/responses/NotImplementedYet'
+        '422':
+          description: Too many groups; narrow the time range or model filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
         '503':
           $ref: '#/components/responses/Unavailable'
         '504':
@@ -265,7 +273,7 @@ components:
       description: Safe error message; excludes credentials, SQL and upstream response bodies
     Coverage:
       type: object
-      required: [status, start]
+      required: [status, start, gap_count, gaps, gaps_truncated]
       properties:
         status:
           type: string
@@ -275,8 +283,12 @@ components:
           type: string
           format: date-time
           nullable: true
+        gaps_truncated:
+          type: boolean
+          description: True when only the newest 100 retained gaps are returned
         gaps:
           type: array
+          maxItems: 100
           items:
             type: object
             required: [detected_at, from, to, reason]
@@ -330,7 +342,7 @@ components:
           type: string
         phase:
           type: string
-          example: P3
+          example: P6
         schema_version:
           type: integer
           minimum: 1
@@ -455,14 +467,8 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/Error'
-    NotImplementedYet:
-      description: This planned P4 endpoint is unavailable in the current P3 build
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
     Unavailable:
-      description: Local database unavailable, or no collected account snapshot yet
+      description: Local database unavailable, no successful snapshot (data_unavailable), or aggregate outside int64 (amount_out_of_range)
       content:
         application/json:
           schema:

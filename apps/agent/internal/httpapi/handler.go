@@ -1,5 +1,5 @@
 // Package httpapi exposes authenticated process and collection health.
-// Earnings queries will be implemented and finalized in P4.
+// All queries read one bounded local SQLite snapshot.
 package httpapi
 
 import (
@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -22,10 +23,11 @@ type Handler struct {
 	tokenHash          [32]byte
 	version, accountID string
 	runtime            *health.Runtime
+	now                func() time.Time
 }
 
-func New(s *store.Store, token, version, accountID string, runtime *health.Runtime) http.Handler {
-	return &Handler{store: s, tokenHash: sha256.Sum256([]byte(token)), version: version, accountID: accountID, runtime: runtime}
+func New(s *store.Store, token, version, accountID string, runtime *health.Runtime) *Handler {
+	return &Handler{store: s, tokenHash: sha256.Sum256([]byte(token)), version: version, accountID: accountID, runtime: runtime, now: time.Now}
 }
 
 type APIError struct {
@@ -64,7 +66,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failure(w, 403, "origin_forbidden", "This origin is not configured", requestID)
 		return
 	}
-	if r.URL.Path != "/v1/health" {
+	if r.URL.Path != "/v1/health" && r.URL.Path != "/v1/account/overview" && r.URL.Path != "/v1/earnings" && r.URL.Path != "/v1/earnings/stats" {
 		failure(w, 404, "not_found", "Endpoint is unavailable in this build", requestID)
 		return
 	}
@@ -75,12 +77,27 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := contextWithTimeout(r)
 	defer cancel()
+	if _, err := url.ParseQuery(r.URL.RawQuery); err != nil {
+		queryFailure(w, bad("Malformed query string"), requestID)
+		return
+	}
+	now := h.now().UTC().Truncate(time.Microsecond)
+	switch r.URL.Path {
+	case "/v1/account/overview":
+		h.overview(ctx, w, r, requestID, now)
+		return
+	case "/v1/earnings":
+		h.earnings(ctx, w, r, requestID, now)
+		return
+	case "/v1/earnings/stats":
+		h.stats(ctx, w, r, requestID, now)
+		return
+	}
 	schema, err := h.store.SchemaVersion(ctx)
 	if err != nil {
 		failure(w, 503, "database_unavailable", "Local database is unavailable", requestID)
 		return
 	}
-	now := time.Now().UTC().Truncate(time.Microsecond)
 	state, coverage, err := h.store.LoadHealth(ctx, h.accountID, now)
 	if err != nil {
 		failure(w, 503, "database_unavailable", "Local collection state is unavailable", requestID)
@@ -114,12 +131,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	stale := state.LastSuccess.IsZero() || state.LastSuccess.After(now) || now.Sub(state.LastSuccess) > config.StaleAfter
 	writeJSON(w, 200, map[string]any{
-		"version": h.version, "phase": "P3", "collection_state": collectionState, "schema_version": schema,
+		"version": h.version, "phase": "P6", "collection_state": collectionState, "schema_version": schema,
 		"last_successful_sync_at": formatTime(state.LastSuccess), "data_stale": stale, "last_error": optionalString(code),
 		"last_attempt_at": formatTime(state.LastAttempt), "last_clean_shutdown_at": formatTime(state.LastShutdown),
 		"sync_mode": optionalString(state.LastMode), "recovery_reason": optionalString(reason), "retry_not_before": formatTime(state.RetryNotBefore),
 		"retention_start": now.Add(-config.Retention).Format(time.RFC3339Nano),
-		"coverage":        map[string]any{"status": coverage.Status, "start": formatTime(coverage.Start), "gap_count": coverage.GapCount},
+		"coverage":        map[string]any{"status": coverage.Status, "start": formatTime(coverage.Start), "gap_count": coverage.GapCount, "gaps": coverage.Gaps, "gaps_truncated": coverage.GapsTruncated},
 		"cleanup":         map[string]any{"state": cleanupState, "last_success_at": formatTime(state.LastCleanup), "last_error": optionalString(cleanupError)},
 	})
 }

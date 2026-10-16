@@ -90,7 +90,7 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 		defer close(jobsDone)
 		Scheduler{Collector: collect, Cleaner: cleaner, Clock: clock}.Run(jobsCtx)
 	}()
-	logger.Info("agent started", "version", version, "phase", "P3", "listen", c.Listen, "collection_enabled", c.CollectionEnabled)
+	logger.Info("agent started", "version", version, "phase", "P6", "listen", c.Listen, "collection_enabled", c.CollectionEnabled)
 	select {
 	case <-ctx.Done():
 	case err = <-serverErrors:
@@ -108,7 +108,9 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 		result = errors.Join(result, err)
 		_ = server.Close()
 	}
-	if err = db.RecordShutdown(shutdownCtx, time.Now()); err != nil {
+	checkpointCtx, checkpointCancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer checkpointCancel()
+	if err = db.RecordShutdown(checkpointCtx, time.Now()); err != nil {
 		logger.Error("save shutdown timestamp failed")
 		result = errors.Join(result, err)
 	}

@@ -309,3 +309,80 @@ func TestFailedAttemptDoesNotBindAnAccount(t *testing.T) {
 		t.Fatalf("failed account state leaked into bound database: %d %v", count, err)
 	}
 }
+
+func TestConsistentRestorePreservesBackupAndCurrentRecoveryCopy(t *testing.T) {
+	ctx := context.Background()
+	s, path := openTest(t)
+	if err := s.Write(ctx, func(tx *sql.Tx) error { return addEarning(ctx, tx, "a", "original") }); err != nil {
+		t.Fatal(err)
+	}
+	backup := filepath.Join(t.TempDir(), "consistent.db")
+	if err := s.Backup(ctx, backup); err != nil {
+		t.Fatal(err)
+	}
+	originalBackup, err := os.ReadFile(backup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = s.Write(ctx, func(tx *sql.Tx) error { return addEarning(ctx, tx, "a", "later") }); err != nil {
+		t.Fatal(err)
+	}
+	s.Close()
+	if err = Restore(ctx, backup, path); err != nil {
+		t.Fatal(err)
+	}
+	restored, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer restored.Close()
+	var count int
+	if err = restored.ReadDB().QueryRow("SELECT count(*) FROM earnings").Scan(&count); err != nil || count != 1 {
+		t.Fatalf("wrong restored history: %d %v", count, err)
+	}
+	after, err := os.ReadFile(backup)
+	if err != nil || string(after) != string(originalBackup) {
+		t.Fatal("restore mutated the source backup")
+	}
+	recovery, _ := filepath.Glob(path + ".pre-restore-*.bak")
+	if len(recovery) != 1 {
+		t.Fatal("pre-restore recovery copy missing")
+	}
+	previous, err := Open(ctx, recovery[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer previous.Close()
+	if err = previous.ReadDB().QueryRow("SELECT count(*) FROM earnings").Scan(&count); err != nil || count != 2 {
+		t.Fatal("pre-restore copy lost later data")
+	}
+}
+func TestRestoreRejectsLiveAndUnsupportedSources(t *testing.T) {
+	ctx := context.Background()
+	s, path := openTest(t)
+	if err := s.Write(ctx, func(tx *sql.Tx) error { return addEarning(ctx, tx, "a", "live") }); err != nil {
+		t.Fatal(err)
+	}
+	destination := filepath.Join(t.TempDir(), "destination.db")
+	if err := Restore(ctx, path, destination); err == nil {
+		t.Fatal("live WAL source accepted")
+	}
+	backup := filepath.Join(t.TempDir(), "future.db")
+	if err := s.Backup(ctx, backup); err != nil {
+		t.Fatal(err)
+	}
+	db, err := sql.Open("sqlite", dsn(backup, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = db.Exec("PRAGMA user_version=99"); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	if err = Restore(ctx, backup, destination); err == nil {
+		t.Fatal("future backup accepted")
+	}
+	if _, err = os.Stat(destination); !os.IsNotExist(err) {
+		t.Fatal("failed validation changed destination")
+	}
+}

@@ -34,7 +34,7 @@ func TestAuthenticatedOfflineHealth(t *testing.T) {
 		{"/v1/health", "GET", "Bearer invalid", "", 401, "unauthorized"},
 		{"/v1/health", "GET", "Bearer " + token, "https://untrusted.example", 403, "origin_forbidden"},
 		{"/v1/health", "POST", "Bearer " + token, "", 405, "method_not_allowed"},
-		{"/v1/earnings", "GET", "Bearer " + token, "", 404, "not_found"},
+		{"/v1/unknown", "GET", "Bearer " + token, "", 404, "not_found"},
 		{"/v1/health", "GET", "Bearer " + token, "", 200, ""},
 	} {
 		req := httptest.NewRequest(tc.method, tc.path, nil)
@@ -101,7 +101,7 @@ func TestHealthUsesCachedFreshnessCoverageAndPersistentThrottle(t *testing.T) {
 		return body
 	}
 	body := read()
-	if body["data_stale"] != false || body["collection_state"] != "idle" || body["phase"] != "P3" || body["coverage"].(map[string]any)["gap_count"] != float64(1) {
+	if body["data_stale"] != false || body["collection_state"] != "idle" || body["phase"] != "P6" || body["coverage"].(map[string]any)["gap_count"] != float64(1) {
 		t.Fatalf("fresh state hidden: %+v", body)
 	}
 	if err = s.RecordFailure(context.Background(), "a", "rate_limited", now.Add(time.Minute)); err != nil {
