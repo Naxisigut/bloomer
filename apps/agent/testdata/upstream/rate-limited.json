@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "Synthetic throttling response",
+    "type": "rate_limit_error"
+  }
+}

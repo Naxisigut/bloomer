@@ -1,0 +1,158 @@
+{
+  "probed_at": "2026-10-16T10:13:28.883194+00:00",
+  "darkbloom_version": "0.9.22",
+  "endpoint": "https://api.darkbloom.dev/v1/provider/account-earnings",
+  "observations": [
+    {
+      "requested_limit": 50,
+      "authenticated": false,
+      "status": 401,
+      "shape": {
+        "error": {
+          "code": "str",
+          "message": "str",
+          "type": "str"
+        }
+      }
+    },
+    {
+      "requested_limit": 50,
+      "authenticated": true,
+      "status": 200,
+      "shape": {
+        "account_id": "str",
+        "available_balance_micro_usd": "int",
+        "available_balance_usd": "str",
+        "count": "int",
+        "earnings": {
+          "type": "array",
+          "first": {
+            "id": "int",
+            "account_id": "str",
+            "provider_id": "str",
+            "provider_key": "str",
+            "job_id": "str",
+            "model": "str",
+            "amount_micro_usd": "int",
+            "prompt_tokens": "int",
+            "completion_tokens": "int",
+            "created_at": "str"
+          }
+        },
+        "email": "str",
+        "history_limit": "int",
+        "recent_count": "int",
+        "total_micro_usd": "int",
+        "total_usd": "str",
+        "withdrawable_balance_micro_usd": "int",
+        "withdrawable_balance_usd": "str"
+      },
+      "timestamp_formats": [
+        "####-##-##T##:##:##.######Z",
+        "####-##-##T##:##:##.#####Z"
+      ],
+      "returned_count": 50,
+      "history_limit": 50,
+      "recent_count_matches": true,
+      "unique_ids": 50,
+      "consistent_account": true,
+      "descending_created_at": true,
+      "integer_amounts": true,
+      "all_amounts_fit_int64": true
+    },
+    {
+      "requested_limit": 1000,
+      "authenticated": true,
+      "status": 200,
+      "shape": {
+        "account_id": "str",
+        "available_balance_micro_usd": "int",
+        "available_balance_usd": "str",
+        "count": "int",
+        "earnings": {
+          "type": "array",
+          "first": {
+            "id": "int",
+            "account_id": "str",
+            "provider_id": "str",
+            "provider_key": "str",
+            "job_id": "str",
+            "model": "str",
+            "amount_micro_usd": "int",
+            "prompt_tokens": "int",
+            "completion_tokens": "int",
+            "created_at": "str"
+          }
+        },
+        "email": "str",
+        "history_limit": "int",
+        "recent_count": "int",
+        "total_micro_usd": "int",
+        "total_usd": "str",
+        "withdrawable_balance_micro_usd": "int",
+        "withdrawable_balance_usd": "str"
+      },
+      "timestamp_formats": [
+        "####-##-##T##:##:##.######Z",
+        "####-##-##T##:##:##.#####Z",
+        "####-##-##T##:##:##.####Z",
+        "####-##-##T##:##:##.###Z"
+      ],
+      "returned_count": 1000,
+      "history_limit": 1000,
+      "recent_count_matches": true,
+      "unique_ids": 1000,
+      "consistent_account": true,
+      "descending_created_at": true,
+      "integer_amounts": true,
+      "all_amounts_fit_int64": true
+    },
+    {
+      "requested_limit": 1001,
+      "authenticated": true,
+      "status": 200,
+      "shape": {
+        "account_id": "str",
+        "available_balance_micro_usd": "int",
+        "available_balance_usd": "str",
+        "count": "int",
+        "earnings": {
+          "type": "array",
+          "first": {
+            "id": "int",
+            "account_id": "str",
+            "provider_id": "str",
+            "provider_key": "str",
+            "job_id": "str",
+            "model": "str",
+            "amount_micro_usd": "int",
+            "prompt_tokens": "int",
+            "completion_tokens": "int",
+            "created_at": "str"
+          }
+        },
+        "email": "str",
+        "history_limit": "int",
+        "recent_count": "int",
+        "total_micro_usd": "int",
+        "total_usd": "str",
+        "withdrawable_balance_micro_usd": "int",
+        "withdrawable_balance_usd": "str"
+      },
+      "timestamp_formats": [
+        "####-##-##T##:##:##.######Z",
+        "####-##-##T##:##:##.#####Z",
+        "####-##-##T##:##:##.####Z",
+        "####-##-##T##:##:##.###Z"
+      ],
+      "returned_count": 1000,
+      "history_limit": 1000,
+      "recent_count_matches": true,
+      "unique_ids": 1000,
+      "consistent_account": true,
+      "descending_created_at": true,
+      "integer_amounts": true,
+      "all_amounts_fit_int64": true
+    }
+  ]
+}

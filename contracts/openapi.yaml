@@ -1,0 +1,448 @@
+openapi: 3.0.3
+info:
+  title: Bloomer Agent API
+  version: 0.1.0-draft
+  description: |
+    P0 contract draft. P1 implements authenticated GET /v1/health only.
+    Earnings collection is disabled in P1. Other paths are planned for P4 and
+    currently return 404; their schemas remain subject to implementation review.
+    This API reads local SQLite; requests never initiate an upstream collection.
+    Money is an integer number of micro-USD encoded as a decimal string. Record
+    IDs are opaque strings. Official lifetime totals and local retained totals
+    have different scopes and must not be added across devices for one account.
+  x-status: draft
+servers:
+  - url: http://127.0.0.1:17890
+    description: Local loopback; publish privately using Tailscale Serve in P5
+security:
+  - bearerAuth: []
+paths:
+  /v1/health:
+    get:
+      operationId: getHealth
+      x-implementation-stage: P1
+      summary: Process health and collection freshness
+      description: |
+        In P1 collection_state is disabled, data_stale is true and cleanup.state
+        is not_implemented. Online process health does not imply fresh data.
+        Missing history is expressed as null, never a synthetic successful sync.
+      responses:
+        '200':
+          description: Process and database are available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OriginForbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/account/overview:
+    get:
+      operationId: getAccountOverview
+      x-implementation-stage: P4
+      summary: Official lifetime totals and local retained history
+      responses:
+        '200':
+          description: Latest cached overview, with freshness and partial coverage
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [account_id, official, local_last_365_days, meta]
+                properties:
+                  account_id:
+                    type: string
+                  official:
+                    $ref: '#/components/schemas/OfficialSummary'
+                  local_last_365_days:
+                    type: object
+                    required: [record_count, amount_micro_usd]
+                    properties:
+                      record_count:
+                        type: integer
+                        format: int64
+                        minimum: 0
+                      amount_micro_usd:
+                        $ref: '#/components/schemas/Money'
+                  meta:
+                    $ref: '#/components/schemas/DataMetadata'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OriginForbidden'
+        '404':
+          $ref: '#/components/responses/NotImplementedYet'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/earnings:
+    get:
+      operationId: listEarnings
+      x-implementation-stage: P4
+      summary: Retained earnings with stable cursor pagination
+      description: |
+        Order is (created_at_us DESC, record_id DESC), with textual ID ordering.
+        Time bounds are [from, to). Default bounds are the last 365 days.
+        Cursor freezes the initial upper bound, filters and previous ordering key.
+        On later pages effective_from=max(original_from,current_retention_start).
+        A narrowed retention range is reported in meta.range_truncated. A cursor
+        expires only when its entire time range expires. A prior ordering key
+        older than effective_from ends pagination normally. Changed explicit
+        filters with a cursor return 400. Refresh to see newly collected records;
+        pagination does not provide a database snapshot across requests.
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Model'
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 500
+            default: 100
+        - name: cursor
+          in: query
+          description: Opaque, versioned cursor; do not parse or edit
+          schema:
+            type: string
+            maxLength: 4096
+      responses:
+        '200':
+          description: One page of locally retained records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, next_cursor, meta]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 500
+                    items:
+                      $ref: '#/components/schemas/Earning'
+                  next_cursor:
+                    type: string
+                    nullable: true
+                  meta:
+                    $ref: '#/components/schemas/DataMetadata'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OriginForbidden'
+        '404':
+          $ref: '#/components/responses/NotImplementedYet'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+  /v1/earnings/stats:
+    get:
+      operationId: getEarningsStats
+      x-implementation-stage: P4
+      summary: Aggregate retained earnings by time or model
+      description: |
+        Uses [from,to), the 365-day retention filter and IANA time zone rules.
+        Local days and months are calendar intervals, not fixed 24-hour durations.
+        Unobserved intervals must not be interpreted as zero official earnings.
+        Implementations must stream/batch required columns with bounded memory.
+      parameters:
+        - $ref: '#/components/parameters/From'
+        - $ref: '#/components/parameters/To'
+        - $ref: '#/components/parameters/Model'
+        - name: group_by
+          in: query
+          schema:
+            type: string
+            enum: [hour, day, month, model]
+            default: day
+        - name: timezone
+          in: query
+          required: true
+          description: IANA time zone name, such as Asia/Shanghai or America/New_York
+          schema:
+            type: string
+            example: Asia/Shanghai
+      responses:
+        '200':
+          description: Cached local aggregates with coverage metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [group_by, timezone, items, meta]
+                properties:
+                  group_by:
+                    type: string
+                    enum: [hour, day, month, model]
+                  timezone:
+                    type: string
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [key, from, to, record_count, amount_micro_usd]
+                      properties:
+                        key:
+                          type: string
+                          description: Local bucket label or model identifier
+                        from:
+                          type: string
+                          format: date-time
+                          nullable: true
+                          description: UTC bucket start; null for model grouping
+                        to:
+                          type: string
+                          format: date-time
+                          nullable: true
+                          description: UTC bucket end; null for model grouping
+                        record_count:
+                          type: integer
+                          format: int64
+                        amount_micro_usd:
+                          $ref: '#/components/schemas/Money'
+                  meta:
+                    $ref: '#/components/schemas/DataMetadata'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OriginForbidden'
+        '404':
+          $ref: '#/components/responses/NotImplementedYet'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Independent local dashboard access token; never the official token
+  parameters:
+    From:
+      name: from
+      in: query
+      description: Inclusive RFC3339 instant; clamped to current 365-day retention boundary
+      schema:
+        type: string
+        format: date-time
+    To:
+      name: to
+      in: query
+      description: Exclusive RFC3339 instant; defaults to fixed request time
+      schema:
+        type: string
+        format: date-time
+    Model:
+      name: model
+      in: query
+      description: Exact model identifier
+      schema:
+        type: string
+  schemas:
+    Money:
+      type: string
+      pattern: '^-?(0|[1-9][0-9]*)$'
+      example: '1234'
+      description: Signed integer micro-USD within int64 range, transported without float conversion
+    Error:
+      type: object
+      required: [code, message, request_id]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+        request_id:
+          type: string
+      description: Safe error message; excludes credentials, SQL and upstream response bodies
+    Coverage:
+      type: object
+      required: [status, start]
+      properties:
+        status:
+          type: string
+          enum: [uninitialized, partial, possible_gap]
+          description: A recent upstream window never proves complete lifetime history
+        start:
+          type: string
+          format: date-time
+          nullable: true
+        gaps:
+          type: array
+          items:
+            type: object
+            required: [detected_at, from, to, reason]
+            properties:
+              detected_at:
+                type: string
+                format: date-time
+              from:
+                type: string
+                format: date-time
+              to:
+                type: string
+                format: date-time
+              reason:
+                type: string
+            description: Observed interruption bounds, not exact bounds of missing earnings
+    DataMetadata:
+      type: object
+      required: [last_successful_sync_at, data_stale, retention_start, effective_from, effective_to, range_truncated, coverage]
+      properties:
+        last_successful_sync_at:
+          type: string
+          format: date-time
+          nullable: true
+        data_stale:
+          type: boolean
+          description: No successful sync or more than 120 seconds since last success
+        retention_start:
+          type: string
+          format: date-time
+        effective_from:
+          type: string
+          format: date-time
+        effective_to:
+          type: string
+          format: date-time
+        range_truncated:
+          type: boolean
+        coverage:
+          $ref: '#/components/schemas/Coverage'
+    Health:
+      type: object
+      required: [version, phase, schema_version, collection_state, last_successful_sync_at, data_stale, last_error, retention_start, coverage, cleanup]
+      properties:
+        version:
+          type: string
+        phase:
+          type: string
+          example: P1
+        schema_version:
+          type: integer
+          minimum: 1
+        collection_state:
+          type: string
+          enum: [disabled, idle, collecting, degraded, rate_limited]
+        last_successful_sync_at:
+          type: string
+          format: date-time
+          nullable: true
+        data_stale:
+          type: boolean
+        last_error:
+          type: string
+          nullable: true
+        retention_start:
+          type: string
+          format: date-time
+        coverage:
+          $ref: '#/components/schemas/Coverage'
+        cleanup:
+          type: object
+          required: [state, last_success_at]
+          properties:
+            state:
+              type: string
+              enum: [not_implemented, idle, running, failed]
+            last_success_at:
+              type: string
+              format: date-time
+              nullable: true
+    OfficialSummary:
+      type: object
+      required: [record_count, total_micro_usd, available_balance_micro_usd, withdrawable_balance_micro_usd, observed_at]
+      properties:
+        record_count:
+          type: integer
+          format: int64
+        total_micro_usd:
+          $ref: '#/components/schemas/Money'
+        available_balance_micro_usd:
+          $ref: '#/components/schemas/Money'
+        withdrawable_balance_micro_usd:
+          $ref: '#/components/schemas/Money'
+        observed_at:
+          type: string
+          format: date-time
+    Earning:
+      type: object
+      required: [account_id, record_id, provider_id, provider_key, job_id, model, amount_micro_usd, prompt_tokens, completion_tokens, created_at]
+      properties:
+        account_id:
+          type: string
+        record_id:
+          type: string
+        provider_id:
+          type: string
+          description: Original upstream identity; not asserted to be a physical device ID
+        provider_key:
+          type: string
+        job_id:
+          type: string
+        model:
+          type: string
+        amount_micro_usd:
+          $ref: '#/components/schemas/Money'
+        prompt_tokens:
+          type: integer
+          format: int64
+          minimum: 0
+        completion_tokens:
+          type: integer
+          format: int64
+          minimum: 0
+        created_at:
+          type: string
+          format: date-time
+          description: UTC instant with microsecond precision
+  responses:
+    InvalidRequest:
+      description: Invalid time range, filter, time zone or cursor
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unauthorized:
+      description: Missing or invalid independent dashboard token
+      headers:
+        WWW-Authenticate:
+          schema:
+            type: string
+            example: Bearer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    OriginForbidden:
+      description: Browser origin is not configured; no CORS origins are enabled in P1
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    NotImplementedYet:
+      description: This planned P4 endpoint is unavailable in the current P1 build
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Unavailable:
+      description: Local database unavailable, or no collected account snapshot yet
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+    Timeout:
+      description: Query exceeded its time budget
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'

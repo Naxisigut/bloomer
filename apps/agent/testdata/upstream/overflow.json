@@ -1,0 +1,39 @@
+{
+  "account_id": "acct_example",
+  "available_balance_micro_usd": 5000,
+  "available_balance_usd": "0.005000",
+  "count": 2,
+  "email": "redacted@example.invalid",
+  "history_limit": 50,
+  "recent_count": 2,
+  "total_micro_usd": 9223372036854775808,
+  "total_usd": "0.010000",
+  "withdrawable_balance_micro_usd": 4000,
+  "withdrawable_balance_usd": "0.004000",
+  "earnings": [
+    {
+      "id": 9007199254740993,
+      "account_id": "acct_example",
+      "provider_id": "provider_example",
+      "provider_key": "provider_key_example",
+      "job_id": "job_example",
+      "model": "model-example",
+      "amount_micro_usd": 1234,
+      "prompt_tokens": 120,
+      "completion_tokens": 45,
+      "created_at": "2026-10-16T01:02:03.123456Z"
+    },
+    {
+      "id": "record-adjustment",
+      "account_id": "acct_example",
+      "provider_id": "provider_example",
+      "provider_key": "provider_key_example",
+      "job_id": "job_adjustment",
+      "model": "model-example",
+      "amount_micro_usd": -34,
+      "prompt_tokens": 0,
+      "completion_tokens": 0,
+      "created_at": "2026-10-16T09:02:02+08:00"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "authentication_required",
+    "message": "Synthetic authentication failure",
+    "type": "authentication_error"
+  }
+}

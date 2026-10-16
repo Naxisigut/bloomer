@@ -1,0 +1,8 @@
+{
+  "data_dir": "~/Library/Application Support/Bloomer/agent",
+  "log_dir": "~/Library/Logs/Bloomer/agent",
+  "listen": "127.0.0.1:17890",
+  "upstream_url": "https://api.darkbloom.dev/v1/provider/account-earnings",
+  "upstream_credential_file": "~/.darkbloom/auth_token",
+  "access_token_file": "~/Library/Application Support/Bloomer/agent/access.token"
+}
