@@ -16,7 +16,9 @@ make build
 ./bin/bloomer-agent -version
 ```
 
-依赖版本与校验和保存在 `go.mod` / `go.sum`。构建产物为 `apps/agent/bin/bloomer-agent`，不进入 Git。
+依赖版本与校验和保存在 `go.mod` / `go.sum`。`make build` 编译 Agent 和 Go 管理工具，并生成 `apps/agent/dist/bloomer-agent-1.0.0-darwin-arm64.dmg` 及 `.dmg.sha256` 校验文件，不进入 Git。仅编译可运行 `make binary`，可执行文件位于 `apps/agent/bin/`。构建、打包和安装管理均不依赖 Python。
+
+打开 DMG，双击 **安装 Bloomer.app**，即可安装并启动当前用户的后台服务。安装条件、命令行启停、升级和恢复见 [安装说明](docs/install.md)。
 
 ## 本地启动
 
@@ -42,17 +44,10 @@ cd apps/agent
 
 默认启用采集，每次请求重新读取官方凭证文件，支持凭证轮转。官方凭证缺失或网络失败时服务继续运行，健康接口报告降级与数据过期；`collection_enabled: false` 可显式关闭采集，清理仍按计划执行。首次成功采集后数据库绑定该账户，拒绝将其他账户数据写入其中；也可提前配置 `account_id` 固定预期账户。配置的相对路径以配置文件目录为基准，`~/` 通过用户目录 API 展开。不存在的 `-config`、无效路径、非回环监听、端口占用、重复启动和不支持的数据库版本均明确报错。访问令牌只在首次缺失时生成，重启沿用。
 
-健康检查示例（在运行 Agent 的设备上执行，令牌只在 Python 进程内使用）：
+健康检查示例（在运行 Agent 的设备上执行，管理工具内部读取私有配置与令牌，不输出令牌）：
 
 ```sh
-python3 - <<'PY'
-from pathlib import Path
-import urllib.request
-secret = (Path.home() / 'Library/Application Support/Bloomer/agent/access.token').read_text().strip()
-request = urllib.request.Request('http://127.0.0.1:17890/v1/health', headers={'Authorization': 'Bearer ' + secret})
-with urllib.request.urlopen(request, timeout=5) as response:
-    print(response.read().decode())
-PY
+"$HOME/Library/Application Support/Bloomer/agent/management/bloomerctl" health
 ```
 
 终端运行时使用 Ctrl+C 或 SIGTERM 正常停止。退出时取消在途任务，等待事务提交或回滚后保存正常关闭时间；强制退出依靠最近成功检查点恢复。LaunchAgent 安装与 Tailscale Serve 发布在 P5 交付。
@@ -71,7 +66,7 @@ PY
 
 ```sh
 ./scripts/check-agent.sh
-make -C apps/agent build
+make -C apps/agent binary
 python3 scripts/smoke-agent.py
 ```
 
@@ -85,6 +80,7 @@ python3 scripts/smoke-agent.py
 - [P0/P1 验证记录](docs/p0-p1-validation.md)
 - [官方接口复验与样本说明](docs/upstream-contract.md)
 - [数据库迁移与恢复](docs/database.md)
+- [DMG 安装与服务管理](docs/install.md)
 - [共享 OpenAPI 草案](contracts/openapi.yaml)
 - [仓库结构](docs/repository-structure.md)
 
