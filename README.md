@@ -16,9 +16,33 @@ make build
 ./bin/bloomer-agent -version
 ```
 
-依赖版本与校验和保存在 `go.mod` / `go.sum`。`make build` 编译 Agent 和 Go 管理工具，并生成 `apps/agent/dist/bloomer-agent-1.0.0-darwin-arm64.dmg` 及 `.dmg.sha256` 校验文件，不进入 Git。仅编译可运行 `make binary`，可执行文件位于 `apps/agent/bin/`。构建、打包和安装管理均不依赖 Python。
+依赖版本与校验和保存在 `go.mod` / `go.sum`。仅编译可运行 `make binary`，可执行文件位于 `apps/agent/bin/`。构建、打包和安装管理均不依赖 Python。
 
-打开 DMG，双击 **安装 Bloomer.app**，即可安装并启动当前用户的后台服务。安装条件、命令行启停、升级和恢复见 [安装说明](docs/install.md)。
+## 打包与安装
+
+打包需要安装 Go 1.27 的 macOS / Apple Silicon 开发机，目标设备无需安装 Go。在仓库根目录执行，以下以发布 `1.0.1` 为例：
+
+```sh
+make -C apps/agent build VERSION=1.0.1
+open apps/agent/dist
+```
+
+将 `1.0.1` 替换为要发布的版本号；不指定 `VERSION` 时默认为 `1.0.0`。`make build` 会自动编译 Agent 和 Go 管理工具、生成图形安装器并打包 DMG，同时校验包内文件、应用签名及 DMG 完整性。`make dmg` 和 `make package` 执行相同流程。
+
+生成的文件位于 `apps/agent/dist/`，不进入 Git：
+
+- `bloomer-agent-1.0.1-darwin-arm64.dmg`：设备端安装包。
+- `bloomer-agent-1.0.1-darwin-arm64.dmg.sha256`：安装包的 SHA-256 校验文件。
+
+需要校验安装包时，在仓库根目录执行：
+
+```sh
+(cd apps/agent/dist && shasum -a 256 -c bloomer-agent-1.0.1-darwin-arm64.dmg.sha256)
+```
+
+将 DMG 复制到目标设备，在运行 Darkbloom 的同一 macOS 用户下打开，双击其中的 **安装 Bloomer.app**，即可安装并启动后台服务。已有版本时会执行升级，沿用配置、访问令牌和数据库，升级前自动创建一致备份。安装完成后可以推出 DMG。
+
+当前安装包采用本地 ad-hoc 签名，尚未配置 Developer ID 签名和 Apple 公证，跨设备下载后可能受 Gatekeeper 限制。安装条件、命令行启停、升级和恢复见 [安装说明](docs/install.md)。
 
 ## 本地启动
 
