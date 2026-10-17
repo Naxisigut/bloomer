@@ -1,8 +1,21 @@
 # Bloomer
 
-运行在 Darkbloom 设备上的收益采集 Agent，与独立看板共用接口契约。当前已完成 **P0～P3**：接口契约、工程与数据库、收益采集、恢复与留存。
+运行在 Darkbloom 设备上的收益采集 Agent，与独立看板共用接口契约。设备端已提供采集、恢复、留存、只读查询和 macOS 安装管理；看板第一版位于 `apps/dashboard`。
 
-程序启动后立即采集，之后每 60 秒从 50 条开始，按 50 → 100 → 300 → 1000 扩窗。首次导入、达到 30 分钟中断或时钟异常时读取 1000 条。收益查询接口在 P4 实现，目前只提供需要独立 Bearer 令牌的健康接口。
+程序启动后立即采集，之后每 60 秒从 50 条开始，按 50 → 100 → 300 → 1000 扩窗。首次导入、达到 30 分钟中断或时钟异常时读取 1000 条。健康、账户概览、收益明细和统计接口均使用独立 Bearer 令牌。
+
+## 收益看板
+
+需要 Node.js 22 或更新版本，无须安装第三方依赖：
+
+```sh
+cd apps/dashboard
+npm start
+```
+
+打开 <http://127.0.0.1:17891>，即可查看收益概览、趋势、模型贡献和设备采集健康，支持时间 / 模型筛选、游标分页与 CSV 导出。未配置设备时展示明确标注的演示数据；点击“连接设备”填写 Tailscale HTTPS 地址与 Bloomer 独立令牌。默认位置的本机 Agent 可自动识别，令牌保存在看板服务端的私有目录。
+
+详细使用方式见[看板说明](apps/dashboard/README.md)，设计与范围见[看板第一版](docs/dashboard.md)。
 
 ## 开发与构建
 
@@ -99,13 +112,15 @@ python3 scripts/smoke-agent.py
 ## 文档
 
 - [开发目标](docs/agent-development-goals.md)
+- [看板第一版](docs/dashboard.md)
 - [实施计划](docs/agent-development-plan.md)
 - [P2/P3 实现与验收记录](docs/p2-p3-validation.md)
 - [P0/P1 验证记录](docs/p0-p1-validation.md)
 - [官方接口复验与样本说明](docs/upstream-contract.md)
 - [数据库迁移与恢复](docs/database.md)
 - [DMG 安装与服务管理](docs/install.md)
-- [共享 OpenAPI 草案](contracts/openapi.yaml)
+- [macOS 下 Tailscale DNS 与 FlClash TUN 共存及撤销](docs/tailscale-dns-with-flclash.md)
+- [共享 OpenAPI 契约](contracts/openapi.yaml)
 - [仓库结构](docs/repository-structure.md)
 
 真实凭证、私有配置、数据库、WAL、备份、日志和构建产物不进入 Git。Agent 的运行目录应位于仓库之外。

@@ -88,3 +88,5 @@ BASE="$HOME/Library/Application Support/Bloomer/agent"
 ## 连接方式
 
 本项目使用 [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) 提供私网 HTTPS，不启用 Funnel。后台采用 [Apple LaunchAgent](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)；运行 Darkbloom 的用户需要保持登录，不承诺无人登录或休眠时采集。
+
+访问端同时使用 FlClash TUN，且因代理冲突关闭了“使用 Tailscale DNS”时，可参考 [macOS 下 Tailscale DNS 与 FlClash TUN 共存及撤销](tailscale-dns-with-flclash.md)，只为自己的 tailnet 域名配置专用解析器。

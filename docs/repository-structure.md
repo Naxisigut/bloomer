@@ -1,12 +1,12 @@
 # Bloomer 仓库结构
 
-更新日期：2026-10-16
+更新日期：2026-10-18
 
 ## 1. 仓库组织
 
 Bloomer 采用轻量 monorepo：在根目录维护一个 Git 仓库，包含设备端和看板端两个独立项目。两端可以使用不同的语言和构建工具，分别管理依赖、测试、构建及版本发布。
 
-设备端功能与验收要求见[设备端开发目标](agent-development-goals.md)，具体实施见[设备端开发方案与实施计划](agent-development-plan.md)。看板的技术栈和产品形态尚未最终确定，后续单独维护其开发目标文档。
+设备端功能与验收要求见[设备端开发目标](agent-development-goals.md)，具体实施见[设备端开发方案与实施计划](agent-development-plan.md)。看板第一版采用 Node.js 内置服务与原生网页，范围和架构见[看板第一版](dashboard.md)。
 
 ## 2. 目标目录
 
@@ -15,7 +15,7 @@ Bloomer/
 ├── .git/                              # 根目录唯一的 Git 仓库
 ├── apps/
 │   ├── agent/                         # Go 设备服务，独立 go.mod
-│   └── dashboard/                     # 看板项目，依最终选型放置构建配置
+│   └── dashboard/                     # 独立 Node.js 看板，原生网页与只读设备代理
 ├── contracts/
 │   └── openapi.yaml                   # 两端共享接口契约
 ├── docs/
@@ -27,7 +27,7 @@ Bloomer/
 └── .gitignore                         # 生成文件与私有数据排除规则
 ```
 
-以上是目标结构。P0～P3 已创建采集、恢复、维护与健康模块，以及 `apps/agent`、`contracts/openapi.yaml` 草案、验证脚本、项目入口和排除规则；`apps/dashboard` 尚未创建，后续按实际选型实施。
+设备端、共享接口契约和看板项目均已创建。`apps/dashboard` 独立管理启动与测试，不需要构建设备端；具体使用见[看板 README](../apps/dashboard/README.md)。
 
 ## 3. 目录职责
 
