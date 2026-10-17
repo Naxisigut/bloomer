@@ -11,7 +11,7 @@ import (
 	"bloomer/agent/internal/release"
 )
 
-var version = "1.0.0"
+var version = release.Version
 var commit = "unknown"
 
 func main() { os.Exit(run()) }

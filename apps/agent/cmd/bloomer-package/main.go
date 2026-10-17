@@ -27,7 +27,7 @@ func command(name string, args ...string) error {
 }
 func run() error {
 	rootFlag := flag.String("root", "../..", "repository root")
-	version := flag.String("version", "1.0.0", "release version")
+	version := flag.String("version", release.Version, "release version")
 	flag.Parse()
 	if runtime.GOOS != "darwin" || runtime.GOARCH != "arm64" {
 		return fmt.Errorf("DMG packaging requires an Apple Silicon Mac")

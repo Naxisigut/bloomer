@@ -1,5 +1,6 @@
 GO ?= go
-VERSION ?= 1.0.0
+# One source of truth, also used by direct Go builds.
+VERSION ?= $(shell sed -n 's/^const Version = "\(.*\)"$$/\1/p' internal/release/version.go)
 COMMIT := $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)$(shell test -z "$$(git status --porcelain 2>/dev/null)" || printf '%s' '-dirty')
 
 .PHONY: check test race build binary package dmg

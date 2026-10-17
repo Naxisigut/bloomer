@@ -1,6 +1,7 @@
 package management
 
 import (
+	"context"
 	"encoding/json"
 	"encoding/xml"
 	"errors"
@@ -44,7 +45,7 @@ func testPackage(t *testing.T) string {
 		}
 		write(t, filepath.Join(dir, name), data)
 	}
-	if err := release.Write(dir, "1.0.0", "test-build"); err != nil {
+	if err := release.Write(dir, release.Version, "test-build"); err != nil {
 		t.Fatal(err)
 	}
 	return dir
@@ -86,6 +87,7 @@ func existingInstall(t *testing.T, m *Manager) {
 
 type simulation struct {
 	running, published, failPublish, failCheck bool
+	noHTTPS, failRemove                        bool
 	commands                                   []string
 }
 
@@ -109,7 +111,11 @@ func (s *simulation) attach(t *testing.T, m *Manager) {
 		}
 		if name == m.Tailscale {
 			if args[0] == "status" {
-				return []byte(`{"BackendState":"Running","Self":{"DNSName":"device.example.ts.net."}}`), nil
+				certDomains := []string{"device.example.ts.net"}
+				if s.noHTTPS {
+					certDomains = nil
+				}
+				return json.Marshal(map[string]any{"BackendState": "Running", "Self": map[string]string{"DNSName": "device.example.ts.net."}, "CertDomains": certDomains})
 			}
 			if len(args) > 1 && args[1] == "status" {
 				if !s.published {
@@ -124,6 +130,9 @@ func (s *simulation) attach(t *testing.T, m *Manager) {
 					return nil, errors.New("synthetic publication failure")
 				}
 			} else if args[len(args)-1] == "off" {
+				if s.failRemove {
+					return nil, errors.New("synthetic route cleanup failure")
+				}
 				s.published = false
 			}
 			return nil, nil
@@ -159,7 +168,7 @@ func TestPlanAndPackageValidation(t *testing.T) {
 		return nil, nil
 	}
 	plan, err := m.Install(dir, 8443, true)
-	if err != nil || plan["version"] != "1.0.0" {
+	if err != nil || plan["version"] != release.Version {
 		t.Fatalf("plan: %v %v", plan, err)
 	}
 	if _, err = os.Stat(m.Home); !errors.Is(err, os.ErrNotExist) {
@@ -285,7 +294,7 @@ func TestInstallAndUpgradePreserveConfigAndToken(t *testing.T) {
 			if !strings.Contains(string(plist), "user &amp; test") {
 				t.Fatal("plist did not escape path")
 			}
-			for _, path := range []string{m.ConfigPath, m.Plist, filepath.Join(m.Base, "management/bloomerctl"), filepath.Join(m.Base, "install-state.json")} {
+			for _, path := range []string{m.ConfigPath, m.Plist, filepath.Join(m.Base, "management/bloomerctl"), filepath.Join(m.Base, "install-state.json"), filepath.Join(m.Base, "install-progress.json")} {
 				st, err := os.Stat(path)
 				if err != nil || st.Mode().Perm()&0077 != 0 {
 					t.Fatalf("not private: %s %v", path, err)
@@ -294,6 +303,10 @@ func TestInstallAndUpgradePreserveConfigAndToken(t *testing.T) {
 			status, err := m.Status()
 			if err != nil || status["state"] != "running" {
 				t.Fatalf("status: %v %v", status, err)
+			}
+			progress := status["installation"].(installProgress)
+			if progress.State != "complete" || progress.Version != release.Version {
+				t.Fatalf("bad installation progress: %+v", progress)
 			}
 			if err = m.Stop(true); err != nil || s.running {
 				t.Fatalf("stop: %v", err)
@@ -320,6 +333,134 @@ func TestPreflightFailureLeavesOldServiceRunning(t *testing.T) {
 	}
 	if !s.running {
 		t.Fatal("old service stopped")
+	}
+}
+
+func readProgress(t *testing.T, m *Manager) installProgress {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(m.Base, "install-progress.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var progress installProgress
+	if err = json.Unmarshal(data, &progress); err != nil {
+		t.Fatal(err)
+	}
+	return progress
+}
+
+func TestHTTPSPreflightKeepsServiceAndRecoveryTool(t *testing.T) {
+	m := testManager(t)
+	existingInstall(t, m)
+	statePath := filepath.Join(m.Base, "install-state.json")
+	write(t, statePath, []byte(`{"version":"0.9.0"}`))
+	s := simulation{running: true, noHTTPS: true}
+	s.attach(t, m)
+	_, err := m.Install(testPackage(t), 8443, false)
+	if err == nil || !strings.Contains(err.Error(), "HTTPS Certificates") || !strings.Contains(err.Error(), "checking_tailscale") {
+		t.Fatalf("missing actionable HTTPS error: %v", err)
+	}
+	for _, command := range s.commands {
+		if strings.Contains(command, "bootout") || strings.Contains(command, " serve --bg") {
+			t.Fatalf("HTTPS preflight changed service: %s", command)
+		}
+	}
+	if !s.running {
+		t.Fatal("HTTPS preflight stopped the old agent")
+	}
+	if _, err = os.Stat(filepath.Join(m.Base, "management/bloomerctl")); err != nil {
+		t.Fatalf("recovery tool unavailable: %v", err)
+	}
+	state, err := os.ReadFile(statePath)
+	if err != nil || string(state) != `{"version":"0.9.0"}` {
+		t.Fatalf("preflight replaced success record: %s %v", state, err)
+	}
+	if progress := readProgress(t, m); progress.State != "failed" || progress.Phase != "checking_tailscale" {
+		t.Fatalf("bad failure progress: %+v", progress)
+	}
+}
+
+func TestServeTimeoutRollsBackAndAllowsRetry(t *testing.T) {
+	m := testManager(t)
+	existingInstall(t, m)
+	dir := testPackage(t)
+	s := simulation{running: true}
+	s.attach(t, m)
+	simRun := m.run
+	m.run = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+		if name == m.Tailscale && len(args) > 1 && args[1] == "--bg" {
+			// Real wrapper and inherited pipes, with a short synthetic deadline.
+			output, err := runCommand(250*time.Millisecond, "/bin/sh", "-c", `/bin/sleep 30 & printf '%s\n' "$!"; wait`)
+			assertChildStopped(t, childPID(t, output))
+			return output, err
+		}
+		return simRun(timeout, name, args...)
+	}
+	_, err := m.Install(dir, 8443, false)
+	if !errors.Is(err, context.DeadlineExceeded) || !strings.Contains(err.Error(), "publishing_https") {
+		t.Fatalf("lost timeout or failure phase: %v", err)
+	}
+	link, linkErr := os.Readlink(m.Current)
+	if linkErr != nil || link != "old" || !s.running {
+		t.Fatalf("old service not restored: link=%s running=%v err=%v", link, s.running, linkErr)
+	}
+	if progress := readProgress(t, m); progress.State != "rolled_back" {
+		t.Fatalf("bad rollback progress: %+v", progress)
+	}
+	if _, err = os.Stat(filepath.Join(m.Base, "install-state.json")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed attempt wrote success record: %v", err)
+	}
+	m.run = simRun
+	if _, err = m.Install(dir, 8443, false); err != nil {
+		t.Fatalf("retry failed: %v", err)
+	}
+	if progress := readProgress(t, m); progress.State != "complete" {
+		t.Fatalf("retry did not complete: %+v", progress)
+	}
+}
+
+func TestRouteCleanupFailureStillRestartsOldAgent(t *testing.T) {
+	m := testManager(t)
+	existingInstall(t, m)
+	s := simulation{running: true, failPublish: true, failRemove: true}
+	s.attach(t, m)
+	_, err := m.Install(testPackage(t), 8443, false)
+	if err == nil || !strings.Contains(err.Error(), "synthetic route cleanup failure") {
+		t.Fatalf("lost cleanup failure: %v", err)
+	}
+	link, linkErr := os.Readlink(m.Current)
+	if !s.running || linkErr != nil || link != "old" {
+		t.Fatalf("network cleanup prevented local rollback: running=%v link=%s err=%v", s.running, link, linkErr)
+	}
+	if progress := readProgress(t, m); progress.State != "rollback_failed" {
+		t.Fatalf("failed cleanup reported success: %+v", progress)
+	}
+}
+
+func TestPreexistingServeRouteIsPreserved(t *testing.T) {
+	m := testManager(t)
+	existingInstall(t, m)
+	s := simulation{running: true, published: true}
+	s.attach(t, m)
+	// A late installation failure must preserve a manually configured route.
+	simRun := m.run
+	m.run = func(timeout time.Duration, name string, args ...string) ([]byte, error) {
+		output, err := simRun(timeout, name, args...)
+		if name == m.Tailscale && args[0] == "status" && strings.Contains(strings.Join(s.commands, "\n"), "bootstrap") {
+			return nil, errors.New("synthetic post-start verification failure")
+		}
+		return output, err
+	}
+	if _, err := m.Install(testPackage(t), 8443, false); err == nil {
+		t.Fatal("expected verification failure")
+	}
+	for _, command := range s.commands {
+		if strings.Contains(command, " serve --bg") || strings.HasSuffix(command, " off") {
+			t.Fatalf("changed preexisting route: %s", command)
+		}
+	}
+	if !s.published || !s.running {
+		t.Fatalf("preexisting route or old service lost: %+v", s)
 	}
 }
 

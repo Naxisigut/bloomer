@@ -20,14 +20,14 @@ make build
 
 ## 打包与安装
 
-打包需要安装 Go 1.27 的 macOS / Apple Silicon 开发机，目标设备无需安装 Go。在仓库根目录执行，以下以发布 `1.0.1` 为例：
+打包需要安装 Go 1.27 的 macOS / Apple Silicon 开发机，仅运行安装包的目标设备无需安装 Go。在仓库根目录执行：
 
 ```sh
-make -C apps/agent build VERSION=1.0.1
+make -C apps/agent build
 open apps/agent/dist
 ```
 
-将 `1.0.1` 替换为要发布的版本号；不指定 `VERSION` 时默认为 `1.0.0`。`make build` 会自动编译 Agent 和 Go 管理工具、生成图形安装器并打包 DMG，同时校验包内文件、应用签名及 DMG 完整性。`make dmg` 和 `make package` 执行相同流程。
+默认版本统一定义在 `apps/agent/internal/release/version.go` 的 `Version` 常量中，当前为 `1.0.1`。日常发布只修改这一处，Agent、管理工具、安装器和 DMG 文件名会使用同一版本，无需打包时手动填写。临时构建仍可用 `VERSION=1.0.2` 覆盖。`make build` 会自动编译 Agent 和 Go 管理工具、生成图形安装器并打包 DMG，同时校验包内文件、应用签名及 DMG 完整性。`make dmg` 和 `make package` 执行相同流程。
 
 生成的文件位于 `apps/agent/dist/`，不进入 Git：
 

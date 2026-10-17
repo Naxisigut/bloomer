@@ -11,7 +11,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strconv"
@@ -60,15 +59,6 @@ func New(home string) *Manager {
 	return m
 }
 
-func runCommand(timeout time.Duration, name string, args ...string) ([]byte, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	b, err := exec.CommandContext(ctx, name, args...).Output()
-	if err != nil {
-		return nil, fmt.Errorf("command failed or timed out: %s", filepath.Base(name))
-	}
-	return b, nil
-}
 func (m *Manager) command(name string, args ...string) ([]byte, error) {
 	return m.run(30*time.Second, name, args...)
 }
@@ -169,7 +159,7 @@ func (m *Manager) Start() (Result, error) {
 
 func (m *Manager) Status() (Result, error) {
 	if !m.loaded() {
-		return Result{"state": "stopped"}, nil
+		return m.addInstallStatus(Result{"state": "stopped"})
 	}
 	health, err := m.health()
 	if err != nil {
@@ -179,7 +169,7 @@ func (m *Manager) Status() (Result, error) {
 	for _, key := range []string{"version", "data_stale", "last_successful_sync_at", "collection_state"} {
 		out[key] = health[key]
 	}
-	return out, nil
+	return m.addInstallStatus(out)
 }
 
 type ServeConfig struct {
@@ -231,6 +221,7 @@ func (m *Manager) tailscaleState() (string, ServeConfig, error) {
 	}
 	var status struct {
 		BackendState string
+		CertDomains  []string
 		Self         struct{ DNSName string }
 	}
 	if err = json.Unmarshal(b, &status); err != nil {
@@ -240,14 +231,46 @@ func (m *Manager) tailscaleState() (string, ServeConfig, error) {
 	if status.BackendState != "Running" || !strings.HasSuffix(dns, ".ts.net") {
 		return "", serve, errors.New("Tailscale is not running or HTTPS DNS name is unavailable")
 	}
-	b, err = m.command(m.Tailscale, "serve", "status", "--json")
+	certReady := false
+	for _, domain := range status.CertDomains {
+		if strings.EqualFold(strings.TrimSuffix(domain, "."), dns) {
+			certReady = true
+			break
+		}
+	}
+	if !certReady {
+		return "", serve, errors.New("Tailscale HTTPS certificates are not ready for this device; enable MagicDNS and HTTPS Certificates at https://login.tailscale.com/admin/dns, then retry installation; if already enabled, reconnect or update Tailscale")
+	}
+	serve, err = m.serveState()
+	return dns, serve, err
+}
+
+func (m *Manager) serveState() (ServeConfig, error) {
+	var serve ServeConfig
+	b, err := m.command(m.Tailscale, "serve", "status", "--json")
 	if err != nil {
-		return "", serve, err
+		return serve, err
 	}
 	if err = json.Unmarshal(b, &serve); err != nil {
-		return "", serve, errors.New("invalid Tailscale Serve status")
+		return serve, errors.New("invalid Tailscale Serve status")
 	}
-	return dns, serve, nil
+	return serve, nil
+}
+
+func (m *Manager) rollbackServe(port int, target string) error {
+	current, err := m.serveState()
+	if err != nil {
+		return err
+	}
+	owned, err := CheckServe(current, port, target)
+	if err != nil {
+		return fmt.Errorf("rollback left changed HTTPS port untouched: %w", err)
+	}
+	if !owned {
+		return nil // Publication failed before making a route.
+	}
+	_, err = m.command(m.Tailscale, "serve", "--https="+strconv.Itoa(port), "off")
+	return err
 }
 
 // WithLock serializes management mutations separately from the agent's database lock.
@@ -270,7 +293,7 @@ func (m *Manager) WithLock(fn func() (Result, error)) (Result, error) {
 	return fn()
 }
 
-func (m *Manager) Install(directory string, port int, plan bool) (Result, error) {
+func (m *Manager) Install(directory string, port int, plan bool) (result Result, err error) {
 	if port < 1 || port > 65535 {
 		return nil, errors.New("invalid HTTPS port")
 	}
@@ -286,11 +309,39 @@ func (m *Manager) Install(directory string, port int, plan bool) (Result, error)
 	if runtime.GOOS != "darwin" {
 		return nil, errors.New("LaunchAgent installation requires macOS")
 	}
+	if err = localfs.PrivateDir(m.Base); err != nil {
+		return nil, err
+	}
+	if err = m.installController(directory); err != nil {
+		return nil, fmt.Errorf("install management tool: %w", err)
+	}
+	progress := installProgress{Version: manifest.Version, State: "installing", Phase: "preflight"}
+	step := func(phase string) error {
+		progress.Phase = phase
+		return m.writeProgress(&progress)
+	}
+	defer func() {
+		if err != nil {
+			if progress.State == "installing" {
+				progress.State = "failed"
+			}
+			err = errors.Join(fmt.Errorf("installation failed during %s (%s): %w", progress.Phase, progress.State, err), m.writeProgress(&progress))
+		}
+	}()
+	if err = step("preflight"); err != nil {
+		return nil, err
+	}
 	if _, err = m.command("/bin/launchctl", "print", m.Domain); err != nil {
+		return nil, err
+	}
+	if err = step("checking_tailscale"); err != nil {
 		return nil, err
 	}
 	dns, before, err := m.tailscaleState()
 	if err != nil {
+		return nil, err
+	}
+	if err = step("checking_agent"); err != nil {
 		return nil, err
 	}
 	for _, path := range []string{m.Base, filepath.Join(m.Base, "bin"), releaseDir, filepath.Dir(m.Plist)} {
@@ -323,6 +374,10 @@ func (m *Manager) Install(directory string, port int, plan bool) (Result, error)
 		return nil, e
 	}
 	oldPlist, err := optionalFile(m.Plist)
+	if err != nil {
+		return nil, err
+	}
+	oldInstallState, err := optionalFile(filepath.Join(m.Base, "install-state.json"))
 	if err != nil {
 		return nil, err
 	}
@@ -377,8 +432,12 @@ func (m *Manager) Install(directory string, port int, plan bool) (Result, error)
 	backup := ""
 	published := false
 	switched := false
+	stateWritten := false
 	// All failures after stopping the old service restore its database and running state.
 	perform := func() (Result, error) {
+		if err := step("stopping_agent"); err != nil {
+			return nil, err
+		}
 		if err := m.Stop(false); err != nil {
 			return nil, err
 		}
@@ -386,6 +445,9 @@ func (m *Manager) Install(directory string, port int, plan bool) (Result, error)
 			return nil, err
 		}
 		if _, err := os.Stat(cfg.DatabasePath()); err == nil {
+			if err = step("backing_up_database"); err != nil {
+				return nil, err
+			}
 			backupDir := filepath.Join(m.Base, "backups")
 			if err = localfs.PrivateDir(backupDir); err != nil {
 				return nil, err
@@ -421,15 +483,24 @@ func (m *Manager) Install(directory string, port int, plan bool) (Result, error)
 		if err = atomicWrite(m.Plist, []byte(plist), 0600); err != nil {
 			return nil, err
 		}
+		if err = step("starting_agent"); err != nil {
+			return nil, err
+		}
 		if _, err = m.Start(); err != nil {
 			return nil, err
 		}
 		if !owned {
+			if err = step("publishing_https"); err != nil {
+				return nil, err
+			}
 			// A timed-out command may have changed Serve. Rollback removes only this previously empty port.
 			published = true
 			if _, err = m.command(m.Tailscale, "serve", "--bg", "--https="+strconv.Itoa(port), target); err != nil {
-				return nil, err
+				return nil, fmt.Errorf("configure Tailscale Serve: %w\nComplete any HTTPS authorization in a visible terminal, then retry installation", err)
 			}
+		}
+		if err = step("verifying_https"); err != nil {
+			return nil, err
 		}
 		_, after, err := m.tailscaleState()
 		if err != nil {
@@ -449,15 +520,7 @@ func (m *Manager) Install(directory string, port int, plan bool) (Result, error)
 				return nil, errors.New("upgrade replaced the dashboard token")
 			}
 		}
-		managementDir := filepath.Join(m.Base, "management")
-		if err = localfs.PrivateDir(managementDir); err != nil {
-			return nil, err
-		}
-		ctl, err := os.ReadFile(filepath.Join(directory, "bloomerctl"))
-		if err != nil {
-			return nil, err
-		}
-		if err = atomicWrite(filepath.Join(managementDir, "bloomerctl"), ctl, 0700); err != nil {
+		if err = step("finalizing"); err != nil {
 			return nil, err
 		}
 		endpoint := "https://" + dns
@@ -472,48 +535,71 @@ func (m *Manager) Install(directory string, port int, plan bool) (Result, error)
 		if err = atomicWrite(filepath.Join(m.Base, "install-state.json"), append(data, '\n'), 0600); err != nil {
 			return nil, err
 		}
+		stateWritten = true
+		progress.State = "complete"
+		if err = step("complete"); err != nil {
+			return nil, err
+		}
 		state["token_preserved"] = tokenBefore != nil
 		return state, nil
 	}
-	result, err := perform()
+	result, err = perform()
 	if err == nil {
 		return result, nil
 	}
+	// Keep the original failure phase for diagnostics while recording that
+	// rollback is in progress. Error text stays in the CLI/dialog, not this file.
+	progress.State = "rolling_back"
+	progressErr := m.writeProgress(&progress)
+	progress.State = "rollback_failed"
 	// Never touch the database or binary while the new agent still holds its lock.
 	if stopErr := m.Stop(false); stopErr != nil {
-		return nil, errors.Join(err, fmt.Errorf("rollback could not stop service: %w", stopErr))
+		return nil, errors.Join(err, progressErr, fmt.Errorf("rollback could not stop service: %w", stopErr))
 	}
 	var rollbackErr error
 	if published {
-		_, e := m.command(m.Tailscale, "serve", "--https="+strconv.Itoa(port), "off")
-		rollbackErr = errors.Join(rollbackErr, e)
+		rollbackErr = m.rollbackServe(port, target)
 	}
 	if backup != "" {
 		_, e := m.run(2*time.Minute, candidate, "-config", m.ConfigPath, "-restore", backup)
 		if e != nil {
-			return nil, errors.Join(err, rollbackErr, fmt.Errorf("rollback restore failed; backup retained at %s", backup))
+			return nil, errors.Join(err, progressErr, rollbackErr, fmt.Errorf("rollback restore failed; backup retained at %s: %w", backup, e))
 		}
 	}
+	var restoreErr error
 	if switched {
 		if previous != "" {
-			rollbackErr = errors.Join(rollbackErr, replaceLink(m.Current, previous))
+			restoreErr = replaceLink(m.Current, previous)
 		} else {
-			rollbackErr = errors.Join(rollbackErr, os.Remove(m.Current))
+			restoreErr = os.Remove(m.Current)
 		}
 	}
 	if oldPlist != nil {
-		rollbackErr = errors.Join(rollbackErr, atomicWrite(m.Plist, oldPlist, 0600))
+		restoreErr = errors.Join(restoreErr, atomicWrite(m.Plist, oldPlist, 0600))
 	} else if e := os.Remove(m.Plist); e != nil && !errors.Is(e, os.ErrNotExist) {
-		rollbackErr = errors.Join(rollbackErr, e)
+		restoreErr = errors.Join(restoreErr, e)
 	}
-	if wasRunning && previous != "" && rollbackErr == nil {
+	if stateWritten {
+		if oldInstallState != nil {
+			restoreErr = errors.Join(restoreErr, atomicWrite(filepath.Join(m.Base, "install-state.json"), oldInstallState, 0600))
+		} else if e := os.Remove(filepath.Join(m.Base, "install-state.json")); e != nil && !errors.Is(e, os.ErrNotExist) {
+			restoreErr = errors.Join(restoreErr, e)
+		}
+	}
+	// A Serve cleanup failure must not prevent a safely restored old agent
+	// from resuming local collection. Report that network cleanup separately.
+	if wasRunning && previous != "" && restoreErr == nil {
 		_, e := m.Start()
-		rollbackErr = errors.Join(rollbackErr, e)
+		restoreErr = errors.Join(restoreErr, e)
 	} else if !wasRunning {
 		_, e := m.command("/bin/launchctl", "disable", m.Job)
-		rollbackErr = errors.Join(rollbackErr, e)
+		restoreErr = errors.Join(restoreErr, e)
 	}
-	return nil, errors.Join(err, rollbackErr)
+	rollbackErr = errors.Join(rollbackErr, restoreErr)
+	if rollbackErr == nil {
+		progress.State = "rolled_back"
+	}
+	return nil, errors.Join(err, progressErr, rollbackErr)
 }
 
 func optionalFile(path string) ([]byte, error) {
