@@ -18,6 +18,7 @@ import (
 	"bloomer/agent/internal/logging"
 	"bloomer/agent/internal/retention"
 	"bloomer/agent/internal/store"
+	"bloomer/agent/internal/telemetry"
 	"bloomer/agent/internal/upstream"
 )
 
@@ -90,7 +91,14 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 		defer close(jobsDone)
 		Scheduler{Collector: collect, Cleaner: cleaner, Clock: clock}.Run(jobsCtx)
 	}()
-	logger.Info("agent started", "version", version, "phase", "P6", "listen", c.Listen, "collection_enabled", c.CollectionEnabled)
+	deviceDone := make(chan struct{})
+	go func() {
+		defer close(deviceDone)
+		if c.DeviceStateEnabled {
+			runDeviceCollection(jobsCtx, telemetry.NewSampler(c.ProviderStateFile, c.DataDir), db, clock, logger)
+		}
+	}()
+	logger.Info("agent started", "version", version, "phase", "P6", "listen", c.Listen, "collection_enabled", c.CollectionEnabled, "device_state_enabled", c.DeviceStateEnabled)
 	select {
 	case <-ctx.Done():
 	case err = <-serverErrors:
@@ -102,6 +110,7 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 	// before persisting shutdown or closing the database.
 	cancelJobs()
 	<-jobsDone
+	<-deviceDone
 	shutdownCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
 	if err = server.Shutdown(shutdownCtx); err != nil {

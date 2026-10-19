@@ -66,7 +66,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		failure(w, 403, "origin_forbidden", "This origin is not configured", requestID)
 		return
 	}
-	if r.URL.Path != "/v1/health" && r.URL.Path != "/v1/account/overview" && r.URL.Path != "/v1/earnings" && r.URL.Path != "/v1/earnings/stats" {
+	if r.URL.Path != "/v1/health" && r.URL.Path != "/v1/account/overview" && r.URL.Path != "/v1/earnings" && r.URL.Path != "/v1/earnings/stats" && r.URL.Path != "/v1/device/state" && r.URL.Path != "/v1/device/state/history" {
 		failure(w, 404, "not_found", "Endpoint is unavailable in this build", requestID)
 		return
 	}
@@ -83,6 +83,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	now := h.now().UTC().Truncate(time.Microsecond)
 	switch r.URL.Path {
+	case "/v1/device/state", "/v1/device/state/history":
+		h.deviceState(ctx, w, r, requestID, now)
+		return
 	case "/v1/account/overview":
 		h.overview(ctx, w, r, requestID, now)
 		return

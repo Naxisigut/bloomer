@@ -22,6 +22,9 @@ func TestLoadPathsAndValidation(t *testing.T) {
 	if c.DataDir != filepath.Join(dir, "state") || c.LogDir != filepath.Join(home, "logs") || c.AccessTokenFile != filepath.Join(dir, "state", "access.token") {
 		t.Fatalf("incorrect path resolution: %+v", c)
 	}
+	if !c.DeviceStateEnabled || c.ProviderStateFile != filepath.Join(home, ".darkbloom", "daemon-state.json") {
+		t.Fatal("old configuration did not enable device collection by default")
+	}
 	for _, body := range []string{`null`, `{} {}`, `{"token":"secret"}`, `{"listen":"0.0.0.0:17890"}`, `{"listen":"localhost:17890"}`, `{"listen":"127.0.0.1:0"}`, `{"upstream_url":"https://user:secret@example.com/v1/provider/account-earnings"}`, `{"upstream_url":"http://example.com/v1/provider/account-earnings"}`, `{"data_dir":"~other/state"}`} {
 		os.WriteFile(path, []byte(body), 0600)
 		if _, err = Load(path); err == nil {

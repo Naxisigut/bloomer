@@ -16,6 +16,7 @@ import urllib.request
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--binary", type=Path, default=Path("apps/agent/bin/bloomer-agent"))
+    parser.add_argument("--require-host-metrics", action="store_true", help="require working macOS CPU/memory/thermal/disk readings")
     args = parser.parse_args()
     binary = args.binary.resolve(strict=True)
     with tempfile.TemporaryDirectory(prefix="bloomer-smoke-") as directory:
@@ -30,15 +31,16 @@ def main():
             "data_dir": str(state), "log_dir": str(logs),
             "listen": f"127.0.0.1:{port}",
             "upstream_credential_file": str(root / "nonexistent-official-token"),
+            "provider_state_file": str(root / "nonexistent-daemon-state.json"),
         }))
         command = [str(binary), "-config", str(config)]
         processes = []
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
-        url = f"http://127.0.0.1:{port}/v1/health"
 
-        def request(token=None):
+        def request(token=None, path="/v1/health"):
             headers = {"Authorization": "Bearer " + token} if token else {}
-            return opener.open(urllib.request.Request(url, headers=headers), timeout=1)
+            endpoint = f"http://127.0.0.1:{port}" + path
+            return opener.open(urllib.request.Request(endpoint, headers=headers), timeout=1)
 
         def start():
             process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -64,7 +66,7 @@ def main():
             assert health["collection_state"] in {"idle", "collecting", "degraded", "rate_limited"}
             assert health["data_stale"] is True
             assert health["last_successful_sync_at"] is None
-            assert health["schema_version"] == 2
+            assert health["schema_version"] == 3
             return process, token
 
         def timestamp():
@@ -94,6 +96,32 @@ def main():
                 time.sleep(0.02)
             else:
                 raise RuntimeError("collection failure and cleanup were not exposed")
+            deadline = time.monotonic() + 10
+            while time.monotonic() < deadline:
+                with request(token, "/v1/device/state") as response:
+                    device = json.load(response)
+                if device["sample"] is not None:
+                    break
+                time.sleep(0.05)
+            else:
+                raise RuntimeError("device collection did not continue after earnings failure")
+            sample = device["sample"]
+            assert sample["device_id"] == device["device"]["device_id"]
+            assert sample["provider_running"] is None
+            assert sample["quality"]["provider_running"] == "unavailable"
+            assert sample["cpu_temperature_c"] is None and sample["dispatch_tier"] is None
+            if sample["gpu_percent"] is not None:
+                assert sample["quality"]["gpu_percent"] == "ok"
+                assert 0 <= sample["gpu_percent"] <= 100
+            if args.require_host_metrics:
+                for field in ("cpu_percent", "memory_total_bytes", "memory_available_bytes", "memory_pressure", "swap_used_bytes", "thermal_state", "disk_available_bytes"):
+                    assert sample["quality"][field] == "ok", f"host metric unavailable: {field}"
+                    assert sample[field] is not None
+            with request(token, "/v1/device/state/history?limit=1") as response:
+                history = json.load(response)
+            assert len(history["items"]) == 1
+            assert history["items"][0]["id"] == sample["id"]
+            assert history["meta"]["sample_interval_seconds"] == 60
             duplicate = subprocess.run(command, capture_output=True, timeout=5)
             assert duplicate.returncode != 0 and b"lock" in duplicate.stderr
             stop(first)
@@ -133,7 +161,7 @@ def main():
                 database.close()
             assert previous_attempt == current_attempt
             stop(fourth)
-            print("Lifecycle smoke passed: auth, credential failure, cleanup, single instance, SIGTERM, SIGKILL restart, persisted throttling, private paths")
+            print("Lifecycle/device smoke passed: metrics, history, auth, earnings failure isolation, cleanup, single instance, SIGTERM, SIGKILL restart, persisted throttling, private paths")
         finally:
             for process in processes:
                 if process.poll() is None:

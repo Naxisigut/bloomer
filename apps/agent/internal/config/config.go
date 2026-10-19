@@ -33,6 +33,8 @@ func Windows() []int { return []int{50, 100, 300, 1000} }
 
 type Config struct {
 	CollectionEnabled      bool   `json:"collection_enabled"`
+	DeviceStateEnabled     bool   `json:"device_state_enabled"`
+	ProviderStateFile      string `json:"provider_state_file"`
 	DataDir                string `json:"data_dir"`
 	LogDir                 string `json:"log_dir"`
 	Listen                 string `json:"listen"`
@@ -49,8 +51,10 @@ func Defaults() (Config, error) {
 	}
 	data := filepath.Join(home, "Library", "Application Support", "Bloomer", "agent")
 	return Config{
-		CollectionEnabled: true,
-		DataDir:           data, LogDir: filepath.Join(home, "Library", "Logs", "Bloomer", "agent"),
+		CollectionEnabled:  true,
+		DeviceStateEnabled: true,
+		ProviderStateFile:  filepath.Join(home, ".darkbloom", "daemon-state.json"),
+		DataDir:            data, LogDir: filepath.Join(home, "Library", "Logs", "Bloomer", "agent"),
 		Listen: "127.0.0.1:17890", UpstreamURL: "https://api.darkbloom.dev/v1/provider/account-earnings",
 		UpstreamCredentialFile: filepath.Join(home, ".darkbloom", "auth_token"),
 	}, nil
@@ -95,7 +99,7 @@ func Load(path string) (Config, error) {
 			return c, errors.New("configuration must be an object")
 		}
 	}
-	for _, p := range []*string{&c.DataDir, &c.LogDir, &c.UpstreamCredentialFile, &c.AccessTokenFile} {
+	for _, p := range []*string{&c.DataDir, &c.LogDir, &c.UpstreamCredentialFile, &c.AccessTokenFile, &c.ProviderStateFile} {
 		if *p == "" {
 			continue
 		}
@@ -131,7 +135,7 @@ func resolve(p, base string) (string, error) {
 }
 
 func (c Config) Validate() error {
-	for _, p := range []string{c.DataDir, c.LogDir, c.AccessTokenFile, c.UpstreamCredentialFile} {
+	for _, p := range []string{c.DataDir, c.LogDir, c.AccessTokenFile, c.UpstreamCredentialFile, c.ProviderStateFile} {
 		if p == "" || !filepath.IsAbs(p) {
 			return errors.New("runtime and credential paths must be absolute and nonempty")
 		}
@@ -154,6 +158,9 @@ func (c Config) Validate() error {
 	}
 	if filepath.Clean(c.AccessTokenFile) == filepath.Clean(c.UpstreamCredentialFile) {
 		return errors.New("dashboard and upstream credentials must use separate files")
+	}
+	if c.ProviderStateFile == c.AccessTokenFile || c.ProviderStateFile == c.UpstreamCredentialFile {
+		return errors.New("provider state must not point at a credential file")
 	}
 	for _, path := range []string{c.DatabasePath(), c.LockPath(), filepath.Join(c.LogDir, "agent.log")} {
 		if c.AccessTokenFile == path || c.UpstreamCredentialFile == path {

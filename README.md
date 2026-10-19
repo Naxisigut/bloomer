@@ -40,17 +40,17 @@ make -C apps/agent build
 open apps/agent/dist
 ```
 
-默认版本统一定义在 `apps/agent/internal/release/version.go` 的 `Version` 常量中，当前为 `1.0.1`。日常发布只修改这一处，Agent、管理工具、安装器和 DMG 文件名会使用同一版本，无需打包时手动填写。临时构建仍可用 `VERSION=1.0.2` 覆盖。`make build` 会自动编译 Agent 和 Go 管理工具、生成图形安装器并打包 DMG，同时校验包内文件、应用签名及 DMG 完整性。`make dmg` 和 `make package` 执行相同流程。
+默认版本统一定义在 `apps/agent/internal/release/version.go` 的 `Version` 常量中，当前为 `1.0.2`。日常发布只修改这一处，Agent、管理工具、安装器和 DMG 文件名会使用同一版本，无需打包时手动填写。临时构建仍可用 `VERSION=1.0.3` 覆盖。`make build` 会自动编译 Agent 和 Go 管理工具、生成图形安装器并打包 DMG，同时校验包内文件、应用签名及 DMG 完整性。`make dmg` 和 `make package` 执行相同流程。
 
 生成的文件位于 `apps/agent/dist/`，不进入 Git：
 
-- `bloomer-agent-1.0.1-darwin-arm64.dmg`：设备端安装包。
-- `bloomer-agent-1.0.1-darwin-arm64.dmg.sha256`：安装包的 SHA-256 校验文件。
+- `bloomer-agent-1.0.2-darwin-arm64.dmg`：设备端安装包。
+- `bloomer-agent-1.0.2-darwin-arm64.dmg.sha256`：安装包的 SHA-256 校验文件。
 
 需要校验安装包时，在仓库根目录执行：
 
 ```sh
-(cd apps/agent/dist && shasum -a 256 -c bloomer-agent-1.0.1-darwin-arm64.dmg.sha256)
+(cd apps/agent/dist && shasum -a 256 -c bloomer-agent-1.0.2-darwin-arm64.dmg.sha256)
 ```
 
 将 DMG 复制到目标设备，在运行 Darkbloom 的同一 macOS 用户下打开，双击其中的 **安装 Bloomer.app**，即可安装并启动后台服务。已有版本时会执行升级，沿用配置、访问令牌和数据库，升级前自动创建一致备份。安装完成后可以推出 DMG。
@@ -95,7 +95,9 @@ cd apps/agent
 
 收益明细按 UTC 发生时间保留滚动 365 天；本地读取与合计始终过滤过期记录。每满 7 天补做一次物理清理，每批最多 1000 条，可从失败批次继续。官方累计与余额不受明细留存截断。达到窗口上限或恢复无法衔接旧历史时记录疑似缺口，后续成功不自动抹去尚在保留期内的缺口。
 
-数据库已升级为 schema 2。已有 schema 1 数据库升级前自动建立一致备份；旧版本程序不能直接打开升级后的数据库，恢复方法见数据库文档。
+数据库已升级为 schema 3。已有 schema 1 / 2 数据库升级前自动建立一致备份；旧版本程序不能直接打开升级后的数据库，恢复方法见数据库文档。
+
+设备端默认每 60 秒独立采集 CPU、内存、GPU 利用率、系统热压力、磁盘余量及可读取的 Darkbloom 运行状态，保存 365 天历史，支持最新状态和时间范围查询。温度、平台连接和派单等级缺乏可靠来源时明确为空。参数、数据口径及接口见[设备状态采集](docs/device-state.md)。
 
 ## 验证
 
