@@ -66,7 +66,7 @@ def main():
             assert health["collection_state"] in {"idle", "collecting", "degraded", "rate_limited"}
             assert health["data_stale"] is True
             assert health["last_successful_sync_at"] is None
-            assert health["schema_version"] == 3
+            assert health["schema_version"] == 5
             return process, token
 
         def timestamp():
@@ -110,6 +110,10 @@ def main():
             assert sample["provider_running"] is None
             assert sample["quality"]["provider_running"] == "unavailable"
             assert sample["cpu_temperature_c"] is None and sample["dispatch_tier"] is None
+            assert sample["inference_active"] is None and sample["request_work_pending"] is None
+            assert sample["is_idle"] is None
+            assert sample["activity_error"] == "task_state_unavailable"
+            assert "routing_state" not in sample
             if sample["gpu_percent"] is not None:
                 assert sample["quality"]["gpu_percent"] == "ok"
                 assert 0 <= sample["gpu_percent"] <= 100

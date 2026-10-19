@@ -449,7 +449,7 @@ components:
         provider_connected:
           type: boolean
           nullable: true
-          description: Unsupported until an authoritative connection source is verified
+          description: Legacy unused placeholder; always unknown
         current_model:
           type: string
           nullable: true
@@ -460,7 +460,37 @@ components:
         dispatch_tier:
           type: string
           nullable: true
-          description: Unsupported until an authoritative dispatch tier source is verified
+          deprecated: true
+          description: Legacy unused placeholder
+        inference_active:
+          type: boolean
+          nullable: true
+          description: Fresh local daemon inference activity; missing or stale remains unknown
+        request_work_pending:
+          type: boolean
+          nullable: true
+          description: Fresh local accepted/queued work flag
+        is_idle:
+          type: boolean
+          nullable: true
+          description: True only when both local task flags are false and this device latest earning is strictly older than 300 seconds at collection; null when evidence is unavailable or earnings sync is stale
+        last_device_earning_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Latest earning for precisely matched local Provider IDs within the bound account; never account-wide
+        last_earnings_sync_at:
+          type: string
+          format: date-time
+          nullable: true
+        earnings_provider_id:
+          type: string
+          nullable: true
+          description: Provider session owning the latest matched device earning
+        activity_error:
+          type: string
+          nullable: true
+          description: Safe reason code for unavailable idle state
         provider_pid:
           type: integer
           nullable: true

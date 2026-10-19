@@ -1,5 +1,6 @@
-import { money, sumMoney, sumCount, timeRange, rollingRange, dateKey, shiftDate, zonedMidnight, trendGroups, csvRows } from './data.js';
+import { DASHBOARD_TIMEZONE, money, sumMoney, sumCount, timeRange, rollingRange, dateKey, shiftDate, zonedMidnight, trendGroups, csvRows } from './data.js';
 import { CursorPager } from './pagination.js';
+import { createDeviceUI } from './device-ui.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -9,6 +10,9 @@ const icons = {
   overview: '<rect x="3" y="3" width="7" height="7" rx="1.3"/><rect x="14" y="3" width="7" height="7" rx="1.3"/><rect x="3" y="14" width="7" height="7" rx="1.3"/><rect x="14" y="14" width="7" height="7" rx="1.3"/>',
   records: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   devices: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M7 13h4"/>',
+  query: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6M10 7v6"/>',
+  refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6.1a8 8 0 0 1 13.2 3L20 12M4 12l.7 2.9a8 8 0 0 0 13.2 3"/>',
+  connect: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M9 10.5h6M12 7.5v6"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 $$('[data-icon]').forEach(element => { element.innerHTML = icon(element.dataset.icon); });
@@ -18,16 +22,13 @@ function preference(key, value) {
 }
 
 const state = {
-  devices: [], selected: preference('device') || null, period: '30', timezone: preference('timezone') || 'Asia/Shanghai',
+  devices: [], selected: preference('device') || null, period: '1',
   custom: {}, model: '', trendGroup: 'day', view: 'overview', data: {}, health: new Map(), page: 0,
   pageSize: Number(preference('pageSize') || 10), pager: null, pageController: null, pendingPage: null,
   generation: 0, busy: false, exporting: false, exportController: null, fetchedAt: null, errors: [], summaryErrors: [], filterErrors: [], range: null,
 };
 if (!Number.isInteger(state.pageSize) || state.pageSize < 1 || state.pageSize > 500) state.pageSize = 10;
 $('#page-size').value = state.pageSize;
-try { new Intl.DateTimeFormat('en', { timeZone: state.timezone }); } catch { state.timezone = 'Asia/Shanghai'; }
-if (![...$('#timezone').options].some(option => option.value === state.timezone)) $('#timezone').add(new Option(state.timezone, state.timezone));
-$('#timezone').value = state.timezone;
 const demoDevice = { id: 'demo', name: '演示设备', url: '演示数据', source: 'demo' };
 const selectedDevice = () => state.selected === 'demo' ? demoDevice : state.devices.find(device => device.id === state.selected);
 const deviceChoices = () => [...state.devices, demoDevice];
@@ -35,7 +36,7 @@ let toastTimer;
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4200); }
 function dateTime(value, short = false) {
   if (!value) return '尚无记录';
-  return new Intl.DateTimeFormat('zh-CN', { timeZone: state.timezone, month: '2-digit', day: '2-digit', ...(short ? {} : { year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }) }).format(new Date(value));
+  return new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, month: '2-digit', day: '2-digit', ...(short ? {} : { year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }) }).format(new Date(value));
 }
 function relative(value) {
   if (!value) return '尚未成功采集';
@@ -54,6 +55,7 @@ async function api(path, options = {}) {
   return body;
 }
 const query = (route, params, device = state.selected, signal) => api(`/api/devices/${encodeURIComponent(device)}/${route}${params ? '?' + new URLSearchParams(params) : ''}`, { signal });
+const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, dateTime, escape, preference, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
 
 function resetQuery({ clearModel = false, preserveSummary = false } = {}) {
   state.exportController?.abort();
@@ -63,7 +65,7 @@ function resetQuery({ clearModel = false, preserveSummary = false } = {}) {
   state.filterErrors = [];
   state.errors = [...state.summaryErrors];
   if (clearModel) state.model = '';
-  state.range = timeRange(state.period, state.timezone, new Date(), state.custom);
+  state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom);
 }
 
 function renderModelFilters() {
@@ -74,7 +76,7 @@ function renderModelFilters() {
 }
 
 function syncTrendGrouping() {
-  const groups = trendGroups(state.range, state.timezone);
+  const groups = trendGroups(state.range, DASHBOARD_TIMEZONE);
   if (!groups.includes(state.trendGroup)) state.trendGroup = groups[0];
   $('#trend-grouping').hidden = groups.length === 1;
   $('#chart-grain').textContent = ({ hour: '按小时', day: '按天', month: '按月' })[state.trendGroup];
@@ -109,6 +111,7 @@ function renderDevices() {
     return `<article class="device-card ${device.id === active ? 'selected' : ''}"><div class="device-card-header"><h3>${escape(device.name)}</h3><span class="status-tag ${status.className}">${status.label}</span></div><p class="device-url">${escape(device.url)}</p><div class="device-stat"><span>最近成功采集</span><strong>${escape(relative(health?.last_successful_sync_at))}</strong></div><div class="device-stat"><span>Agent 版本</span><strong>${escape(health?.version || '—')}${device.id === 'demo' ? ' · 演示' : ''}</strong></div>${health?.error ? `<p class="device-url">${escape(health.error)}</p>` : ''}<div class="device-card-actions"><button class="button ${device.id === active ? 'button-dark' : 'button-white'}" data-select-device="${escape(device.id)}">${device.id === active ? '当前数据来源' : '查看收益'}</button>${device.source !== 'local' && device.id !== 'demo' ? `<button class="button remove-device" data-remove-device="${escape(device.id)}">移除</button>` : ''}</div></article>`;
   }).join('');
   renderHealth();
+  deviceUI.render();
 }
 
 function renderHealth() {
@@ -128,6 +131,7 @@ function renderHealth() {
 }
 
 function renderAlerts() {
+  if (state.view === 'query') { $('#alerts').innerHTML = ''; return; }
   const health = state.health.get(state.selected);
   const metaList = Object.values(state.data).map(item => item?.meta).filter(Boolean);
   const meta = state.data.overview?.meta || metaList[0];
@@ -152,11 +156,9 @@ function renderMetrics() {
   $('#withdrawable-balance').textContent = money(overview?.official?.withdrawable_balance_micro_usd);
   $$('.summary-amount, #withdrawable-balance').forEach(element => { element.title = element.textContent; });
   $('#chart-total').textContent = money(amount);
-  $('#chart-timezone').textContent = state.timezone;
   syncTrendGrouping();
   const start = state.range?.from;
   $('#range-label').textContent = start ? `${dateTime(start, true)} — ${dateTime(new Date(Date.parse(state.range.to) - 1), true)}` : '选择日期';
-  $('#table-timezone').textContent = state.timezone === 'Asia/Shanghai' ? 'UTC+8' : state.timezone;
 }
 
 function renderTrend() {
@@ -211,13 +213,13 @@ function renderTrend() {
 
 function trendTicks(from, to, maxTicks) {
   const group = state.trendGroup, ticks = [];
-  let start = group === 'month' ? +zonedMidnight(dateKey(from, state.timezone).slice(0, 7) + '-01', state.timezone) : from;
-  const formatter = new Intl.DateTimeFormat('zh-CN', { timeZone: state.timezone, ...(group === 'hour' ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' } : group === 'month' ? { year: 'numeric', month: '2-digit' } : { month: '2-digit', day: '2-digit' }) });
+  let start = group === 'month' ? +zonedMidnight(dateKey(from, DASHBOARD_TIMEZONE).slice(0, 7) + '-01', DASHBOARD_TIMEZONE) : from;
+  const formatter = new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, ...(group === 'hour' ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' } : group === 'month' ? { year: 'numeric', month: '2-digit' } : { month: '2-digit', day: '2-digit' }) });
   while (start < to) {
-    const date = dateKey(start, state.timezone);
+    const date = dateKey(start, DASHBOARD_TIMEZONE);
     const nextMonth = new Date(`${date.slice(0, 7)}-01T12:00:00Z`);
     nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-    const end = group === 'hour' ? start + 3_600_000 : +zonedMidnight(group === 'month' ? nextMonth.toISOString().slice(0, 10) : shiftDate(date, 1), state.timezone);
+    const end = group === 'hour' ? start + 3_600_000 : +zonedMidnight(group === 'month' ? nextMonth.toISOString().slice(0, 10) : shiftDate(date, 1), DASHBOARD_TIMEZONE);
     ticks.push({ instant: (Math.max(from, start) + Math.min(to, end)) / 2, label: formatter.format(new Date(start)) });
     start = end;
   }
@@ -249,14 +251,17 @@ function renderRecords() {
   $('#pagination-status').textContent = state.pendingPage === null ? '' : `正在前往第 ${number(state.pendingPage + 1)} 页…`;
   $('#cancel-page').hidden = !state.pageController;
   $('#refresh').disabled = state.busy;
-  $('#refresh').textContent = state.busy && !state.pageController ? '刷新中…' : '刷新数据';
+  const refreshLabel = state.busy && !state.pageController ? '刷新中…' : '刷新数据';
+  $('#refresh').setAttribute('aria-label', refreshLabel);
+  $('#refresh').setAttribute('aria-busy', String(state.busy && !state.pageController));
+  $('#refresh').title = refreshLabel;
   $('#export-csv').disabled = state.busy || state.exporting || !page?.items.length;
 }
 
 function renderAll() { renderDevices(); renderMetrics(); renderTrend(); renderRecords(); renderAlerts(); }
 
 function summaryJobs(device = state.selected) {
-  const now = new Date(), params = { group_by: 'day', timezone: 'UTC' };
+  const now = new Date(), params = { group_by: 'day', timezone: DASHBOARD_TIMEZONE };
   return [
     ['overview', query('overview', null, device)],
     ['lastHour', query('stats', { ...rollingRange(1, now), ...params }, device)],
@@ -279,6 +284,7 @@ async function refreshSummary() {
 }
 
 async function loadData({ reset = false, clearModel = false, filtersOnly = false } = {}) {
+  if (!filtersOnly) deviceUI.refresh();
   state.pageController?.abort();
   state.pageController = null; state.pendingPage = null;
   const generation = ++state.generation;
@@ -298,8 +304,8 @@ async function loadData({ reset = false, clearModel = false, filtersOnly = false
     ...(!filtersOnly ? [
       ['health', query('health')], ...summaryJobs(device),
     ] : []),
-    ['trend', query('stats', { ...params, group_by: state.trendGroup, timezone: state.timezone })],
-    ['models', query('stats', { ...state.range, group_by: 'model', timezone: state.timezone })],
+    ['trend', query('stats', { ...params, group_by: state.trendGroup, timezone: DASHBOARD_TIMEZONE })],
+    ['models', query('stats', { ...state.range, group_by: 'model', timezone: DASHBOARD_TIMEZONE })],
     ['earnings', pager.page(0, state.pageSize)],
   ];
   const results = await Promise.allSettled(jobs.map(([, promise]) => promise));
@@ -341,48 +347,58 @@ async function checkDevices() {
 }
 
 function setView(view) {
+  const changed = state.view !== view;
+  if (state.view === 'query' && view !== 'query') deviceUI.leaveQuery();
   state.view = view; $('#main').dataset.view = view;
   $('#overview-topbar').hidden = view !== 'overview';
-  const titles = { overview: '收益分析', records: '收益明细', devices: '我的设备' };
-  $('#page-title').textContent = titles[view];
+  const titles = { overview: '收益分析', records: '收益明细', devices: '我的设备', query: '数据查询' };
   const slot = $(view === 'records' ? '#records-filters-slot' : '#trend-filters-slot');
   if ($('#earnings-filters').parentElement !== slot) slot.append($('#earnings-filters'));
   document.title = `Bloomer · ${titles[view]}`;
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  if (view === 'devices') checkDevices();
+  if (view === 'devices') { checkDevices(); deviceUI.refresh(); }
+  if (view === 'query') deviceUI.enterQuery();
+  renderAlerts(); updateClock();
   history.replaceState(null, '', `#${view}`);
+  if (changed) window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
 async function selectDevice(id) { state.selected = id; preference('device', id); await loadData({ reset: true, clearModel: true }); }
 $$('.nav-item').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
 $('#device-select').addEventListener('change', event => selectDevice(event.target.value));
-$('#refresh').addEventListener('click', () => { state.range = timeRange(state.period, state.timezone, new Date(), state.custom); loadData(); if (state.view === 'devices') checkDevices(); });
-$$('[data-period]').forEach(button => button.addEventListener('click', () => {
-  state.period = button.dataset.period;
-  $$('[data-period]').forEach(item => { item.classList.toggle('selected', item === button); item.setAttribute('aria-pressed', String(item === button)); });
+$('#refresh').addEventListener('click', () => {
+  if (state.view === 'query') { deviceUI.refresh(); deviceUI.queryHistory(); return; }
+  state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData(); if (state.view === 'devices') checkDevices();
+});
+function selectPeriod(period) {
+  state.period = period;
+  $('#period-select').value = period;
+  $$('[data-period]').forEach(button => { const selected = button.dataset.period === period; button.classList.toggle('selected', selected); button.setAttribute('aria-pressed', String(selected)); });
   $('#date-form').hidden = true; loadData({ reset: true, filtersOnly: true });
-}));
-$('#timezone').addEventListener('change', event => { state.timezone = event.target.value; preference('timezone', state.timezone); loadData({ reset: true, filtersOnly: true }); });
+}
+$('#period-select').addEventListener('change', event => selectPeriod(event.target.value));
+$$('[data-period]').forEach(button => button.addEventListener('click', () => selectPeriod(button.dataset.period)));
 $$('[data-group]').forEach(button => button.addEventListener('click', () => {
   const group = button.dataset.group;
-  if (state.busy || state.trendGroup === group || !trendGroups(state.range, state.timezone).includes(group)) return;
+  if (state.busy || state.trendGroup === group || !trendGroups(state.range, DASHBOARD_TIMEZONE).includes(group)) return;
   state.trendGroup = group;
   delete state.data.trend;
   loadData({ filtersOnly: true }); renderMetrics(); renderTrend();
 }));
 $('#custom-range').addEventListener('click', () => {
   const form = $('#date-form'); form.hidden = !form.hidden;
-  form.elements.from.value = state.custom.from || dateKey(state.range.from, state.timezone);
-  form.elements.to.value = state.custom.to || dateKey(Date.parse(state.range.to) - 1, state.timezone);
-  form.elements.from.max = form.elements.to.max = dateKey(new Date(), state.timezone);
+  form.elements.from.value = state.custom.from || dateKey(state.range.from, DASHBOARD_TIMEZONE);
+  form.elements.to.value = state.custom.to || dateKey(Date.parse(state.range.to) - 1, DASHBOARD_TIMEZONE);
+  form.elements.from.max = form.elements.to.max = dateKey(new Date(), DASHBOARD_TIMEZONE);
   $('#date-error').textContent = '';
 } );
 $('#cancel-range').addEventListener('click', () => { $('#date-form').hidden = true; });
 $('#date-form').addEventListener('submit', event => {
   event.preventDefault(); const form = event.target;
   const custom = { from: form.elements.from.value, to: form.elements.to.value };
-  try { timeRange('custom', state.timezone, new Date(), custom); } catch (error) { $('#date-error').textContent = error.message; return; }
+  try { timeRange('custom', DASHBOARD_TIMEZONE, new Date(), custom); } catch (error) { $('#date-error').textContent = error.message; return; }
   state.period = 'custom'; state.custom = custom;
+  $('#period-select').value = 'custom';
   $$('[data-period]').forEach(button => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); });
   form.hidden = true; loadData({ reset: true, filtersOnly: true });
 });
@@ -493,22 +509,28 @@ $('#device-cards').addEventListener('click', async event => {
 });
 
 function updateClock() {
+  if (state.view === 'query' || state.view === 'devices') {
+    $('#last-refresh').textContent = state.deviceFetchedAt ? `最新状态刷新 ${dateTime(state.deviceFetchedAt)} · 每 60 秒更新${state.view === 'query' ? '；历史明细按查询范围展示' : ''}` : '等待设备状态刷新';
+    return;
+  }
   $('#last-refresh').textContent = state.fetchedAt ? `最近刷新 ${dateTime(state.fetchedAt)} · 每 60 秒自动更新` : '等待首次刷新';
 }
 
 // Apply topbar visibility before device discovery, including direct page links.
-$('#overview-topbar').hidden = ['records', 'devices'].includes(location.hash.slice(1));
+$('#overview-topbar').hidden = ['records', 'devices', 'query'].includes(location.hash.slice(1));
 try {
   await loadDeviceList(); resetQuery();
-  const view = location.hash.slice(1); if (['overview', 'records', 'devices'].includes(view)) setView(view);
+  const view = location.hash.slice(1); if (['overview', 'records', 'devices', 'query'].includes(view)) setView(view);
   await loadData();
 } catch (error) { $('#alerts').innerHTML = `<div class="alert error">${escape(error.message)}</div>`; }
 setInterval(() => {
   updateClock(); renderDevices();
   if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open) return;
+  deviceUI.refresh();
+  if (state.view === 'query') return;
   if (state.view === 'devices') { checkDevices(); refreshSummary(); return; }
   if (state.view === 'overview' || state.page === 0) {
-    state.range = timeRange(state.period, state.timezone, new Date(), state.custom); loadData();
+    state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData();
   } else { checkDevices(); refreshSummary(); }
 }, 60_000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) updateClock(); });

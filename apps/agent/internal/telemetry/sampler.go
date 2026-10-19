@@ -10,11 +10,13 @@ import (
 )
 
 type Sampler struct {
-	StatePath string
-	DiskPath  string
-	run       commandFunc
-	read      func(string) ([]byte, error)
-	process   func(int, *int64) (bool, error)
+	StatePath      string
+	DiskPath       string
+	LatestEarnings func(context.Context, string, time.Time) (EarningsObservation, error)
+
+	run     commandFunc
+	read    func(string) ([]byte, error)
+	process func(int, *int64) (bool, error)
 }
 
 func NewSampler(statePath, diskPath string) *Sampler {
@@ -49,6 +51,7 @@ func (p *Sampler) Collect(ctx context.Context, now time.Time) Sample {
 	s := NewSample(now)
 	p.host(ctx, &s)
 	p.provider(ctx, &s)
+	p.activity(ctx, &s)
 	s.DurationMS = time.Since(started).Milliseconds()
 	return s
 }

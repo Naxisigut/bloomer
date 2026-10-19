@@ -23,6 +23,7 @@ var Fields = []string{
 	"memory_pressure", "swap_used_bytes", "gpu_percent", "cpu_temperature_c", "gpu_temperature_c",
 	"thermal_state", "disk_available_bytes", "provider_running", "provider_connected",
 	"current_model", "model_ready", "dispatch_tier",
+	"inference_active", "request_work_pending", "is_idle",
 }
 
 type Hardware struct {
@@ -35,26 +36,34 @@ type Hardware struct {
 }
 
 type Sample struct {
-	ID                   int64             `json:"id"`
-	DeviceID             string            `json:"device_id"`
-	CollectedAt          time.Time         `json:"collected_at"`
-	DurationMS           int64             `json:"duration_ms"`
-	CPUPercent           *float64          `json:"cpu_percent"`
-	ProviderCPUPercent   *float64          `json:"provider_cpu_percent"`
-	MemoryTotalBytes     *int64            `json:"memory_total_bytes"`
-	MemoryAvailableBytes *int64            `json:"memory_available_bytes"`
-	MemoryPressure       *string           `json:"memory_pressure"`
-	SwapUsedBytes        *int64            `json:"swap_used_bytes"`
-	GPUPercent           *float64          `json:"gpu_percent"`
-	CPUTemperatureC      *float64          `json:"cpu_temperature_c"`
-	GPUTemperatureC      *float64          `json:"gpu_temperature_c"`
-	ThermalState         *string           `json:"thermal_state"`
-	DiskAvailableBytes   *int64            `json:"disk_available_bytes"`
-	ProviderRunning      *bool             `json:"provider_running"`
-	ProviderConnected    *bool             `json:"provider_connected"`
-	CurrentModel         *string           `json:"current_model"`
-	ModelReady           *bool             `json:"model_ready"`
-	DispatchTier         *string           `json:"dispatch_tier"`
+	ID                   int64      `json:"id"`
+	DeviceID             string     `json:"device_id"`
+	CollectedAt          time.Time  `json:"collected_at"`
+	DurationMS           int64      `json:"duration_ms"`
+	CPUPercent           *float64   `json:"cpu_percent"`
+	ProviderCPUPercent   *float64   `json:"provider_cpu_percent"`
+	MemoryTotalBytes     *int64     `json:"memory_total_bytes"`
+	MemoryAvailableBytes *int64     `json:"memory_available_bytes"`
+	MemoryPressure       *string    `json:"memory_pressure"`
+	SwapUsedBytes        *int64     `json:"swap_used_bytes"`
+	GPUPercent           *float64   `json:"gpu_percent"`
+	CPUTemperatureC      *float64   `json:"cpu_temperature_c"`
+	GPUTemperatureC      *float64   `json:"gpu_temperature_c"`
+	ThermalState         *string    `json:"thermal_state"`
+	DiskAvailableBytes   *int64     `json:"disk_available_bytes"`
+	ProviderRunning      *bool      `json:"provider_running"`
+	ProviderConnected    *bool      `json:"provider_connected"`
+	CurrentModel         *string    `json:"current_model"`
+	ModelReady           *bool      `json:"model_ready"`
+	DispatchTier         *string    `json:"dispatch_tier"`
+	InferenceActive      *bool      `json:"inference_active"`
+	RequestWorkPending   *bool      `json:"request_work_pending"`
+	IsIdle               *bool      `json:"is_idle"`
+	LastDeviceEarningAt  *time.Time `json:"last_device_earning_at"`
+	LastEarningsSyncAt   *time.Time `json:"last_earnings_sync_at"`
+	EarningsProviderID   *string    `json:"earnings_provider_id"`
+	ActivityError        *string    `json:"activity_error"`
+	providerPublicKey    string
 	ProviderPID          *int              `json:"provider_pid"`
 	ProviderVersion      *string           `json:"provider_version"`
 	ProviderStateAt      *time.Time        `json:"provider_state_at"`

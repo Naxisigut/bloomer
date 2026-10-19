@@ -14,6 +14,9 @@ var errUnsupported = errors.New("unsupported platform")
 // Only known diagnostic fields are decoded. Identity keys, configuration paths,
 // prompts, and raw error messages from the provider never enter our database.
 type daemonState struct {
+	InferenceActive      *bool     `json:"inference_active"`
+	RequestWorkPending   *bool     `json:"request_work_pending"`
+	AttestationPublicKey string    `json:"attestation_public_key"`
 	Schema               *int      `json:"schema"`
 	PID                  *int      `json:"pid"`
 	Version              string    `json:"version"`
@@ -33,7 +36,7 @@ type daemonState struct {
 }
 
 func (p *Sampler) provider(ctx context.Context, s *Sample) {
-	names := []string{"provider_running", "provider_cpu_percent", "current_model", "model_ready"}
+	names := []string{"provider_running", "provider_cpu_percent", "current_model", "model_ready", "inference_active", "request_work_pending"}
 	mark := func(status string) {
 		for _, name := range names {
 			s.Quality[name] = status
@@ -99,7 +102,19 @@ func (p *Sampler) provider(ctx context.Context, s *Sample) {
 		}
 		s.Quality["current_model"] = status
 		s.Quality["model_ready"] = status
+		s.Quality["inference_active"], s.Quality["request_work_pending"] = status, status
 		return
+	}
+	if d.InferenceActive != nil {
+		s.InferenceActive = d.InferenceActive
+		s.Quality["inference_active"] = OK
+	}
+	if d.RequestWorkPending != nil {
+		s.RequestWorkPending = d.RequestWorkPending
+		s.Quality["request_work_pending"] = OK
+	}
+	if len(d.AttestationPublicKey) <= 4096 && !strings.ContainsAny(d.AttestationPublicKey, "\r\n\x00") {
+		s.providerPublicKey = d.AttestationPublicKey
 	}
 	if d.CurrentModel == nil || *d.CurrentModel == "" {
 		s.Quality["current_model"] = OK

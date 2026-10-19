@@ -74,6 +74,10 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 	if err != nil {
 		return err
 	}
+	identityClient, err := upstream.NewIdentityClient(c.UpstreamURL, nil)
+	if err != nil {
+		return err
+	}
 	clock := WallClock{}
 	var collect roundWorker = &collector.Collector{Store: db, Source: client, AccountID: c.AccountID, Now: clock.Now, Runtime: runtime, Logger: logger}
 	if !c.CollectionEnabled {
@@ -95,7 +99,9 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 	go func() {
 		defer close(deviceDone)
 		if c.DeviceStateEnabled {
-			runDeviceCollection(jobsCtx, telemetry.NewSampler(c.ProviderStateFile, c.DataDir), db, clock, logger)
+			sampler := telemetry.NewSampler(c.ProviderStateFile, c.DataDir)
+			sampler.LatestEarnings = deviceEarningsSource(db, identityClient)
+			runDeviceCollection(jobsCtx, sampler, db, clock, logger)
 		}
 	}()
 	logger.Info("agent started", "version", version, "phase", "P6", "listen", c.Listen, "collection_enabled", c.CollectionEnabled, "device_state_enabled", c.DeviceStateEnabled)

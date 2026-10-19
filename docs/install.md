@@ -12,10 +12,10 @@ make -C apps/agent build
 
 默认产物：
 
-- `apps/agent/dist/bloomer-agent-1.0.2-darwin-arm64.dmg`
-- `apps/agent/dist/bloomer-agent-1.0.2-darwin-arm64.dmg.sha256`
+- `apps/agent/dist/bloomer-agent-1.0.4-darwin-arm64.dmg`
+- `apps/agent/dist/bloomer-agent-1.0.4-darwin-arm64.dmg.sha256`
 
-`make build` 完成编译和 DMG 打包；`make binary` 仅编译 `bin/bloomer-agent` 与 `bin/bloomerctl`，适合开发调试。`make dmg` / `make package` 同样先编译再打包。默认版本来自 `apps/agent/internal/release/version.go` 的 `Version` 常量，当前为 `1.0.2`；发布时修改这一处即可，无需额外传参。临时覆盖版本可使用 `make -C apps/agent build VERSION=1.0.3`。直接使用 Go 编译时也使用该常量作为默认版本。版本、Git 提交号及工作区是否有未提交修改写入程序和清单。
+`make build` 完成编译和 DMG 打包；`make binary` 仅编译 `bin/bloomer-agent` 与 `bin/bloomerctl`，适合开发调试。`make dmg` / `make package` 同样先编译再打包。默认版本来自 `apps/agent/internal/release/version.go` 的 `Version` 常量，当前为 `1.0.4`；发布时修改这一处即可，无需额外传参。临时覆盖版本可使用 `make -C apps/agent build VERSION=1.0.5`。直接使用 Go 编译时也使用该常量作为默认版本。版本、Git 提交号及工作区是否有未提交修改写入程序和清单。
 
 整个构建、打包、安装和管理流程均不依赖 Python。DMG 使用 macOS 自带的 `osacompile`、`codesign` 和 `hdiutil` 生成；后台服务与管理工具均为不依赖 CGo 的 Go 可执行文件。打包时校验内部 SHA-256 清单、应用签名及 DMG 完整性。默认使用本地 ad-hoc 签名，尚未配置 Developer ID 签名和 Apple 公证；这不是已公证的公开发行包，跨设备下载后可能受 Gatekeeper 限制。
 
@@ -24,7 +24,7 @@ make -C apps/agent build
 需要在终端预览或执行安装时，可从已挂载卷调用（版本对应卷名）：
 
 ```sh
-PACKAGE="/Volumes/Bloomer 1.0.2/安装 Bloomer.app/Contents/Resources/package"
+PACKAGE="/Volumes/Bloomer 1.0.4/安装 Bloomer.app/Contents/Resources/package"
 "$PACKAGE/bloomerctl" install --package-dir "$PACKAGE" --plan
 "$PACKAGE/bloomerctl" install --package-dir "$PACKAGE"
 ```

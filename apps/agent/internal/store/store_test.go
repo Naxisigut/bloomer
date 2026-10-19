@@ -34,7 +34,7 @@ func TestSchemaConnectionsAndAtomicWrites(t *testing.T) {
 	ctx := context.Background()
 	s, path := openTest(t)
 	version, err := s.SchemaVersion(ctx)
-	if err != nil || version != 3 {
+	if err != nil || version != 5 {
 		t.Fatalf("schema: %d %v", version, err)
 	}
 	st, _ := os.Stat(path)
@@ -158,11 +158,21 @@ func TestMigrationRollbackUpgradeAndVersionRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fourth, err := fs.ReadFile(migrations.Files, "004_provider_routing.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
+	fifth, err := fs.ReadFile(migrations.Files, "005_device_activity.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	files := fstest.MapFS{
-		"001_initial.sql":      &fstest.MapFile{Data: initial},
-		"002_collection.sql":   &fstest.MapFile{Data: second},
-		"003_device_state.sql": &fstest.MapFile{Data: third},
-		"004_upgrade.sql":      &fstest.MapFile{Data: []byte("CREATE TABLE should_rollback(id INTEGER); INVALID SQL;")},
+		"001_initial.sql":          &fstest.MapFile{Data: initial},
+		"002_collection.sql":       &fstest.MapFile{Data: second},
+		"003_device_state.sql":     &fstest.MapFile{Data: third},
+		"004_provider_routing.sql": &fstest.MapFile{Data: fourth},
+		"005_device_activity.sql":  &fstest.MapFile{Data: fifth},
+		"006_upgrade.sql":          &fstest.MapFile{Data: []byte("CREATE TABLE should_rollback(id INTEGER); INVALID SQL;")},
 	}
 	if err = migrate(ctx, s.writer, files, path); err == nil {
 		t.Fatal("broken migration succeeded")
@@ -174,19 +184,19 @@ func TestMigrationRollbackUpgradeAndVersionRejection(t *testing.T) {
 	if err = s.writer.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 		t.Fatal(err)
 	}
-	if count != 0 || v != 3 {
+	if count != 0 || v != 5 {
 		t.Fatal("migration did not roll back DDL and version")
 	}
-	backups, _ := filepath.Glob(path + ".pre-v4-*.bak")
+	backups, _ := filepath.Glob(path + ".pre-v6-*.bak")
 	if len(backups) != 1 {
 		t.Fatal("upgrade backup missing")
 	}
-	files["004_upgrade.sql"].Data = []byte("CREATE TABLE upgraded(id INTEGER) STRICT;")
+	files["006_upgrade.sql"].Data = []byte("CREATE TABLE upgraded(id INTEGER) STRICT;")
 	if err = migrate(ctx, s.writer, files, path); err != nil {
 		t.Fatal(err)
 	}
 	s.writer.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v)
-	if v != 4 {
+	if v != 6 {
 		t.Fatal("schema version did not advance")
 	}
 	if _, err = s.writer.ExecContext(ctx, "PRAGMA user_version=99"); err != nil {

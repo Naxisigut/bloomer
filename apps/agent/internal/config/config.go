@@ -89,7 +89,11 @@ func Load(path string) (Config, error) {
 		}
 		dec := json.NewDecoder(bytes.NewReader(data))
 		dec.DisallowUnknownFields()
-		if err = dec.Decode(&c); err != nil {
+		if err = dec.Decode(&struct {
+			*Config
+			LegacyAccountToken json.RawMessage `json:"provider_account_token_file"`
+			LegacyProviderID   json.RawMessage `json:"provider_id"`
+		}{Config: &c}); err != nil {
 			return c, errors.New("invalid configuration JSON or unknown field")
 		}
 		if err = dec.Decode(new(any)); err != io.EOF {

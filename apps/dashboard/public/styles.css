@@ -108,19 +108,42 @@ option {
   flex-direction:column;
   z-index:20
 }
-.brand {
+.sidebar-heading {
   display:flex;
   align-items:center;
-  gap:10px;
-  font-size:30px;
+  justify-content:space-between;
+  gap:8px
+}
+.brand {
+  font-size:28px;
   font-weight:650;
-  letter-spacing:-1.4px
+  letter-spacing:-1.4px;
+  white-space:nowrap
 }
-.brand img {
-  margin-left:-3px
+.sidebar-actions {
+  display:flex;
+  gap:3px;
+  flex-shrink:0
 }
-.brand-dot {
-  color:#aac97d
+.sidebar-action {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  width:30px;
+  height:32px;
+  padding:6px;
+  border:0;
+  border-radius:6px;
+  background:transparent;
+  color:#adc3b8
+}
+.sidebar-action:hover {
+  color:#eaf2e9;
+  background:#254b40
+}
+.sidebar-action svg {
+  width:18px;
+  height:18px
 }
 .navigation {
   display:flex;
@@ -231,26 +254,6 @@ main {
   padding:32px 36px 0;
   outline:none
 }
-.page-heading {
-  display:flex;
-  align-items:center;
-  justify-content:space-between;
-  margin-bottom:25px;
-  gap:20px
-}
-h1 {
-  font-size:28px;
-  font-weight:650;
-  letter-spacing:-.6px;
-  line-height:1.45;
-  display:flex;
-  align-items:center;
-  gap:13px
-}
-.heading-actions {
-  display:flex;
-  gap:9px
-}
 .button {
   display:inline-flex;
   align-items:center;
@@ -302,17 +305,6 @@ h1 {
   color:#737c50;
   border-radius:3px;
   padding:2px 5px
-}
-.demo-banner button {
-  border:0;
-  background:none;
-  color:#536a37;
-  font-size:10px;
-  margin-left:auto;
-  white-space:nowrap
-}
-.demo-banner button span {
-  margin-left:6px
 }
 .alert {
   padding:11px 14px;
@@ -401,6 +393,16 @@ h1 {
   gap:9px;
   flex-wrap:wrap
 }
+.period-select {
+  min-width:110px;
+  min-height:31px;
+  padding:6px 9px;
+  border:1px solid #e0e6db;
+  border-radius:6px;
+  background:white;
+  color:#335440;
+  font-size:11px
+}
 .period-tabs {
   display:flex;
   border-radius:6px;
@@ -429,14 +431,6 @@ h1 {
   font-size:9px;
   min-height:31px;
   color:#74826d
-}
-.timezone-select {
-  background:transparent;
-  border:0;
-  font-size:9px;
-  color:#8b9584;
-  padding:5px 0;
-  max-width:112px
 }
 .date-form {
   display:flex;
@@ -855,14 +849,17 @@ tbody tr:hover {
   font-size:8px;
   color:#a2ae96
 }
-.devices-only,.records-only {
+.devices-only,.records-only,.query-only {
   display:none
 }
-main[data-view="records"] .overview-only,main[data-view="devices"] .overview-only {
+main[data-view="records"] .overview-only,main[data-view="devices"] .overview-only,main[data-view="query"] .overview-only {
   display:none
 }
-main[data-view="devices"] .devices-only,main[data-view="records"] .records-only {
+main[data-view="devices"] .devices-only,main[data-view="records"] .records-only,main[data-view="query"] .query-only {
   display:block
+}
+main[data-view="records"] .period-tabs {
+  display:flex
 }
 main[data-view="records"] .records-panel {
   margin-top:5px
@@ -975,6 +972,69 @@ main[data-view="records"] .records-panel {
   font-size:10px;
   color:#8c987e;
   line-height:1.9
+}
+
+.topbar-device { flex:0 0 245px; min-width:0 }
+.topbar-device .device-select-wrap { flex-direction:row; flex-basis:auto; align-items:center; gap:8px; width:100% }
+.topbar-device .device-select-wrap select { min-width:0; flex:1 }
+.device-overview { display:flex; gap:22px; margin-top:8px; align-items:flex-start }
+.device-overview>div { display:flex; flex-direction:column; gap:3px; min-width:0 }
+.device-overview>div>span { font-size:9px; color:var(--muted,#7c8b79) }
+.device-overview .status-tag { padding:0; border:0; background:transparent; white-space:nowrap; font-size:11px }
+.device-state-panel { margin-top:24px }
+.state-panel-actions { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:10px }
+.state-timestamp { font-size:10px; color:#7c8b79 }
+.state-message { margin:14px 22px; padding:10px 12px; background:#f3f5ef; border-radius:6px; color:#6b7c62; font-size:11px; line-height:1.7 }
+.state-message.warning { color:#89642d; background:#fcf5e8 }
+.state-footnote { padding:0 22px 18px; margin:0; color:#7c8b79; font-size:10px; line-height:1.8 }
+.reading-unknown { color:#8b9585; font-weight:400 }
+.health-item strong>span { display:inline; font-size:inherit; color:inherit; margin:0 }
+.health-item strong>.reading-unknown { color:#8b9585; font-weight:400 }
+.device-state-panel .health-details { grid-template-columns:repeat(3,minmax(0,1fr)) }
+.device-state-panel .health-item { min-width:0; flex-direction:column; align-items:flex-start; gap:6px }
+.device-state-panel .health-item strong { max-width:100%; overflow-wrap:anywhere }
+.state-query-form { padding:0 22px 22px; display:flex; align-items:flex-end; flex-wrap:wrap; gap:16px 12px }
+.state-query-form>label { display:flex; flex-direction:column; gap:7px; font-size:11px; color:#718168; min-width:0 }
+.state-query-form select,.state-query-form input { min-height:36px; border:1px solid var(--line); border-radius:5px; padding:7px 9px; background:#fff; color:var(--text,#243d30); font:inherit }
+#state-query-device { max-width:210px; min-width:135px }
+.state-query-form input { width:190px }
+.state-query-buttons { display:flex; flex-wrap:wrap; gap:7px }
+.state-history-panel { margin-top:22px; min-width:0 }
+.state-history-panel .panel-heading p { line-height:1.8 }
+.state-history-scroll { max-height:65vh; overscroll-behavior:contain }
+.state-history-table { min-width:1820px }
+.state-history-table th { white-space:nowrap; position:sticky; top:0; z-index:1; background:#f6f8f2 }
+.state-history-table td { white-space:nowrap; vertical-align:middle }
+.state-history-table td small { display:block; font-size:10px; color:#7c8b79; margin-top:6px }
+.state-history-table .state-model-cell { max-width:220px; white-space:normal; overflow-wrap:anywhere }
+.state-row-detail { padding:5px 9px; font-size:10px }
+.state-sample-dialog { width:min(760px,calc(100vw - 28px)); max-width:760px; max-height:85vh; overflow:auto }
+.state-sample-dialog>p { font-size:11px; color:#7c8b79; margin:10px 0 18px }
+.state-sample-dialog .health-details { padding:0; gap:0 22px }
+.state-sample-dialog .health-item { min-width:0; flex-direction:column; align-items:flex-start; gap:6px }
+.state-sample-dialog .health-item strong { overflow-wrap:anywhere; max-width:100% }
+@media(max-width:1050px) {
+  .topbar-device { flex-basis:215px }
+  .topbar-device .status-tag { font-size:9px }
+  .device-overview { gap:15px }
+  .device-state-panel .health-details { grid-template-columns:repeat(2,minmax(0,1fr)) }
+}
+@media(max-width:650px) {
+  .topbar-device { flex-basis:100% }
+  .device-overview { gap:30px; margin-top:7px }
+  .device-overview>div { flex-direction:row; align-items:center; gap:8px }
+  .device-state-panel .panel-heading { flex-wrap:wrap; gap:12px }
+  .state-panel-actions { justify-content:flex-start }
+  .state-query-form { padding:0 15px 18px; gap:12px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)) }
+  .state-query-form>label:first-child { grid-column:1/-1 }
+  .state-query-form>label:nth-child(2),.state-query-form>label:nth-child(3) { grid-column:1/-1 }
+  .state-query-form input,.state-query-form select,#state-query-device { width:100%; min-width:0; max-width:none }
+  .state-query-buttons { grid-column:1/-1 }
+  .state-query-buttons .button { flex:1; font-size:10px; padding:8px 6px }
+  .state-footnote { padding-left:15px; padding-right:15px }
+  .state-message { margin-left:15px; margin-right:15px }
+  .state-history-panel .panel-heading { align-items:flex-start }
+  .state-history-panel .subtle-tag { display:none }
 }
 dialog {
   border:1px solid #e0e8d8;
@@ -1125,7 +1185,17 @@ dialog input::placeholder {
     margin-left:188px
   }
   .brand {
-    font-size:27px
+    font-size:24px
+  }
+  .sidebar-heading {
+    gap:5px
+  }
+  .sidebar-actions {
+    gap:1px
+  }
+  .sidebar-action {
+    width:28px;
+    padding:5px
   }
   .topbar {
     padding:10px 25px;
@@ -1146,9 +1216,6 @@ dialog input::placeholder {
   }
   .date-button {
     padding:6px
-  }
-  .timezone-select {
-    max-width:90px
   }
   .panel-heading,.earnings-filters {
     padding-left:18px;
@@ -1186,37 +1253,39 @@ dialog input::placeholder {
   .chart-footer>span:last-child {
     display:none
   }
-  .heading-actions .button {
-    padding:8px 10px;
-    font-size:10px
-  }
   .data-note>.subtle-tag {
     display:none
   }
 }
 @media(max-width:850px) {
   .sidebar {
-    width:72px;
-    padding:25px 10px 0;
-    align-items:center
+    position:relative;
+    width:auto;
+    padding:18px 22px
   }
-  .brand>span,.nav-count {
+  .nav-count {
     display:none
   }
-  .brand img {
-    width:37px;
-    height:37px;
-    margin:0
+  .brand {
+    font-size:28px
+  }
+  .sidebar-actions {
+    gap:6px
+  }
+  .sidebar-action {
+    width:34px;
+    height:34px
   }
   .navigation {
-    margin-top:35px;
-    gap:12px;
+    flex-direction:row;
+    margin-top:16px;
+    gap:8px;
     width:100%
   }
   .nav-item {
-    font-size:0;
-    padding:14px;
-    gap:0;
+    flex:1;
+    padding:12px 8px;
+    gap:8px;
     justify-content:center
   }
   .nav-item>span:first-child {
@@ -1227,7 +1296,7 @@ dialog input::placeholder {
     height:19px
   }
   .app-shell {
-    margin-left:72px
+    margin-left:0
   }
   .topbar {
     padding:10px 22px;
@@ -1236,20 +1305,8 @@ dialog input::placeholder {
   main {
     padding:26px 22px 0
   }
-  .page-heading {
-    align-items:center
-  }
-  .heading-actions {
-    margin-top:0
-  }
-  .page-heading h1 {
-    font-size:25px
-  }
-  .timezone-select {
-    max-width:100px
-  }
   .toast {
-    left:calc(50% + 36px)
+    left:50%
   }
   .chart-summary>strong {
     font-size:22px
@@ -1272,18 +1329,12 @@ dialog input::placeholder {
 }
 @media(max-width:650px) {
   .sidebar {
-    width:58px;
-    padding:21px 6px 0
-  }
-  .brand img {
-    width:33px;
-    height:33px
+    padding:14px 16px
   }
   .nav-item {
-    padding:12px
-  }
-  .app-shell {
-    margin-left:58px
+    font-size:11px;
+    gap:5px;
+    padding:10px 5px
   }
   .topbar {
     padding:8px 16px;
@@ -1322,22 +1373,6 @@ dialog input::placeholder {
   main {
     padding:22px 16px 0
   }
-  .page-heading {
-    gap:8px;
-    margin-bottom:21px
-  }
-  .page-heading h1 {
-    font-size:23px
-  }
-  .heading-actions {
-    gap:5px;
-    margin-top:0
-  }
-  .heading-actions .button {
-    padding:7px 8px;
-    font-size:9px;
-    min-height:31px
-  }
   .demo-banner {
     padding:9px;
     font-size:8px;
@@ -1346,13 +1381,6 @@ dialog input::placeholder {
   }
   .demo-banner>span:nth-child(2) {
     max-width:240px
-  }
-  .demo-banner button {
-    font-size:8px;
-    padding:0
-  }
-  .demo-banner button span {
-    display:none
   }
   .filter-bar {
     gap:10px
@@ -1369,10 +1397,6 @@ dialog input::placeholder {
   .period-tabs button {
     font-size:9px;
     padding:5px 8px
-  }
-  .timezone-select {
-    font-size:8px;
-    max-width:84px
   }
   .date-button {
     font-size:8px;
@@ -1538,3 +1562,5 @@ dialog input::placeholder {
     animation:none!important
   }
 }
+
+.state-routing-reason { min-width: 180px; max-width: 300px; white-space: normal; line-height: 1.5; }

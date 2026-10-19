@@ -67,6 +67,61 @@ func TestDeviceIdentityHistoryPaginationAndRetention(t *testing.T) {
 	}
 }
 
+func TestSchemaFourActivityMigrationPreservesUnknownAndHistory(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "agent.db")
+	db, err := sql.Open("sqlite", dsn(path, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := fstest.MapFS{}
+	for _, name := range []string{"001_initial.sql", "002_collection.sql", "003_device_state.sql", "004_provider_routing.sql"} {
+		body, err := fs.ReadFile(migrations.Files, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = &fstest.MapFile{Data: body}
+	}
+	if err = migrate(ctx, db, files, path); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 19, 4, 0, 0, 0, time.UTC)
+	_, err = db.Exec(`INSERT INTO device_identity VALUES(1,'device','{}',?); INSERT INTO device_state_samples(device_id,collected_at_us,duration_ms,provider_running,routing_state,routing_priority,quality_json) VALUES('device',?,1,1,'routable','normal','{"provider_running":"ok","routing_state":"ok","routing_priority":"ok"}')`, now.UnixMicro(), now.Add(-time.Minute).UnixMicro())
+	if err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	old, err := s.LatestDeviceSample(ctx, now)
+	if err != nil || old.IsIdle != nil || old.InferenceActive != nil || old.Quality["is_idle"] != telemetry.Unsupported || old.Quality["routing_state"] != "" {
+		t.Fatalf("old state fabricated: %+v %v", old, err)
+	}
+	backups, _ := filepath.Glob(path + ".pre-v5-*.bak")
+	if len(backups) != 1 {
+		t.Fatal("schema 4 backup missing")
+	}
+	v := telemetry.NewSample(now)
+	v.DeviceID = "device"
+	v.IsIdle = telemetry.Ptr(false)
+	v.InferenceActive = telemetry.Ptr(false)
+	v.RequestWorkPending = telemetry.Ptr(false)
+	v.LastDeviceEarningAt = telemetry.Ptr(now.Add(-time.Minute))
+	v.LastEarningsSyncAt = telemetry.Ptr(now)
+	v.EarningsProviderID = telemetry.Ptr("own-provider")
+	v.Quality["is_idle"], v.Quality["inference_active"], v.Quality["request_work_pending"] = telemetry.OK, telemetry.OK, telemetry.OK
+	if err = s.SaveDeviceSample(ctx, v); err != nil {
+		t.Fatal(err)
+	}
+	latest, err := s.LatestDeviceSample(ctx, now)
+	if err != nil || latest.IsIdle == nil || *latest.IsIdle || latest.LastDeviceEarningAt == nil || !latest.LastDeviceEarningAt.Equal(*v.LastDeviceEarningAt) || latest.LastEarningsSyncAt == nil || latest.EarningsProviderID == nil || *latest.EarningsProviderID != "own-provider" {
+		t.Fatalf("activity round trip: %+v %v", latest, err)
+	}
+}
+
 func TestSchemaTwoUpgradeKeepsEarningsAndBacksUp(t *testing.T) {
 	ctx := context.Background()
 	path := filepath.Join(t.TempDir(), "agent.db")
@@ -102,7 +157,7 @@ func TestSchemaTwoUpgradeKeepsEarningsAndBacksUp(t *testing.T) {
 	if len(backups) != 1 {
 		t.Fatal("schema 2 upgrade backup missing")
 	}
-	if v, err := s.SchemaVersion(ctx); err != nil || v != 3 {
+	if v, err := s.SchemaVersion(ctx); err != nil || v != 5 {
 		t.Fatal("schema did not advance")
 	}
 }

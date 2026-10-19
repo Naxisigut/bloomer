@@ -8,7 +8,7 @@ import { queryAgent } from './lib/proxy.mjs';
 import { demoQuery } from './lib/demo.mjs';
 
 const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
-const assets = new Map([['/', ['index.html', 'text/html']], ['/styles.css', ['styles.css', 'text/css']], ['/app.js', ['app.js', 'text/javascript']], ['/data.js', ['data.js', 'text/javascript']], ['/pagination.js', ['pagination.js', 'text/javascript']], ['/favicon.svg', ['favicon.svg', 'image/svg+xml']]]);
+const assets = new Map([['/', ['index.html', 'text/html']], ['/styles.css', ['styles.css', 'text/css']], ['/app.js', ['app.js', 'text/javascript']], ['/data.js', ['data.js', 'text/javascript']], ['/device-state.js', ['device-state.js', 'text/javascript']], ['/device-ui.js', ['device-ui.js', 'text/javascript']], ['/pagination.js', ['pagination.js', 'text/javascript']], ['/favicon.svg', ['favicon.svg', 'image/svg+xml']]]);
 
 async function jsonBody(req) {
   if (!req.headers['content-type']?.startsWith('application/json')) throw new AppError(415, 'invalid_body', '请使用 JSON 提交连接信息。');
@@ -63,7 +63,7 @@ export async function createDashboard(options = {}) {
       } else if (req.method === 'DELETE' && /^\/api\/devices\/[\w-]+$/.test(pathname)) {
         await store.remove(pathname.split('/')[3]);
         send(200, { ok: true });
-      } else if (req.method === 'GET' && /^\/api\/devices\/[\w-]+\/(health|overview|earnings|stats)$/.test(pathname)) {
+      } else if (req.method === 'GET' && /^\/api\/devices\/[\w-]+\/(health|overview|earnings|stats|device-state|device-history)$/.test(pathname)) {
         const [, , , id, route] = pathname.split('/');
         send(200, id === 'demo' ? demoQuery(route, searchParams) : await queryAgent(await store.get(id), route, searchParams));
       } else {

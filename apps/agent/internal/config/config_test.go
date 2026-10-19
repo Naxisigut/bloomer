@@ -61,3 +61,14 @@ func TestIndependentPrivateAccessToken(t *testing.T) {
 		t.Fatal("symlink token accepted")
 	}
 }
+
+func TestRemovedOwnerConfigurationIsIgnoredOnUpgrade(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"provider_account_token_file":"official.token","provider_id":"device-a"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Load(path); err != nil {
+		t.Fatal("legacy owner settings prevented upgrade:", err)
+	}
+}

@@ -175,3 +175,28 @@ test('demo endpoints use the actual contract, filter models, and paginate withou
   const stats = await (await fetch(`${url}/api/devices/demo/stats?` + new URLSearchParams({ ...range, group_by: 'model', timezone: 'Asia/Shanghai' }))).json();
   assert.equal(stats.group_by, 'model'); assert.ok(stats.items.every(item => /^\d+$/.test(item.amount_micro_usd))); assert.equal(stats.meta.coverage.status, 'partial');
 });
+
+test('device state routes proxy latest/history and isolate unsupported old agents', async t => {
+  let supported = true, lastPath;
+  const upstream = http.createServer((req, res) => {
+    assert.equal(req.headers.authorization, 'Bearer state-test-token');
+    lastPath = req.url;
+    if (req.url === '/v1/health') { res.setHeader('Content-Type', 'application/json'); res.end(JSON.stringify({ version: '1.0.2', collection_state: 'idle' })); return; }
+    if (!supported) { res.writeHead(404, { 'Content-Type': 'text/plain' }); res.end('unsupported old route'); return; }
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(req.url === '/v1/device/state' ? { sample: { cpu_percent: 0, quality: { cpu_percent: 'ok' } }, meta: { data_stale: false } } : { items: [], next_before_id: null }));
+  });
+  const upstreamURL = await listen(upstream, t);
+  const server = await createDashboard({ store: await storeFor(t) }); const url = await listen(server, t);
+  const created = await fetch(`${url}/api/devices`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: '状态设备', url: upstreamURL, token: 'state-test-token' }) });
+  const device = await created.json();
+  const latest = await (await fetch(`${url}/api/devices/${device.id}/device-state`)).json();
+  assert.equal(latest.sample.cpu_percent, 0); assert.equal(lastPath, '/v1/device/state');
+  const history = await fetch(`${url}/api/devices/${device.id}/device-history?limit=25&before_id=42`);
+  assert.equal(history.status, 200); assert.equal(lastPath, '/v1/device/state/history?limit=25&before_id=42');
+  for (const asset of ['device-state.js', 'device-ui.js']) assert.equal((await fetch(`${url}/${asset}`)).status, 200);
+  supported = false;
+  const old = await fetch(`${url}/api/devices/${device.id}/device-state`);
+  assert.equal(old.status, 404); assert.equal((await old.json()).code, 'device_state_unsupported');
+  assert.equal((await fetch(`${url}/api/devices/${device.id}/health`)).status, 200);
+});

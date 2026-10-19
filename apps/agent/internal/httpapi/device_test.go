@@ -47,6 +47,9 @@ func TestDeviceAPIOfflineAccountFreshnessAndBoundedHistory(t *testing.T) {
 		v.DeviceID = id
 		v.CPUPercent = telemetry.Ptr(float64(i))
 		v.Quality["cpu_percent"] = telemetry.OK
+		v.InferenceActive, v.RequestWorkPending, v.IsIdle = telemetry.Ptr(false), telemetry.Ptr(false), telemetry.Ptr(true)
+		v.LastDeviceEarningAt = telemetry.Ptr(now.Add(-6 * time.Minute))
+		v.Quality["inference_active"], v.Quality["request_work_pending"], v.Quality["is_idle"] = telemetry.OK, telemetry.OK, telemetry.OK
 		if err = s.SaveDeviceSample(context.Background(), v); err != nil {
 			t.Fatal(err)
 		}
@@ -55,6 +58,10 @@ func TestDeviceAPIOfflineAccountFreshnessAndBoundedHistory(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"data_stale":false`) {
 		t.Fatalf("fresh telemetry unavailable without earnings: %s", w.Body)
 	}
+	if !strings.Contains(w.Body.String(), `"is_idle":true`) || !strings.Contains(w.Body.String(), `"inference_active":false`) || strings.Contains(w.Body.String(), "routing_") {
+		t.Fatalf("activity payload incorrect: %s", w.Body)
+	}
+
 	w = request("/v1/device/state/history?limit=2", auth)
 	var body struct {
 		Items []telemetry.Sample `json:"items"`

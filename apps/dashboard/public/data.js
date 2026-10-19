@@ -1,3 +1,5 @@
+export const DASHBOARD_TIMEZONE = 'Asia/Shanghai';
+
 export function money(value, digits = 2) {
   if (value === undefined || value === null) return '—';
   let amount = BigInt(value);
