@@ -1,26 +1,16 @@
-import { money, sumMoney, sumCount, timeRange, dateKey, csvRows } from './data.js';
+import { money, sumMoney, sumCount, timeRange, rollingRange, dateKey, shiftDate, zonedMidnight, trendGroups, csvRows } from './data.js';
+import { CursorPager } from './pagination.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 const number = value => new Intl.NumberFormat('en-US').format(value);
-const colors = ['#365c43', '#8ba86c', '#bdce9a', '#dce5c7', '#e9eddf'];
 const icons = {
   overview: '<rect x="3" y="3" width="7" height="7" rx="1.3"/><rect x="14" y="3" width="7" height="7" rx="1.3"/><rect x="3" y="14" width="7" height="7" rx="1.3"/><rect x="14" y="14" width="7" height="7" rx="1.3"/>',
   records: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   devices: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M7 13h4"/>',
-  shield: '<path d="M12 3 4 6v6c0 4 4 7 8 9 4-2 8-5 8-9V6l-8-3Z"/><path d="m8 12 3 3 5-6"/>',
-  plus: '<path d="M12 5v14M5 12h14"/>',
-  refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/>',
-  calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M7 3v4M17 3v4M3 11h18M8 15h2M14 15h2"/>',
-  growth: '<path d="m3 17 6-6 4 4 8-10M15 5h6v6"/>',
-  wallet: '<path d="M20 7H6a2 2 0 0 1 0-4h12v4M4 5v14a2 2 0 0 0 2 2h14V7"/><path d="M20 11h-5v6h5M17 14h.1"/>',
-  balance: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h4"/>',
-  donut: '<path d="M12 3v9h9A9 9 0 1 1 8 4M16 3a9 9 0 0 1 5 5h-5V3Z"/>',
-  download: '<path d="M12 3v12m-5-5 5 5 5-5M4 16v5h16v-5"/>',
-  alert: '<path d="m12 3 10 18H2L12 3Z"/><path d="M12 9v5M12 17h.01"/>',
 };
-const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name] || icons.alert}</svg>`;
+const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 $$('[data-icon]').forEach(element => { element.innerHTML = icon(element.dataset.icon); });
 
 function preference(key, value) {
@@ -29,13 +19,16 @@ function preference(key, value) {
 
 const state = {
   devices: [], selected: preference('device') || null, period: '30', timezone: preference('timezone') || 'Asia/Shanghai',
-  custom: {}, model: '', chart: 'amount', view: 'overview', data: {}, health: new Map(), cursors: [null], page: 0,
-  generation: 0, busy: false, exporting: false, exportController: null, fetchedAt: null, errors: [], range: null,
+  custom: {}, model: '', trendGroup: 'day', view: 'overview', data: {}, health: new Map(), page: 0,
+  pageSize: Number(preference('pageSize') || 10), pager: null, pageController: null, pendingPage: null,
+  generation: 0, busy: false, exporting: false, exportController: null, fetchedAt: null, errors: [], summaryErrors: [], filterErrors: [], range: null,
 };
+if (!Number.isInteger(state.pageSize) || state.pageSize < 1 || state.pageSize > 500) state.pageSize = 10;
+$('#page-size').value = state.pageSize;
 try { new Intl.DateTimeFormat('en', { timeZone: state.timezone }); } catch { state.timezone = 'Asia/Shanghai'; }
 if (![...$('#timezone').options].some(option => option.value === state.timezone)) $('#timezone').add(new Option(state.timezone, state.timezone));
 $('#timezone').value = state.timezone;
-const demoDevice = { id: 'demo', name: 'Mac mini · 演示设备', url: '演示工作区 · 所有收益均为示例', source: 'demo' };
+const demoDevice = { id: 'demo', name: '演示设备', url: '演示数据', source: 'demo' };
 const selectedDevice = () => state.selected === 'demo' ? demoDevice : state.devices.find(device => device.id === state.selected);
 const deviceChoices = () => [...state.devices, demoDevice];
 let toastTimer;
@@ -62,11 +55,35 @@ async function api(path, options = {}) {
 }
 const query = (route, params, device = state.selected, signal) => api(`/api/devices/${encodeURIComponent(device)}/${route}${params ? '?' + new URLSearchParams(params) : ''}`, { signal });
 
-function resetQuery() {
+function resetQuery({ clearModel = false, preserveSummary = false } = {}) {
   state.exportController?.abort();
-  state.cursors = [null]; state.page = 0; state.model = ''; state.data = {}; state.errors = [];
+  const { overview, lastHour, lastDay } = state.data;
+  state.page = 0; state.data = preserveSummary ? { overview, lastHour, lastDay } : {};
+  if (!preserveSummary) state.summaryErrors = [];
+  state.filterErrors = [];
+  state.errors = [...state.summaryErrors];
+  if (clearModel) state.model = '';
   state.range = timeRange(state.period, state.timezone, new Date(), state.custom);
-  $('#model-filter').innerHTML = '<option value="">全部模型</option>';
+}
+
+function renderModelFilters() {
+  const models = state.data.models?.items || [];
+  const choices = [...new Set([...models.map(item => item.key), ...(state.model ? [state.model] : [])])].sort();
+  const options = '<option value="">全部模型</option>' + choices.map(model => `<option value="${escape(model)}" ${state.model === model ? 'selected' : ''}>${escape(model)}</option>`).join('');
+  $$('[data-model-filter]').forEach(select => { select.innerHTML = options; select.disabled = state.busy; });
+}
+
+function syncTrendGrouping() {
+  const groups = trendGroups(state.range, state.timezone);
+  if (!groups.includes(state.trendGroup)) state.trendGroup = groups[0];
+  $('#trend-grouping').hidden = groups.length === 1;
+  $('#chart-grain').textContent = ({ hour: '按小时', day: '按天', month: '按月' })[state.trendGroup];
+  $$('[data-group]').forEach(button => {
+    const selected = button.dataset.group === state.trendGroup;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-pressed', String(selected));
+    button.disabled = state.busy;
+  });
 }
 
 function healthStatus(health) {
@@ -89,7 +106,7 @@ function renderDevices() {
   $('#device-cards').innerHTML = deviceChoices().map(device => {
     const health = state.health.get(device.id);
     const status = healthStatus(health);
-    return `<article class="device-card ${device.id === active ? 'selected' : ''}"><div class="device-card-header"><span>${icon('devices')}</span><h3>${escape(device.name)}</h3><span class="status-tag ${status.className}">${status.label}</span></div><p class="device-url">${escape(device.url)}</p><div class="device-stat"><span>最近成功采集</span><strong>${escape(relative(health?.last_successful_sync_at))}</strong></div><div class="device-stat"><span>Agent 版本</span><strong>${escape(health?.version || '—')}${device.id === 'demo' ? ' · 演示' : ''}</strong></div>${health?.error ? `<p class="device-url">${escape(health.error)}</p>` : ''}<div class="device-card-actions"><button class="button ${device.id === active ? 'button-dark' : 'button-white'}" data-select-device="${escape(device.id)}">${device.id === active ? '当前数据来源' : '查看收益'}</button>${device.source !== 'local' && device.id !== 'demo' ? `<button class="button remove-device" data-remove-device="${escape(device.id)}">移除</button>` : ''}</div></article>`;
+    return `<article class="device-card ${device.id === active ? 'selected' : ''}"><div class="device-card-header"><h3>${escape(device.name)}</h3><span class="status-tag ${status.className}">${status.label}</span></div><p class="device-url">${escape(device.url)}</p><div class="device-stat"><span>最近成功采集</span><strong>${escape(relative(health?.last_successful_sync_at))}</strong></div><div class="device-stat"><span>Agent 版本</span><strong>${escape(health?.version || '—')}${device.id === 'demo' ? ' · 演示' : ''}</strong></div>${health?.error ? `<p class="device-url">${escape(health.error)}</p>` : ''}<div class="device-card-actions"><button class="button ${device.id === active ? 'button-dark' : 'button-white'}" data-select-device="${escape(device.id)}">${device.id === active ? '当前数据来源' : '查看收益'}</button>${device.source !== 'local' && device.id !== 'demo' ? `<button class="button remove-device" data-remove-device="${escape(device.id)}">移除</button>` : ''}</div></article>`;
   }).join('');
   renderHealth();
 }
@@ -122,25 +139,21 @@ function renderAlerts() {
   if (meta?.coverage?.gap_count || health?.coverage?.gap_count) alerts.push(['', `已检测到 ${meta?.coverage?.gap_count || health.coverage.gap_count} 段疑似历史缺口，本地收益可能不完整。可在“我的设备”查看区间。`]);
   if (metaList.some(item => item.range_truncated)) alerts.push(['info', '部分查询时间超出明细保留范围，已按滚动 365 天截取。']);
   if (health?.cleanup?.state === 'failed') alerts.push(['', '最近一次过期数据清理失败，设备将继续重试。']);
-  $('#alerts').innerHTML = alerts.map(([type, message]) => `<div class="alert ${type}">${icon('alert')}<span>${escape(message)}</span></div>`).join('');
+  $('#alerts').innerHTML = alerts.map(([type, message]) => `<div class="alert ${type}">${escape(message)}</div>`).join('');
   $('#coverage-tag').textContent = meta?.coverage ? `历史覆盖 · ${meta.coverage.gap_count ? '疑似缺口' : '已保存部分历史'}` : '等待历史信息';
 }
 
 function renderMetrics() {
-  const { trend, models, overview } = state.data;
+  const { trend, lastHour, lastDay, overview } = state.data;
   const amount = trend ? sumMoney(trend.items) : null;
-  $('#period-amount').textContent = money(amount);
-  $('#period-count').textContent = trend ? number(sumCount(trend.items)) : '—';
-  $('#period-record-hint').textContent = `来自本地保存的收益明细${state.model ? ' · 已筛选' : ''}`;
-  $('#model-count').textContent = models ? `${models.items.length} 个模型产生收益记录` : '等待模型数据';
-  $('#official-amount').textContent = money(overview?.official?.total_micro_usd);
+  $('#last-hour-amount').textContent = money(lastHour ? sumMoney(lastHour.items) : null, 4);
+  $('#last-day-amount').textContent = money(lastDay ? sumMoney(lastDay.items) : null, 4);
   $('#available-balance').textContent = money(overview?.official?.available_balance_micro_usd);
   $('#withdrawable-balance').textContent = money(overview?.official?.withdrawable_balance_micro_usd);
-  $('#chart-total').textContent = state.chart === 'amount' ? money(amount) : trend ? `${number(sumCount(trend.items))} 笔` : '—';
-  $('#chart-subtitle').textContent = state.chart === 'amount' ? '所选时段已记录收益' : '所选时段任务记录';
-  $('#chart-legend').textContent = state.chart === 'amount' ? '收益 (USD)' : '任务记录';
+  $$('.summary-amount, #withdrawable-balance').forEach(element => { element.title = element.textContent; });
+  $('#chart-total').textContent = money(amount);
   $('#chart-timezone').textContent = state.timezone;
-  $('#chart-grain').textContent = state.period === '7' ? '按小时' : '按日';
+  syncTrendGrouping();
   const start = state.range?.from;
   $('#range-label').textContent = start ? `${dateTime(start, true)} — ${dateTime(new Date(Date.parse(state.range.to) - 1), true)}` : '选择日期';
   $('#table-timezone').textContent = state.timezone === 'Asia/Shanghai' ? 'UTC+8' : state.timezone;
@@ -148,99 +161,151 @@ function renderMetrics() {
 
 function renderTrend() {
   const items = state.data.trend?.items;
-  if (!items?.length) { $('#trend-chart').innerHTML = '<div class="empty-state"><strong>这里即将长出收益。</strong>当前条件下没有已保存的收益记录。</div>'; return; }
-  const width = 720, height = 220, left = 47, right = 8, top = 10, bottom = 27;
+  if (!items?.length) { $('#trend-chart').innerHTML = `<div class="empty-state">${items ? '暂无收益记录' : state.busy ? '正在读取收益趋势…' : '趋势数据不可用'}</div>`; return; }
+  const width = $('#trend-chart').clientWidth || 720, height = $('#trend-chart').clientHeight || 220;
+  const left = 47, right = 8, top = 10, bottom = 27;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
   // Exact integer sums are kept above. Conversion is only used for SVG geometry.
-  const values = items.map(item => state.chart === 'amount' ? Number(BigInt(item.amount_micro_usd)) / 1e6 : item.record_count);
+  const values = items.map(item => Number(BigInt(item.amount_micro_usd)) / 1e6);
   const min = Math.min(0, ...values), max = Math.max(0, ...values);
   const low = min < 0 ? min * 1.15 : 0, high = max > 0 ? max * 1.15 : 1;
   const y = value => top + (high - value) / (high - low) * plotHeight;
   const from = Date.parse(state.range.from), to = Date.parse(state.range.to);
-  const granularity = state.period === '7' ? 3_600_000 : 86_400_000;
-  const count = Math.max(1, (to - from) / granularity);
-  const barWidth = Math.min(22, Math.max(1, plotWidth / count * 0.65));
   let svg = '';
   for (let step = 0; step <= 4; step++) {
     const value = low + (high - low) * step / 4;
-    const label = state.chart === 'amount' ? `$${Math.abs(value) >= 1000 ? (value / 1000).toFixed(1) + 'k' : value.toFixed(Math.abs(value) < 1 ? 2 : 0)}` : Math.round(value).toString();
+    const label = `$${Math.abs(value) >= 1000 ? (value / 1000).toFixed(1) + 'k' : value.toFixed(Math.abs(value) < 1 ? 2 : 0)}`;
     svg += `<line class="chart-grid" x1="${left}" x2="${width - right}" y1="${y(value)}" y2="${y(value)}"/><text class="chart-label" x="${left - 10}" y="${y(value) + 3}" text-anchor="end">${escape(label)}</text>`;
   }
   svg += `<defs><clipPath id="chart-clip"><rect x="${left}" y="0" width="${plotWidth}" height="${height - bottom}"/></clipPath></defs><g clip-path="url(#chart-clip)">`;
   items.forEach((item, index) => {
-    const timestamp = (Math.max(from, Date.parse(item.from)) + Math.min(to, Date.parse(item.to))) / 2;
+    const start = Math.max(from, Date.parse(item.from)), end = Math.min(to, Date.parse(item.to));
+    const timestamp = (start + end) / 2;
+    const barWidth = Math.min(28, Math.max(1, (end - start) / (to - from) * plotWidth * 0.65));
     const x = left + (timestamp - from) / (to - from) * plotWidth - barWidth / 2;
     const value = values[index];
-    const title = `${item.key} · ${state.chart === 'amount' ? money(item.amount_micro_usd, 4) : number(item.record_count) + ' 笔'}`;
+    const title = `${item.key} · ${money(item.amount_micro_usd, 4)}`;
     svg += `<rect class="chart-bar" data-point="${index}" tabindex="0" role="img" aria-label="${escape(title)}" x="${x}" y="${Math.min(y(value), y(0))}" width="${barWidth}" height="${Math.max(1, Math.abs(y(value) - y(0)))}" rx="2"><title>${escape(title)}</title></rect>`;
   });
   svg += '</g>';
-  for (let step = 0; step <= 5; step++) {
-    const instant = from + (to - from) * step / 5;
-    svg += `<text class="chart-label" x="${left + plotWidth * step / 5}" y="${height - 5}" text-anchor="${step === 0 ? 'start' : step === 5 ? 'end' : 'middle'}">${escape(dateTime(instant, true))}</text>`;
-  }
-  $('#trend-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="group" aria-label="${state.chart === 'amount' ? '收益' : '任务'}趋势，空白区间没有已保存记录">${svg}</svg><div class="chart-tooltip" hidden></div>`;
+  const ticks = trendTicks(from, to, Math.max(2, Math.floor(plotWidth / (state.trendGroup === 'month' ? 80 : 48))));
+  ticks.forEach((tick, index) => {
+    const x = left + (tick.instant - from) / (to - from) * plotWidth;
+    svg += `<text class="chart-label" x="${x}" y="${height - 5}" text-anchor="${index === 0 ? 'start' : index === ticks.length - 1 ? 'end' : 'middle'}">${escape(tick.label)}</text>`;
+  });
+  $('#trend-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="group" aria-label="收益趋势，空白区间没有已保存记录">${svg}</svg><div class="chart-tooltip" hidden></div>`;
   const showTooltip = event => {
     const bar = event.target.closest('[data-point]');
     if (!bar) return;
     const item = items[Number(bar.dataset.point)];
     const tooltip = $('#trend-chart .chart-tooltip');
-    tooltip.innerHTML = `${escape(item.key)}<strong>${escape(money(item.amount_micro_usd, 4))}</strong>${number(item.record_count)} 笔任务记录`;
+    tooltip.innerHTML = `${escape(item.key)}<strong>${escape(money(item.amount_micro_usd, 4))}</strong>`;
     tooltip.hidden = false;
   };
   $('#trend-chart').onpointerover = showTooltip;
   $('#trend-chart').onfocusin = showTooltip;
-  $('#trend-chart').onpointerleave = () => { $('#trend-chart .chart-tooltip').hidden = true; };
-  $('#trend-chart').onfocusout = () => { $('#trend-chart .chart-tooltip').hidden = true; };
+  const hideTooltip = () => { const tooltip = $('#trend-chart .chart-tooltip'); if (tooltip) tooltip.hidden = true; };
+  $('#trend-chart').onpointerleave = hideTooltip;
+  $('#trend-chart').onfocusout = hideTooltip;
 }
 
-function renderModels() {
-  const items = state.data.models?.items;
-  if (!items?.length) { $('#model-chart').innerHTML = '<div class="empty-state">暂无模型记录</div>'; $('#model-list').innerHTML = ''; return; }
-  const sorted = [...items].sort((a, b) => BigInt(a.amount_micro_usd) > BigInt(b.amount_micro_usd) ? -1 : BigInt(a.amount_micro_usd) < BigInt(b.amount_micro_usd) ? 1 : 0);
-  const positiveTotal = sorted.reduce((sum, item) => sum + (BigInt(item.amount_micro_usd) > 0n ? BigInt(item.amount_micro_usd) : 0n), 0n);
-  const top = sorted.slice(0, 4);
-  if (sorted.length > 4) top.push({ key: '其他模型', amount_micro_usd: sumMoney(sorted.slice(4)).toString() });
-  let offset = 0;
-  const rings = top.map((item, index) => {
-    const amount = BigInt(item.amount_micro_usd);
-    const share = positiveTotal && amount > 0n ? Number(amount * 10000n / positiveTotal) / 100 : 0;
-    const markup = `<circle cx="80" cy="80" r="61" pathLength="100" fill="none" stroke="${colors[index]}" stroke-width="15" stroke-dasharray="${Math.max(0, share - 1.5)} ${100 - Math.max(0, share - 1.5)}" stroke-dashoffset="${-offset}"><title>${escape(item.key)} · ${escape(money(item.amount_micro_usd))}</title></circle>`;
-    offset += share; return markup;
-  }).join('');
-  $('#model-chart').innerHTML = `<svg viewBox="0 0 160 160" role="img" aria-label="模型正收益占比分布"><circle cx="80" cy="80" r="61" fill="none" stroke="#f1f4eb" stroke-width="15"/>${rings}</svg><div class="donut-center"><strong>${items.length.toString().padStart(2, '0')}</strong><span>贡献模型</span></div>`;
-  $('#model-list').innerHTML = top.map((item, index) => `<div class="model-item"><i style="background:${colors[index]}"></i><span class="model-name" title="${escape(item.key)}">${escape(item.key)}</span><span class="model-share">${positiveTotal > 0n && BigInt(item.amount_micro_usd) > 0n ? Number(BigInt(item.amount_micro_usd) * 1000n / positiveTotal) / 10 : 0}%</span><span class="model-amount">${escape(money(item.amount_micro_usd))}</span></div>`).join('');
-  if (sorted.some(item => BigInt(item.amount_micro_usd) < 0n)) $('.model-footer').textContent = '环形图按正收益占比绘制；列表保留调整金额';
-  else $('.model-footer').textContent = '按所选时段的已记录收益统计';
+function trendTicks(from, to, maxTicks) {
+  const group = state.trendGroup, ticks = [];
+  let start = group === 'month' ? +zonedMidnight(dateKey(from, state.timezone).slice(0, 7) + '-01', state.timezone) : from;
+  const formatter = new Intl.DateTimeFormat('zh-CN', { timeZone: state.timezone, ...(group === 'hour' ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' } : group === 'month' ? { year: 'numeric', month: '2-digit' } : { month: '2-digit', day: '2-digit' }) });
+  while (start < to) {
+    const date = dateKey(start, state.timezone);
+    const nextMonth = new Date(`${date.slice(0, 7)}-01T12:00:00Z`);
+    nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
+    const end = group === 'hour' ? start + 3_600_000 : +zonedMidnight(group === 'month' ? nextMonth.toISOString().slice(0, 10) : shiftDate(date, 1), state.timezone);
+    ticks.push({ instant: (Math.max(from, start) + Math.min(to, end)) / 2, label: formatter.format(new Date(start)) });
+    start = end;
+  }
+  const count = Math.min(6, maxTicks, ticks.length);
+  return Array.from({ length: count }, (_, index) => ticks[count === 1 ? 0 : Math.round(index * (ticks.length - 1) / (count - 1))]);
 }
 
 function renderRecords() {
+  renderModelFilters();
   const page = state.data.earnings;
-  $('#records-body').innerHTML = page?.items.length ? page.items.map(item => `<tr><td><div class="model-cell"><span class="model-avatar">${escape(item.model.charAt(0).toUpperCase())}</span><div class="model-text"><strong title="${escape(item.model)}">${escape(item.model)}</strong><small title="记录 ${escape(item.record_id)} · Provider ${escape(item.provider_id)}">${escape(item.job_id || item.record_id)}</small></div></div></td><td class="amount-cell">${escape(money(item.amount_micro_usd, 6))}</td><td>${number(item.prompt_tokens)}</td><td>${number(item.completion_tokens)}</td><td>${escape(dateTime(item.created_at))}</td><td><span class="saved-tag">已记录</span></td></tr>`).join('') : `<tr><td colspan="6"><div class="empty-state"><strong>${page ? '还没有符合条件的收益' : '暂时无法读取明细'}</strong>${page ? '试着换个时间范围或模型，看看其他收益。' : '请检查设备连接和采集状态，然后刷新。'}</div></td></tr>`;
-  $('#records-count').textContent = state.data.trend ? number(sumCount(state.data.trend.items)) : '—';
-  $('#page-number').textContent = String(state.page + 1).padStart(2, '0');
-  $('#page-info').textContent = page?.items.length ? `第 ${state.page * 10 + 1}–${state.page * 10 + page.items.length} 条 · 按时间倒序${state.page ? ' · 翻页时暂停自动刷新明细' : ''}` : '每页 10 条 · 按时间倒序';
+  const total = state.data.trend ? sumCount(state.data.trend.items) : null;
+  const pages = total === null ? null : Math.max(1, Math.ceil(total / state.pageSize));
+  $('#records-body').innerHTML = page?.items.length ? page.items.map(item => `<tr><td><div class="model-text"><strong title="${escape(item.model)}">${escape(item.model)}</strong><small title="记录 ${escape(item.record_id)} · Provider ${escape(item.provider_id)}">${escape(item.job_id || item.record_id)}</small></div></td><td class="amount-cell">${escape(money(item.amount_micro_usd, 6))}</td><td>${number(item.prompt_tokens)}</td><td>${number(item.completion_tokens)}</td><td>${escape(dateTime(item.created_at))}</td></tr>`).join('') : `<tr><td colspan="5"><div class="empty-state">${page ? '当前筛选无记录' : state.busy ? '正在读取记录…' : '明细读取失败，请检查设备后刷新。'}</div></td></tr>`;
+  $('#records-body').setAttribute('aria-busy', String(state.busy));
+  $('#records-count').textContent = total === null ? '—' : number(total);
+  $('#page-number').textContent = `${state.page + 1} / ${pages === null ? '—' : number(pages)}`;
+  const shown = page?.items.length ? `第 ${number(state.page * state.pageSize + 1)}–${number(state.page * state.pageSize + page.items.length)} 条` : '无记录';
+  $('#page-info').textContent = `${shown}${total === null ? '' : ` / 共 ${number(total)} 条`}${state.page ? ' · 自动刷新已暂停' : ''}`;
   $('#prev-page').disabled = state.busy || !state.page;
   $('#next-page').disabled = state.busy || !page?.next_cursor;
+  $('#page-size').disabled = state.busy;
+  $('#page-size-form button').disabled = state.busy;
+  const jump = $('#page-input');
+  jump.disabled = state.busy || !page || pages === null;
+  $('#page-jump-form button[type="submit"]').disabled = jump.disabled;
+  if (pages === null) jump.removeAttribute('max'); else jump.max = pages;
+  if (document.activeElement !== jump) jump.value = state.page + 1;
+  $('#pagination-status').hidden = state.pendingPage === null;
+  $('#pagination-status').textContent = state.pendingPage === null ? '' : `正在前往第 ${number(state.pendingPage + 1)} 页…`;
+  $('#cancel-page').hidden = !state.pageController;
+  $('#refresh').disabled = state.busy;
+  $('#refresh').textContent = state.busy && !state.pageController ? '刷新中…' : '刷新数据';
   $('#export-csv').disabled = state.busy || state.exporting || !page?.items.length;
 }
 
-function renderAll() { renderDevices(); renderMetrics(); renderTrend(); renderModels(); renderRecords(); renderAlerts(); }
+function renderAll() { renderDevices(); renderMetrics(); renderTrend(); renderRecords(); renderAlerts(); }
 
-async function loadData({ reset = false } = {}) {
+function summaryJobs(device = state.selected) {
+  const now = new Date(), params = { group_by: 'day', timezone: 'UTC' };
+  return [
+    ['overview', query('overview', null, device)],
+    ['lastHour', query('stats', { ...rollingRange(1, now), ...params }, device)],
+    ['lastDay', query('stats', { ...rollingRange(24, now), ...params }, device)],
+  ];
+}
+
+async function refreshSummary() {
+  const device = state.selected, generation = state.generation, jobs = summaryJobs(device);
+  const results = await Promise.allSettled(jobs.map(([, promise]) => promise));
+  if (device !== state.selected || generation !== state.generation) return;
+  state.summaryErrors = [];
+  results.forEach((result, index) => {
+    const key = jobs[index][0];
+    if (result.status === 'fulfilled') state.data[key] = result.value;
+    else { delete state.data[key]; state.summaryErrors.push(result.reason.message); }
+  });
+  state.errors = [...new Set([...state.summaryErrors, ...state.filterErrors])];
+  renderMetrics(); renderAlerts();
+}
+
+async function loadData({ reset = false, clearModel = false, filtersOnly = false } = {}) {
+  state.pageController?.abort();
+  state.pageController = null; state.pendingPage = null;
   const generation = ++state.generation;
-  if (reset) { resetQuery(); renderAll(); }
-  state.busy = true; document.body.classList.add('loading'); $('#refresh').disabled = true; renderRecords();
+  // An early filter change must still finish the device's first summary load.
+  filtersOnly = filtersOnly && ['overview', 'lastHour', 'lastDay'].some(key => state.data[key]);
+  state.busy = true;
+  if (reset) { resetQuery({ clearModel, preserveSummary: filtersOnly }); renderAll(); }
+  state.page = 0;
+  renderRecords();
+  syncTrendGrouping();
+  $('#trend-chart').setAttribute('aria-busy', 'true');
   const params = { ...state.range, ...(state.model ? { model: state.model } : {}) };
+  const device = state.selected;
+  const pager = new CursorPager(({ limit, cursor, signal }) => query('earnings', { ...params, limit, ...(cursor ? { cursor } : {}) }, device, signal));
+  state.pager = pager;
   const jobs = [
-    ['health', query('health')], ['overview', query('overview')],
-    ['trend', query('stats', { ...params, group_by: state.period === '7' ? 'hour' : 'day', timezone: state.timezone })],
+    ...(!filtersOnly ? [
+      ['health', query('health')], ...summaryJobs(device),
+    ] : []),
+    ['trend', query('stats', { ...params, group_by: state.trendGroup, timezone: state.timezone })],
     ['models', query('stats', { ...state.range, group_by: 'model', timezone: state.timezone })],
-    ['earnings', query('earnings', { ...params, limit: 10, ...(state.cursors[state.page] ? { cursor: state.cursors[state.page] } : {}) })],
+    ['earnings', pager.page(0, state.pageSize)],
   ];
   const results = await Promise.allSettled(jobs.map(([, promise]) => promise));
   if (generation !== state.generation) return;
   const errors = [];
+  if (!filtersOnly) state.summaryErrors = [];
   results.forEach((result, index) => {
     const key = jobs[index][0];
     if (result.status === 'fulfilled') {
@@ -248,15 +313,17 @@ async function loadData({ reset = false } = {}) {
       else state.data[key] = result.value;
     } else {
       if (key === 'health') state.health.set(state.selected, { error: result.reason.message });
-      else { delete state.data[key]; errors.push(result.reason.message); }
+      else {
+        delete state.data[key];
+        (['overview', 'lastHour', 'lastDay'].includes(key) ? state.summaryErrors : errors).push(result.reason.message);
+      }
     }
   });
-  state.errors = [...new Set(errors)];
-  state.busy = false; document.body.classList.remove('loading'); $('#refresh').disabled = false;
+  state.filterErrors = errors;
+  state.errors = [...new Set([...state.summaryErrors, ...state.filterErrors])];
+  state.busy = false;
+  $('#trend-chart').setAttribute('aria-busy', 'false');
   if (results.some(result => result.status === 'fulfilled')) state.fetchedAt = new Date();
-  const models = state.data.models?.items || [];
-  const choices = [...new Set([...models.map(item => item.key), ...(state.model ? [state.model] : [])])].sort();
-  $('#model-filter').innerHTML = '<option value="">全部模型</option>' + choices.map(model => `<option value="${escape(model)}" ${state.model === model ? 'selected' : ''}>${escape(model)}</option>`).join('');
   renderAll(); updateClock();
 }
 
@@ -275,30 +342,33 @@ async function checkDevices() {
 
 function setView(view) {
   state.view = view; $('#main').dataset.view = view;
-  const titles = { overview: ['收益概览', '看看你的算力，今天又带来了什么。'], records: ['收益明细', '让每一笔收益，有据可查。'], devices: ['我的设备', '设备安心运行，收益持续生长。'] };
-  $('#page-title').innerHTML = `${titles[view][0]}<span class="title-flower">✳</span>`;
-  $('#page-description').textContent = titles[view][1]; $('#breadcrumb-current').textContent = titles[view][0];
-  document.title = `Bloomer · ${titles[view][0]}`;
+  $('#overview-topbar').hidden = view !== 'overview';
+  const titles = { overview: '收益分析', records: '收益明细', devices: '我的设备' };
+  $('#page-title').textContent = titles[view];
+  const slot = $(view === 'records' ? '#records-filters-slot' : '#trend-filters-slot');
+  if ($('#earnings-filters').parentElement !== slot) slot.append($('#earnings-filters'));
+  document.title = `Bloomer · ${titles[view]}`;
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  $('#records-title').innerHTML = `${view === 'records' ? '收益记录' : '最近收益'}<span id="records-count" class="count-badge">${state.data.trend ? number(sumCount(state.data.trend.items)) : '—'}</span>`;
   if (view === 'devices') checkDevices();
   history.replaceState(null, '', `#${view}`);
 }
 
-async function selectDevice(id) { state.selected = id; preference('device', id); await loadData({ reset: true }); }
+async function selectDevice(id) { state.selected = id; preference('device', id); await loadData({ reset: true, clearModel: true }); }
 $$('.nav-item').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
 $('#device-select').addEventListener('change', event => selectDevice(event.target.value));
-$('#refresh').addEventListener('click', () => { state.cursors = [null]; state.page = 0; state.range = timeRange(state.period, state.timezone, new Date(), state.custom); loadData(); if (state.view === 'devices') checkDevices(); });
+$('#refresh').addEventListener('click', () => { state.range = timeRange(state.period, state.timezone, new Date(), state.custom); loadData(); if (state.view === 'devices') checkDevices(); });
 $$('[data-period]').forEach(button => button.addEventListener('click', () => {
   state.period = button.dataset.period;
   $$('[data-period]').forEach(item => { item.classList.toggle('selected', item === button); item.setAttribute('aria-pressed', String(item === button)); });
-  $('#date-form').hidden = true; loadData({ reset: true });
+  $('#date-form').hidden = true; loadData({ reset: true, filtersOnly: true });
 }));
-$('#timezone').addEventListener('change', event => { state.timezone = event.target.value; preference('timezone', state.timezone); loadData({ reset: true }); });
-$$('[data-chart]').forEach(button => button.addEventListener('click', () => {
-  state.chart = button.dataset.chart;
-  $$('[data-chart]').forEach(item => { item.classList.toggle('selected', item === button); item.setAttribute('aria-pressed', String(item === button)); });
-  renderMetrics(); renderTrend();
+$('#timezone').addEventListener('change', event => { state.timezone = event.target.value; preference('timezone', state.timezone); loadData({ reset: true, filtersOnly: true }); });
+$$('[data-group]').forEach(button => button.addEventListener('click', () => {
+  const group = button.dataset.group;
+  if (state.busy || state.trendGroup === group || !trendGroups(state.range, state.timezone).includes(group)) return;
+  state.trendGroup = group;
+  delete state.data.trend;
+  loadData({ filtersOnly: true }); renderMetrics(); renderTrend();
 }));
 $('#custom-range').addEventListener('click', () => {
   const form = $('#date-form'); form.hidden = !form.hidden;
@@ -314,26 +384,51 @@ $('#date-form').addEventListener('submit', event => {
   try { timeRange('custom', state.timezone, new Date(), custom); } catch (error) { $('#date-error').textContent = error.message; return; }
   state.period = 'custom'; state.custom = custom;
   $$('[data-period]').forEach(button => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); });
-  form.hidden = true; loadData({ reset: true });
+  form.hidden = true; loadData({ reset: true, filtersOnly: true });
 });
-$('#model-filter').addEventListener('change', event => { state.exportController?.abort(); state.model = event.target.value; state.cursors = [null]; state.page = 0; state.data.earnings = null; loadData(); });
+$$('[data-model-filter]').forEach(select => select.addEventListener('change', event => {
+  state.exportController?.abort(); state.model = event.target.value;
+  for (const key of ['earnings', 'trend']) delete state.data[key];
+  loadData({ filtersOnly: true }); renderMetrics(); renderTrend();
+}));
 
 async function pageTo(index) {
-  if (state.busy) return;
+  if (state.busy || !state.pager) return;
   const generation = ++state.generation;
-  const priorPage = state.page;
-  if (index > state.page) state.cursors[index] = state.data.earnings.next_cursor;
-  state.page = index; state.busy = true; renderRecords();
+  const controller = new AbortController();
+  state.pageController = controller; state.pendingPage = index;
+  state.busy = true; renderRecords();
   try {
-    const params = { ...state.range, ...(state.model ? { model: state.model } : {}), limit: 10, ...(state.cursors[index] ? { cursor: state.cursors[index] } : {}) };
-    const response = await query('earnings', params);
+    const response = await state.pager.page(index, state.pageSize, { signal: controller.signal });
     if (generation !== state.generation) return;
     state.data.earnings = response;
-  } catch (error) { if (generation === state.generation) { state.page = priorPage; toast(error.message); } }
-  finally { if (generation === state.generation) { state.busy = false; renderRecords(); renderAlerts(); } }
+    state.page = response.index;
+    if (response.index !== index) toast(`已到最后一页（第 ${response.index + 1} 页）。`);
+  } catch (error) { if (generation === state.generation && error.name !== 'AbortError') toast(error.message); }
+  finally {
+    if (generation === state.generation) {
+      state.busy = false; state.pageController = null; state.pendingPage = null;
+      $('#page-input').value = state.page + 1;
+      renderRecords(); renderAlerts();
+    }
+  }
 }
 $('#next-page').addEventListener('click', () => pageTo(state.page + 1));
 $('#prev-page').addEventListener('click', () => pageTo(state.page - 1));
+$('#page-jump-form').addEventListener('submit', event => {
+  event.preventDefault();
+  if (event.target.reportValidity()) pageTo(Number($('#page-input').value) - 1);
+});
+$('#page-size-form').addEventListener('submit', event => {
+  event.preventDefault();
+  if (!event.target.reportValidity() || state.busy) return;
+  const size = Number($('#page-size').value);
+  if (size === state.pageSize) return;
+  state.exportController?.abort();
+  state.pageSize = size; preference('pageSize', size);
+  state.data.earnings = null; loadData();
+});
+$('#cancel-page').addEventListener('click', () => state.pageController?.abort());
 
 $('#export-csv').addEventListener('click', async () => {
   if (state.exporting) return;
@@ -376,7 +471,7 @@ async function connect(save) {
     const body = Object.fromEntries(new FormData(form));
     const response = await api(save ? '/api/devices' : '/api/devices/test', { method: 'POST', body: JSON.stringify(body) });
     if (save) {
-      form.elements.token.value = ''; $('#connect-dialog').close(); await loadDeviceList(); await selectDevice(response.id); toast('设备已连接，真实收益正在载入。');
+      form.elements.token.value = ''; $('#connect-dialog').close(); await loadDeviceList(); await selectDevice(response.id); toast('设备已连接。');
     } else {
       result.className = 'success'; result.textContent = `连接成功 · Agent ${response.health.version} · ${healthStatus(response.health).label}`;
     }
@@ -393,15 +488,16 @@ $('#device-cards').addEventListener('click', async event => {
   const dialog = $('#remove-dialog'); dialog.returnValue = 'cancel'; dialog.showModal();
   dialog.addEventListener('close', async () => {
     if (dialog.returnValue !== 'confirm') return;
-    try { await api(`/api/devices/${remove.dataset.removeDevice}`, { method: 'DELETE' }); await loadDeviceList(); await loadData({ reset: true }); toast('设备连接已移除。'); } catch (error) { toast(error.message); }
+    try { await api(`/api/devices/${remove.dataset.removeDevice}`, { method: 'DELETE' }); await loadDeviceList(); await loadData({ reset: true, clearModel: true }); toast('设备连接已移除。'); } catch (error) { toast(error.message); }
   }, { once: true });
 });
 
 function updateClock() {
-  $('#clock-date').textContent = new Intl.DateTimeFormat('zh-CN', { timeZone: state.timezone, year: 'numeric', month: 'long', day: 'numeric' }).format(new Date());
   $('#last-refresh').textContent = state.fetchedAt ? `最近刷新 ${dateTime(state.fetchedAt)} · 每 60 秒自动更新` : '等待首次刷新';
 }
 
+// Apply topbar visibility before device discovery, including direct page links.
+$('#overview-topbar').hidden = ['records', 'devices'].includes(location.hash.slice(1));
 try {
   await loadDeviceList(); resetQuery();
   const view = location.hash.slice(1); if (['overview', 'records', 'devices'].includes(view)) setView(view);
@@ -410,9 +506,10 @@ try {
 setInterval(() => {
   updateClock(); renderDevices();
   if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open) return;
-  if (state.view === 'devices') { checkDevices(); return; }
-  if (state.page === 0) {
+  if (state.view === 'devices') { checkDevices(); refreshSummary(); return; }
+  if (state.view === 'overview' || state.page === 0) {
     state.range = timeRange(state.period, state.timezone, new Date(), state.custom); loadData();
-  } else checkDevices();
+  } else { checkDevices(); refreshSummary(); }
 }, 60_000);
 document.addEventListener('visibilitychange', () => { if (!document.hidden) updateClock(); });
+new ResizeObserver(() => renderTrend()).observe($('#trend-chart'));

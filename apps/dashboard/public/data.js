@@ -51,6 +51,18 @@ export function timeRange(period, timezone, now = new Date(), custom = {}) {
   return { from: from.toISOString(), to: to.toISOString() };
 }
 
+export function rollingRange(hours, now = new Date()) {
+  return { from: new Date(+now - hours * 3_600_000).toISOString(), to: now.toISOString() };
+}
+
+export function trendGroups(range, timezone) {
+  // Count selected calendar dates, so a 23/25-hour DST day is still one day.
+  const first = dateKey(range.from, timezone);
+  const last = dateKey(Date.parse(range.to) - 1, timezone);
+  const days = (Date.parse(`${last}T00:00:00Z`) - Date.parse(`${first}T00:00:00Z`)) / 86_400_000 + 1;
+  return days === 1 ? ['hour'] : days > 30 ? ['day', 'month'] : ['day'];
+}
+
 export function csvCell(value) {
   let text = String(value ?? '');
   if (/^[\s]*[=+\-@]/.test(text)) text = "'" + text;

@@ -7,7 +7,8 @@ import path from 'node:path';
 import { createDashboard } from '../server.mjs';
 import { DeviceStore, validateDevice } from '../lib/config.mjs';
 import { queryAgent } from '../lib/proxy.mjs';
-import { money, sumMoney, timeRange, zonedMidnight, csvRows } from '../public/data.js';
+import { money, sumMoney, sumCount, timeRange, rollingRange, trendGroups, zonedMidnight, csvRows } from '../public/data.js';
+import { demoQuery } from '../lib/demo.mjs';
 
 async function listen(server, t) {
   await new Promise((resolve, reject) => { server.once('error', reject); server.listen(0, '127.0.0.1', resolve); });
@@ -45,6 +46,57 @@ test('CSV escapes formulas and commas while retaining exact micro amounts', () =
   assert.ok(csv.includes('Qwen,""test""'));
   assert.ok(csv.includes('9007199254.740993'));
   assert.ok(csv.includes("'@bad"));
+});
+
+test('rolling earnings windows keep exact elapsed hours across midnight and DST', () => {
+  const now = new Date('2026-03-09T04:30:45.123Z'); // 00:30 in New York after the spring transition.
+  const hour = rollingRange(1, now);
+  const day = rollingRange(24, now);
+  assert.equal(hour.from, '2026-03-09T03:30:45.123Z');
+  assert.equal(day.from, '2026-03-08T04:30:45.123Z');
+  assert.equal(day.to, hour.to);
+  assert.equal(Date.parse(day.to) - Date.parse(day.from), 24 * 3_600_000);
+  const calendar = timeRange('1', 'America/New_York', now);
+  assert.notEqual(day.from, calendar.from);
+  assert.equal(now.toISOString(), '2026-03-09T04:30:45.123Z');
+});
+
+test('trend grouping follows selected calendar span, including custom dates and DST', () => {
+  const now = new Date('2026-11-04T12:00:00Z');
+  for (const [days, groups] of [['1', ['hour']], ['7', ['day']], ['30', ['day']], ['31', ['day', 'month']], ['365', ['day', 'month']]]) {
+    assert.deepEqual(trendGroups(timeRange(days, 'Asia/Shanghai', now), 'Asia/Shanghai'), groups);
+  }
+  const custom = (from, to) => timeRange('custom', 'America/New_York', now, { from, to });
+  // Both short and long DST days stay hourly; crossing midnight uses daily buckets.
+  for (const date of ['2026-03-08', '2026-11-01']) assert.deepEqual(trendGroups(custom(date, date), 'America/New_York'), ['hour']);
+  assert.deepEqual(trendGroups(custom('2026-11-01', '2026-11-02'), 'America/New_York'), ['day']);
+  assert.deepEqual(trendGroups(custom('2026-10-02', '2026-10-31'), 'America/New_York'), ['day']);
+  assert.deepEqual(trendGroups(custom('2026-10-01', '2026-10-31'), 'America/New_York'), ['day', 'month']);
+});
+
+test('monthly demo stats use local calendar boundaries and preserve filtered totals', () => {
+  const clock = new Date();
+  // The last 70 days include partial months without depending on a fixed test date.
+  const range = { ...rollingRange(70 * 24, clock), timezone: 'America/New_York' };
+  const all = demoQuery('stats', new URLSearchParams({ ...range, group_by: 'day' }), clock);
+  assert.ok(all.items.length > 31);
+  const model = demoQuery('stats', new URLSearchParams({ ...range, group_by: 'model' }), clock).items[0].key;
+  const days = demoQuery('stats', new URLSearchParams({ ...range, model, group_by: 'day' }), clock);
+  const months = demoQuery('stats', new URLSearchParams({ ...range, model, group_by: 'month' }), clock);
+  assert.ok(months.items.length >= 3);
+  assert.ok(months.items.length < days.items.length);
+  assert.equal(sumMoney(months.items), sumMoney(days.items));
+  assert.equal(sumCount(months.items), sumCount(days.items));
+  for (const month of months.items) {
+    assert.match(month.key, /^\d{4}-\d{2}$/);
+    const next = new Date(`${month.key}-01T12:00:00Z`);
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    assert.equal(month.from, zonedMidnight(month.key + '-01', range.timezone).toISOString());
+    assert.equal(month.to, zonedMidnight(next.toISOString().slice(0, 10), range.timezone).toISOString());
+    const selected = days.items.filter(day => day.key.startsWith(month.key));
+    assert.equal(BigInt(month.amount_micro_usd), sumMoney(selected));
+    assert.equal(month.record_count, sumCount(selected));
+  }
 });
 
 test('connection validation only accepts loopback or private Tailscale HTTPS origins', () => {
@@ -94,7 +146,9 @@ test('dashboard serves real proxy data, redacts saved tokens, and blocks foreign
   const upstreamURL = await listen(upstream, t);
   const store = await storeFor(t);
   const server = await createDashboard({ store }); const url = await listen(server, t);
-  const page = await fetch(url); assert.equal(page.status, 200); assert.match(await page.text(), /收益概览/);
+  const page = await fetch(url); assert.equal(page.status, 200); assert.match(await page.text(), /收益分析/);
+  const paginationModule = await fetch(`${url}/pagination.js`);
+  assert.equal(paginationModule.status, 200); assert.match(await paginationModule.text(), /class CursorPager/);
   const create = await fetch(`${url}/api/devices`, { method: 'POST', headers: { 'Content-Type': 'application/json', Origin: url }, body: JSON.stringify({ name: '测试设备', url: upstreamURL, token: 'local-test-token' }) });
   assert.equal(create.status, 201); const device = await create.json(); assert.equal(device.token, undefined);
   const listed = await (await fetch(`${url}/api/devices`)).text(); assert.ok(!listed.includes('local-test-token'));

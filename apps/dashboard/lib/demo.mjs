@@ -42,10 +42,15 @@ export function demoQuery(route, params, clock = new Date()) {
   const group = params.get('group_by') || 'day';
   const buckets = new Map();
   for (const record of selected) {
-    const key = group === 'model' ? record.model : group === 'hour' ? `${dateKey(record.created_at, timezone)} ${new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', hourCycle: 'h23' }).format(new Date(record.created_at))}:00` : dateKey(record.created_at, timezone);
+    const key = group === 'model' ? record.model : group === 'hour' ? `${dateKey(record.created_at, timezone)} ${new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', hourCycle: 'h23' }).format(new Date(record.created_at))}:00` : group === 'month' ? dateKey(record.created_at, timezone).slice(0, 7) : dateKey(record.created_at, timezone);
     if (!buckets.has(key)) {
-      const start = group === 'model' ? null : group === 'hour' ? new Date(Math.floor(Date.parse(record.created_at) / 3_600_000) * 3_600_000) : zonedMidnight(key, timezone);
-      const end = start === null ? null : group === 'hour' ? new Date(+start + 3_600_000) : zonedMidnight(shiftDate(key, 1), timezone);
+      const start = group === 'model' ? null : group === 'hour' ? new Date(Math.floor(Date.parse(record.created_at) / 3_600_000) * 3_600_000) : zonedMidnight(group === 'month' ? key + '-01' : key, timezone);
+      let end = start === null ? null : group === 'hour' ? new Date(+start + 3_600_000) : group === 'day' ? zonedMidnight(shiftDate(key, 1), timezone) : null;
+      if (group === 'month') {
+        const next = new Date(`${key}-01T12:00:00Z`);
+        next.setUTCMonth(next.getUTCMonth() + 1);
+        end = zonedMidnight(next.toISOString().slice(0, 10), timezone);
+      }
       buckets.set(key, { key, from: start?.toISOString() || null, to: end?.toISOString() || null, record_count: 0, amount_micro_usd: '0' });
     }
     const bucket = buckets.get(key);

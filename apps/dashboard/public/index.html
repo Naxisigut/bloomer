@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="theme-color" content="#183e35">
-  <title>Bloomer · 收益看板</title>
-  <meta name="description" content="你的 Darkbloom 收益与设备采集状态，一处掌握。">
+  <title>Bloomer · 收益分析</title>
+  <meta name="description" content="Darkbloom 收益与设备采集状态。">
   <link rel="icon" href="/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
   <script type="module" src="/app.js"></script>
@@ -14,58 +14,77 @@
   <a class="skip-link" href="#main">跳转到主要内容</a>
   <aside class="sidebar">
     <a class="brand" href="/" aria-label="Bloomer 首页"><img src="/favicon.svg" width="38" height="38" alt=""><span>bloomer<span class="brand-dot">.</span></span></a>
-    <div class="workspace-label">YOUR WORKSPACE <span>V 0.1</span></div>
     <nav class="navigation" aria-label="主导航">
-      <button class="nav-item active" data-view="overview" aria-current="page"><span data-icon="overview"></span>收益概览<span class="nav-arrow">↗</span></button>
+      <button class="nav-item active" data-view="overview" aria-current="page"><span data-icon="overview"></span>收益分析</button>
       <button class="nav-item" data-view="records"><span data-icon="records"></span>收益明细</button>
       <button class="nav-item" data-view="devices"><span data-icon="devices"></span>我的设备<span id="nav-device-count" class="nav-count">0</span></button>
     </nav>
-    <div class="sidebar-caption">让每一份算力<br>都看得见回报。</div>
-    <div class="sidebar-bottom">
-      <div class="private-label"><span data-icon="shield"></span>本地私有工作区</div>
-      <p>凭证与设备配置保存在本机。</p>
-      <button class="sidebar-connect" data-action="connect"><span data-icon="plus"></span>连接一台设备<span>↗</span></button>
-      <div class="sidebar-user"><div class="avatar">B</div><div><strong>Bloomer Console</strong><span>你的算力，自在生长</span></div><span class="user-dot"></span></div>
-    </div>
   </aside>
 
   <div class="app-shell">
-    <header class="topbar"><div class="breadcrumb">工作区 <span>/</span> <strong id="breadcrumb-current">收益概览</strong></div><div class="topbar-right"><span class="local-tag"><i></i> LOCAL WORKSPACE</span><span id="clock-date"></span></div></header>
+    <header id="overview-topbar" class="topbar" aria-label="设备与收益概况">
+      <div class="device-select-wrap"><label class="sr-only" for="device-select">选择数据来源设备</label><select id="device-select"><option value="demo">演示设备</option></select><span id="device-status" class="status-tag">连接中</span></div>
+      <div class="summary-metrics" aria-label="当前设备收益，不受下方筛选影响">
+        <div class="summary-metric"><span class="summary-label">近 1 小时收益</span><strong id="last-hour-amount" class="summary-amount">—</strong><span class="summary-hint">滚动 60 分钟</span></div>
+        <div class="summary-metric"><span class="summary-label">近 24 小时收益</span><strong id="last-day-amount" class="summary-amount">—</strong><span class="summary-hint">滚动 24 小时</span></div>
+        <div class="summary-metric"><span class="summary-label">可用余额</span><strong id="available-balance" class="summary-amount">—</strong><span class="summary-hint">可提现 <strong id="withdrawable-balance">—</strong></span></div>
+      </div>
+    </header>
     <main id="main" tabindex="-1" data-view="overview">
-      <div class="page-heading"><div><div class="eyebrow">A LITTLE COMPUTE. A LITTLE GROWTH.</div><h1 id="page-title">收益概览<span class="title-flower">✳</span></h1><p id="page-description">看看你的算力，今天又带来了什么。</p></div><div class="heading-actions"><button class="button button-white" id="refresh" aria-label="刷新数据"><span data-icon="refresh"></span><span>刷新数据</span></button><button class="button button-dark" data-action="connect"><span data-icon="plus"></span>连接设备</button></div></div>
+      <div class="page-heading"><h1 id="page-title">收益分析</h1><div class="heading-actions"><button class="button button-white" id="refresh" aria-label="刷新数据">刷新数据</button><button class="button button-dark" data-action="connect">连接设备</button></div></div>
 
-      <div id="demo-banner" class="demo-banner" hidden><span class="demo-label">DEMO</span><span>当前为演示数据，连接你的设备，开始记录真实收益。</span><button data-action="connect">连接我的设备 <span>↗</span></button></div>
+      <div id="demo-banner" class="demo-banner" hidden><span class="demo-label">演示</span><span>当前为演示数据</span><button data-action="connect">连接设备</button></div>
       <div id="alerts" aria-live="polite"></div>
 
-      <section class="filter-bar" id="filter-bar" aria-label="收益筛选">
-        <div class="device-select-wrap"><span data-icon="devices"></span><label class="sr-only" for="device-select">选择数据来源设备</label><select id="device-select"><option value="demo">演示设备</option></select><span class="filter-divider"></span><span id="device-status" class="status-tag">连接中</span></div>
-        <div class="range-controls"><div class="period-tabs" role="group" aria-label="时间范围"><button data-period="7">近 7 天</button><button class="selected" data-period="30" aria-pressed="true">近 30 天</button><button data-period="90">近 90 天</button><button data-period="365">近一年</button></div><button class="button date-button" id="custom-range"><span data-icon="calendar"></span><span id="range-label">选择日期</span></button><label class="sr-only" for="timezone">统计时区</label><select id="timezone" class="timezone-select"><option value="Asia/Shanghai">上海 UTC+8</option><option value="UTC">UTC</option><option value="America/New_York">纽约</option><option value="Europe/London">伦敦</option><option value="Asia/Tokyo">东京</option></select></div>
-      </section>
-      <form id="date-form" class="date-form" hidden><label>开始日期<input type="date" name="from" required></label><span>至</span><label>结束日期<input type="date" name="to" required></label><button class="button button-dark" type="submit">应用日期</button><button class="button button-white" type="button" id="cancel-range">取消</button><span id="date-error" role="alert"></span></form>
-
-      <section class="metrics overview-only" aria-label="收益关键指标">
-        <article class="metric-card featured"><div class="metric-label">本期已记录收益<span data-icon="growth"></span></div><div id="period-amount" class="metric-number">—</div><div class="metric-foot"><span class="metric-chip">LOCAL HISTORY</span><span id="period-record-hint">来自本地保存的收益明细</span></div></article>
-        <article class="metric-card"><div class="metric-label">本期任务记录<span class="metric-icon" data-icon="records"></span></div><div id="period-count" class="metric-number">—</div><div class="metric-foot"><span class="tiny-dot"></span><span id="model-count">等待数据</span></div></article>
-        <article class="metric-card"><div class="metric-label">账户累计收益<span class="metric-icon" data-icon="wallet"></span></div><div id="official-amount" class="metric-number">—</div><div class="metric-foot">官方账户口径 · 全部历史</div></article>
-        <article class="metric-card"><div class="metric-label">可用余额<span class="metric-icon" data-icon="balance"></span></div><div id="available-balance" class="metric-number">—</div><div class="metric-foot">可提现 <strong id="withdrawable-balance">—</strong><span class="usd-label">USD</span></div></article>
-      </section>
-
-      <div class="analysis-grid overview-only">
-        <section class="panel chart-panel"><div class="panel-heading"><div><h2>收益趋势<span class="subtle-tag" id="chart-grain">按日</span></h2><p>每一点增长，都有迹可循。</p></div><div class="chart-toggle" role="group" aria-label="趋势指标"><button class="selected" data-chart="amount" aria-pressed="true">收益</button><button data-chart="count">任务数</button></div></div><div class="chart-summary"><strong id="chart-total">—</strong><span id="chart-subtitle">所选时段已记录收益</span><div class="chart-legend"><i></i> <span id="chart-legend">收益 (USD)</span></div></div><div id="trend-chart" class="trend-chart" aria-label="收益趋势图"><div class="empty-state">正在读取收益趋势…</div></div><div class="chart-footer"><span><span class="tiny-dot"></span> 仅展示已保存记录；空白时段不代表零收益。</span><span id="chart-timezone">Asia/Shanghai</span></div></section>
-        <section class="panel model-panel"><div class="panel-heading"><div><h2>模型贡献</h2><p>找到你的收益主力。</p></div><span class="small-icon" data-icon="donut"></span></div><div id="model-chart" class="model-chart"><div class="empty-state">等待模型数据…</div></div><div id="model-list" class="model-list"></div><div class="model-footer">按所选时段的已记录收益统计</div></section>
+      <div id="trend-filters-slot" class="panel analysis-filter-panel overview-only">
+          <section id="earnings-filters" class="earnings-filters" aria-label="收益筛选">
+            <div class="filter-bar" id="filter-bar">
+              <div class="range-controls"><div class="period-tabs" role="group" aria-label="时间范围"><button data-period="1">近 1 天</button><button data-period="7">近 7 天</button><button class="selected" data-period="30" aria-pressed="true">近 30 天</button><button data-period="365">近一年</button></div><button class="button date-button" id="custom-range"><span id="range-label">选择日期</span></button><label class="sr-only" for="timezone">统计时区</label><select id="timezone" class="timezone-select"><option value="Asia/Shanghai">上海 UTC+8</option><option value="UTC">UTC</option><option value="America/New_York">纽约</option><option value="Europe/London">伦敦</option><option value="Asia/Tokyo">东京</option></select></div>
+              <div class="analysis-controls overview-only">
+                <div class="analysis-model-filter"><label for="trend-model-filter">模型</label><select id="trend-model-filter" class="model-filter" data-model-filter aria-label="分析模型"><option value="">全部模型</option></select></div>
+                <div class="chart-toggle" id="trend-grouping" role="group" aria-label="趋势粒度" hidden><button class="selected" data-group="day" aria-pressed="true">按天</button><button data-group="month" aria-pressed="false">按月</button></div>
+              </div>
+            </div>
+            <form id="date-form" class="date-form" hidden><label>开始日期<input type="date" name="from" required></label><span>至</span><label>结束日期<input type="date" name="to" required></label><button class="button button-dark" type="submit">应用日期</button><button class="button button-white" type="button" id="cancel-range">取消</button><span id="date-error" role="alert"></span></form>
+          </section>
       </div>
 
-      <section class="panel records-panel" id="records-panel"><div class="panel-heading"><div><h2 id="records-title">最近收益<span id="records-count" class="count-badge">0</span></h2><p id="records-description">每一笔算力付出，都在这里。</p></div><div class="table-actions"><label class="sr-only" for="model-filter">筛选模型</label><select id="model-filter"><option value="">全部模型</option></select><button id="export-csv" class="button button-white"><span data-icon="download"></span><span>导出 CSV</span></button></div></div><div class="table-scroll"><table><thead><tr><th>模型 / 任务</th><th>收益 <span>USD</span></th><th>输入 Token</th><th>输出 Token</th><th>发生时间 <span id="table-timezone"></span></th><th>状态</th></tr></thead><tbody id="records-body"><tr><td colspan="6"><div class="empty-state">正在读取收益记录…</div></td></tr></tbody></table></div><div class="table-footer"><span id="page-info">每页 10 条 · 按时间倒序</span><div class="pagination"><button id="prev-page" class="button button-white" disabled><span>←</span> 上一页</button><span id="page-number">01</span><button id="next-page" class="button button-white" disabled>下一页 <span>→</span></button></div></div><p id="export-status" class="export-status" role="status" hidden></p></section>
+      <section class="panel chart-panel overview-only">
+        <div class="panel-heading"><h2>收益趋势<span class="subtle-tag" id="chart-grain">按天</span></h2></div>
+        <div class="chart-summary"><span class="chart-total-label">所选时段收益</span><strong id="chart-total">—</strong><div class="chart-legend"><i></i> <span>收益 (USD)</span></div></div><div id="trend-chart" class="trend-chart" aria-label="收益趋势图"><div class="empty-state">正在读取收益趋势…</div></div><div class="chart-footer"><span>空白时段无已保存记录</span><span id="chart-timezone">Asia/Shanghai</span></div>
+      </section>
 
-      <section id="devices-view" class="devices-only"><div class="section-heading"><h2>数据来源设备</h2><p>选择设备查看采集状态；账户余额与累计收益按账户展示，不跨设备相加。</p></div><div id="device-cards" class="device-cards"></div><div class="panel health-panel"><div class="panel-heading"><div><h2>采集健康</h2><p id="health-device-label">当前选择的设备</p></div><span class="subtle-tag">只读监测</span></div><div id="health-details" class="health-details"></div></div></section>
+      <section class="panel records-panel records-only" id="records-panel">
+        <div class="panel-heading"><h2>收益记录<span id="records-count" class="count-badge">0</span></h2><div class="table-actions"><label class="sr-only" for="model-filter">筛选模型</label><select id="model-filter" class="model-filter" data-model-filter><option value="">全部模型</option></select><button id="export-csv" class="button button-white">导出 CSV</button></div></div>
+        <div id="records-filters-slot"></div>
+        <div class="table-scroll"><table><thead><tr><th>模型 / 任务</th><th>收益 <span>USD</span></th><th>输入 Token</th><th>输出 Token</th><th>发生时间 <span id="table-timezone"></span></th></tr></thead><tbody id="records-body"><tr><td colspan="5"><div class="empty-state">正在读取收益记录…</div></td></tr></tbody></table></div>
+        <div class="table-footer">
+          <span id="page-info">等待记录</span>
+          <div class="pagination" aria-label="明细分页">
+            <form id="page-size-form" class="page-size-form">
+              <label for="page-size">每页</label><input id="page-size" type="number" min="1" max="500" step="1" value="10" list="page-sizes" aria-label="每页条数" required><span>条</span>
+              <datalist id="page-sizes"><option value="10"></option><option value="25"></option><option value="50"></option><option value="100"></option><option value="200"></option><option value="500"></option></datalist>
+              <button type="submit" class="button button-white">应用</button>
+            </form>
+            <div class="page-nav"><button id="prev-page" class="button button-white" disabled>上一页</button><span id="page-number">1 / —</span><button id="next-page" class="button button-white" disabled>下一页</button></div>
+            <form id="page-jump-form" class="page-jump-form">
+              <label for="page-input">跳至</label><input id="page-input" type="number" min="1" step="1" value="1" aria-label="跳转页码" required><span>页</span><button type="submit" class="button button-white">跳转</button><button type="button" id="cancel-page" class="button button-white" hidden>取消</button>
+            </form>
+          </div>
+        </div>
+        <p id="pagination-status" class="pagination-status" role="status" hidden></p>
+        <p id="export-status" class="export-status" role="status" hidden></p>
+      </section>
 
-      <section class="data-note overview-only"><span class="note-icon" data-icon="shield"></span><div><strong>收益口径，清清楚楚。</strong><p>账户累计与余额来自官方快照；本期收益来自本地明细。初次接入仅导入最近窗口，明细滚动保留 365 天。</p></div><span id="coverage-tag" class="subtle-tag">等待历史信息</span></section>
-      <footer class="page-footer"><span>bloomer<span class="brand-dot">.</span><span class="footer-separator">/</span>给算力一点生长空间。</span><span id="last-refresh">等待首次刷新</span></footer>
+      <section id="devices-view" class="devices-only"><div class="section-heading"><h2>数据来源设备</h2></div><div id="device-cards" class="device-cards"></div><div class="panel health-panel"><div class="panel-heading"><div><h2>采集健康</h2><p id="health-device-label">当前选择的设备</p></div><span class="subtle-tag">只读监测</span></div><div id="health-details" class="health-details"></div></div></section>
+
+      <section class="data-note overview-only"><p>收益来自本地明细，保留 365 天；顶栏为当前设备全部模型的滚动收益，不受下方筛选影响。余额来自官方快照，金额单位为 USD。</p><span id="coverage-tag" class="subtle-tag">等待历史信息</span></section>
+      <footer class="page-footer"><span id="last-refresh">等待首次刷新</span></footer>
     </main>
   </div>
 
-  <dialog id="connect-dialog"><form id="connect-form"><div class="dialog-header"><div class="dialog-icon" data-icon="devices"></div><button type="button" id="close-dialog" class="icon-button" aria-label="关闭连接窗口">×</button></div><div class="eyebrow">GROW YOUR WORKSPACE</div><h2>连接你的设备</h2><p class="dialog-description">让已经运行的 Bloomer Agent，成为你的下一个数据来源。</p><label>设备名称<input name="name" autocomplete="off" placeholder="例如：书房 Mac mini" maxlength="60" required></label><label>Agent 地址<input name="url" type="url" autocomplete="off" placeholder="https://your-device.your-tailnet.ts.net:8443" required><span class="field-hint">Tailscale 私网 HTTPS 地址，或 http://127.0.0.1:17890</span></label><label>独立访问令牌<div class="password-field"><input name="token" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴 Agent 的 access.token" maxlength="4096" required><button type="button" id="toggle-token" aria-label="显示令牌" aria-pressed="false">显示</button></div></label><div class="connection-note"><span data-icon="shield"></span><span>使用 Bloomer 的独立令牌。凭证只保存在本机服务端，不使用 Darkbloom 官方凭证。</span></div><div id="connection-result" role="status" hidden></div><div class="dialog-actions"><button type="button" id="test-connection" class="button button-white">测试连接</button><button type="submit" id="save-device" class="button button-dark">连接并保存 <span>↗</span></button></div></form></dialog>
-  <dialog id="remove-dialog"><form method="dialog"><h2>移除设备？</h2><p>将移除本机保存的连接信息。设备上的 Agent 和历史数据不受影响。</p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-danger" value="confirm">移除设备</button></div></form></dialog>
+  <dialog id="connect-dialog"><form id="connect-form"><div class="dialog-header"><button type="button" id="close-dialog" class="icon-button" aria-label="关闭连接窗口">×</button></div><h2>连接设备</h2><label>设备名称<input name="name" autocomplete="off" placeholder="例如：书房 Mac mini" maxlength="60" required></label><label>Agent 地址<input name="url" type="url" autocomplete="off" placeholder="https://your-device.your-tailnet.ts.net:8443" required><span class="field-hint">Tailscale 私网 HTTPS 地址，或 http://127.0.0.1:17890</span></label><label>独立访问令牌<div class="password-field"><input name="token" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴 Agent 的 access.token" maxlength="4096" required><button type="button" id="toggle-token" aria-label="显示令牌" aria-pressed="false">显示</button></div></label><div class="connection-note">使用 Bloomer access.token，不使用 Darkbloom 官方凭证；令牌仅保存在本机。</div><div id="connection-result" role="status" hidden></div><div class="dialog-actions"><button type="button" id="test-connection" class="button button-white">测试连接</button><button type="submit" id="save-device" class="button button-dark">连接并保存</button></div></form></dialog>
+  <dialog id="remove-dialog"><form method="dialog"><h2>移除设备？</h2><p>仅移除连接，设备上的 Agent 和历史数据不变。</p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-danger" value="confirm">移除设备</button></div></form></dialog>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>
