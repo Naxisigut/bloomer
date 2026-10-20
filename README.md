@@ -14,9 +14,9 @@ python3 -m http.server 18080 --bind 127.0.0.1 --directory apps/dashboard/public
 
 固定打开 <http://127.0.0.1:18080>。浏览器保存设备名称、地址及 Bloomer `access.token`，通过 Tailscale HTTPS 直接请求 Agent `/v1`；不需要 Node 看板服务、`npm start` 或构建。无设备时显示明确标注的只读演示数据，连接失败不会自动换成演示数据。
 
-家中 Agent 需升级并在原配置合并 `"allowed_origins": ["http://127.0.0.1:18080"]` 后重启。旧配置省略该字段时仍可启动，默认不允许浏览器来源；无 Origin 的原调用继续工作。来源取看板网页的协议、主机、端口，与公司 Mac 的 Tailscale IP 无关。
+家中 Agent 升级至 1.0.7 或更新版本后，允许任意网页来源，无需配置网页来源；所有实际查询与控制请求仍必须携带有效的 Bloomer `access.token`。无 Origin 的原调用继续工作。
 
-请按[完整连接设备指南](docs/connect-device.md)获取 Tailscale HTTPS 地址及端口、配置来源并读取设备端令牌。看板不获取 Darkbloom 官方令牌，不再自动读取本机 Agent 文件；可手动添加或导入旧版连接文件。不要双击 `file://` 运行。
+请按[完整连接设备指南](docs/connect-device.md)获取 Tailscale HTTPS 地址及端口、读取设备端令牌并测试保存。看板不获取 Darkbloom 官方令牌，不再自动读取本机 Agent 文件；可手动添加或导入旧版连接文件。不要双击 `file://` 运行。
 
 功能与开发验证见[看板说明](apps/dashboard/README.md)，架构见[静态看板架构](docs/dashboard.md)。
 
@@ -47,17 +47,17 @@ make -C apps/agent build
 open apps/agent/dist
 ```
 
-默认版本统一定义在 `apps/agent/internal/release/version.go` 的 `Version` 常量中，当前为 `1.0.5`。日常发布只修改这一处，Agent、管理工具、安装器和 DMG 文件名会使用同一版本，无需打包时手动填写。临时构建仍可用 `VERSION=1.0.6` 覆盖。`make build` 会自动编译 Agent 和 Go 管理工具、生成图形安装器并打包 DMG，同时校验包内文件、应用签名及 DMG 完整性。`make dmg` 和 `make package` 执行相同流程。
+默认版本统一定义在 `apps/agent/internal/release/version.go` 的 `Version` 常量中，当前为 `1.0.7`。日常发布只修改这一处，Agent、管理工具、安装器和 DMG 文件名会使用同一版本，无需打包时手动填写。临时构建仍可用 `VERSION=1.0.8` 覆盖。`make build` 会自动编译 Agent 和 Go 管理工具、生成图形安装器并打包 DMG，同时校验包内文件、应用签名及 DMG 完整性。`make dmg` 和 `make package` 执行相同流程。
 
 生成的文件位于 `apps/agent/dist/`，不进入 Git：
 
-- `bloomer-agent-1.0.5-darwin-arm64.dmg`：设备端安装包。
-- `bloomer-agent-1.0.5-darwin-arm64.dmg.sha256`：安装包的 SHA-256 校验文件。
+- `bloomer-agent-1.0.7-darwin-arm64.dmg`：设备端安装包。
+- `bloomer-agent-1.0.7-darwin-arm64.dmg.sha256`：安装包的 SHA-256 校验文件。
 
 需要校验安装包时，在仓库根目录执行：
 
 ```sh
-(cd apps/agent/dist && shasum -a 256 -c bloomer-agent-1.0.5-darwin-arm64.dmg.sha256)
+(cd apps/agent/dist && shasum -a 256 -c bloomer-agent-1.0.7-darwin-arm64.dmg.sha256)
 ```
 
 将 DMG 复制到目标设备，在运行 Darkbloom 的同一 macOS 用户下打开，双击其中的 **安装 Bloomer.app**，即可安装并启动后台服务。已有版本时会执行升级，沿用配置、访问令牌和数据库，升级前自动创建一致备份。安装完成后可以推出 DMG。

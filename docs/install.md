@@ -12,10 +12,10 @@ make -C apps/agent build
 
 默认产物：
 
-- `apps/agent/dist/bloomer-agent-1.0.5-darwin-arm64.dmg`
-- `apps/agent/dist/bloomer-agent-1.0.5-darwin-arm64.dmg.sha256`
+- `apps/agent/dist/bloomer-agent-1.0.7-darwin-arm64.dmg`
+- `apps/agent/dist/bloomer-agent-1.0.7-darwin-arm64.dmg.sha256`
 
-`make build` 完成编译和 DMG 打包；`make binary` 仅编译 `bin/bloomer-agent` 与 `bin/bloomerctl`，适合开发调试。`make dmg` / `make package` 同样先编译再打包。默认版本来自 `apps/agent/internal/release/version.go` 的 `Version` 常量，当前为 `1.0.5`；发布时修改这一处即可，无需额外传参。临时覆盖版本可使用 `make -C apps/agent build VERSION=1.0.6`。直接使用 Go 编译时也使用该常量作为默认版本。版本、Git 提交号及工作区是否有未提交修改写入程序和清单。
+`make build` 完成编译和 DMG 打包；`make binary` 仅编译 `bin/bloomer-agent` 与 `bin/bloomerctl`，适合开发调试。`make dmg` / `make package` 同样先编译再打包。默认版本来自 `apps/agent/internal/release/version.go` 的 `Version` 常量，当前为 `1.0.7`；发布时修改这一处即可，无需额外传参。临时覆盖版本可使用 `make -C apps/agent build VERSION=1.0.8`。直接使用 Go 编译时也使用该常量作为默认版本。版本、Git 提交号及工作区是否有未提交修改写入程序和清单。
 
 整个构建、打包、安装和管理流程均不依赖 Python。DMG 使用 macOS 自带的 `osacompile`、`codesign` 和 `hdiutil` 生成；后台服务与管理工具均为不依赖 CGo 的 Go 可执行文件。打包时校验内部 SHA-256 清单、应用签名及 DMG 完整性。默认使用本地 ad-hoc 签名，尚未配置 Developer ID 签名和 Apple 公证；这不是已公证的公开发行包，跨设备下载后可能受 Gatekeeper 限制。
 
@@ -24,7 +24,7 @@ make -C apps/agent build
 需要在终端预览或执行安装时，可从已挂载卷调用（版本对应卷名）：
 
 ```sh
-PACKAGE="/Volumes/Bloomer 1.0.5/安装 Bloomer.app/Contents/Resources/package"
+PACKAGE="/Volumes/Bloomer 1.0.7/安装 Bloomer.app/Contents/Resources/package"
 "$PACKAGE/bloomerctl" install --package-dir "$PACKAGE" --plan
 "$PACKAGE/bloomerctl" install --package-dir "$PACKAGE"
 ```
@@ -93,6 +93,6 @@ BASE="$HOME/Library/Application Support/Bloomer/agent"
 
 ## 静态看板连接与本次更新
 
-看板运行不依赖 Node 服务，浏览器通过现有 Tailscale HTTPS 入口直连 Agent。完整步骤见[连接设备指南](connect-device.md)。家中先安装本次新版程序，保留原配置、数据库和令牌；再合并 `"allowed_origins": ["http://127.0.0.1:18080"]`，用新版 `-check` 验证，然后 `bloomerctl stop` / `start` 重启生效。先升级再加字段，避免旧程序不认识新配置。
+看板运行不依赖 Node 服务，浏览器通过现有 Tailscale HTTPS 入口直连 Agent。完整步骤见[连接设备指南](connect-device.md)。家中安装 1.0.7 或更新程序并确认新版已启动，保留原配置、数据库和令牌；无需新增或修改网页来源配置。
 
-来源是公司浏览器固定打开的网页地址（协议、主机和端口），不是公司 Mac 的 Tailscale IP。新字段省略、`null` 或空列表时不允许浏览器来源，原 CLI 不受影响；不需要新增组网、配对或 Serve 路由。本次本地实现不自动部署家中设备，未对真实 Darkbloom 执行控制操作。
+Agent 允许任意网页来源，所有实际查询与控制请求仍必须校验 Bloomer 独立 Bearer 令牌。不启用跨域 Cookie 凭证；无需新增组网、配对或 Serve 路由。测试与打包仅在本地进行，不自动部署家中设备或执行真实 Darkbloom 控制操作。

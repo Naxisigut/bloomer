@@ -32,7 +32,7 @@ func TestAuthenticatedOfflineHealth(t *testing.T) {
 	}{
 		{"/v1/health", "GET", "", "", 401, "unauthorized"},
 		{"/v1/health", "GET", "Bearer invalid", "", 401, "unauthorized"},
-		{"/v1/health", "GET", "Bearer " + token, "https://untrusted.example", 403, "origin_forbidden"},
+		{"/v1/health", "GET", "Bearer " + token, "https://dashboard.example", 200, ""},
 		{"/v1/health", "POST", "Bearer " + token, "", 405, "method_not_allowed"},
 		{"/v1/unknown", "GET", "Bearer " + token, "", 404, "not_found"},
 		{"/v1/health", "GET", "Bearer " + token, "", 200, ""},
@@ -45,7 +45,7 @@ func TestAuthenticatedOfflineHealth(t *testing.T) {
 		if w.Code != tc.status {
 			t.Fatalf("%s: %d %s", tc.path, w.Code, w.Body.String())
 		}
-		if w.Header().Get("X-Request-ID") == "" || w.Header().Get("Access-Control-Allow-Origin") != "" {
+		if w.Header().Get("X-Request-ID") == "" || w.Header().Get("Access-Control-Allow-Origin") != "*" {
 			t.Fatal("unsafe/missing headers")
 		}
 		if tc.status != 200 {

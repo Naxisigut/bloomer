@@ -36,7 +36,7 @@ func TestControlAuthenticationMethodsAndStrictRequests(t *testing.T) {
 		want                             int
 	}{
 		{"POST", "/v1/device/control/jobs", valid, "", "", 401},
-		{"POST", "/v1/device/control/jobs", valid, auth, "https://evil.example", 403},
+		{"POST", "/v1/device/control/jobs", valid, "Bearer incorrect", "https://dashboard.example", 401},
 		{"GET", "/v1/device/control", "", auth, "", 200},
 		{"GET", "/v1/device/control/jobs", "", auth, "", 200},
 		{"GET", "/v1/device/control?force=1", "", auth, "", 400},

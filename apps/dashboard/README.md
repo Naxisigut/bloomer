@@ -10,7 +10,7 @@ python3 -m http.server 18080 --bind 127.0.0.1 --directory apps/dashboard/public
 
 打开 <http://127.0.0.1:18080> 并固定使用此来源。也可使用任意等价静态托管；禁止以双击 `file://` 页面作为正式方式。修改文件后刷新浏览器即可。
 
-首次使用请阅读[完整连接设备指南](../../docs/connect-device.md)：家中设备升级 Agent、取得带端口的 Tailscale HTTPS 地址、配置 `allowed_origins`、读取设备端 Bloomer 令牌、测试并保存。默认允许来源为空，旧配置保持兼容。
+首次使用请阅读[完整连接设备指南](../../docs/connect-device.md)：家中设备升级 Agent、取得带端口的 Tailscale HTTPS 地址、读取设备端 Bloomer 令牌、测试并保存。Agent 1.0.7 起允许任意网页来源，无需配置来源。
 
 ## 第一版功能
 
@@ -47,7 +47,7 @@ cat "$HOME/Library/Application Support/Bloomer/agent/access.token"
 
 自定义 `access_token_file` 时使用实际路径。它不是 `~/.darkbloom/auth_token`；只填写到自己的看板，不提交仓库或粘贴到聊天。
 
-浏览器 localStorage 持久保存名称、地址、令牌和所选设备。切换浏览器、主机名、协议或端口，或清除网站数据后需重新添加或导入；来源变化还需更新 Agent 白名单。移除只删除浏览器连接和待核对请求记录，设备数据不变。令牌更换后移除旧连接重新添加。
+浏览器 localStorage 持久保存名称、地址、令牌和所选设备。切换浏览器、主机名、协议或端口，或清除网站数据后需重新添加或导入。移除只删除浏览器连接和待核对请求记录，设备数据不变。令牌更换后移除旧连接重新添加。
 
 “我的设备 → 导入连接”兼容旧版 `devices.json`（`version: 1`、`devices` 列表及 `name/url/token`）；所有设备健康测试通过后原子保存，重复地址拒绝覆盖。旧私有文件不会自动读取或修改；保管在仓库之外。看板取消了依赖本机 Agent 文件的自动发现。
 
@@ -55,7 +55,7 @@ cat "$HOME/Library/Application Support/Bloomer/agent/access.token"
 
 静态服务器 → 浏览器下载 HTML/CSS/JS；浏览器 → Tailscale HTTPS → Agent `/v1`，每次实际请求携带 `Authorization: Bearer <access.token>`。Agent 负责采集、SQLite 存储、查询、统计及远程操作。静态托管方不需要令牌，但必须信任其所提供的网页代码。
 
-Agent 使用精确的 `allowed_origins` 白名单处理 CORS，合法预检免认证，实际请求仍认证。错误响应也保留允许来源的 CORS 头；未配置来源被拒绝，无 Origin 的 CLI 调用兼容。完整配置、重启和网络/证书/CORS/401 排查见[连接指南](../../docs/connect-device.md)。
+Agent 返回 `Access-Control-Allow-Origin: *`，允许任意网页来源；合法 GET/POST 预检免认证，实际请求仍校验 Bloomer Bearer 令牌。预检显式允许 Authorization、Content-Type 和 Accept，不启用 Cookie 跨域凭证；浏览器继续使用 `credentials: omit`。成功及错误响应都带 CORS 头，无 Origin 的 CLI 调用兼容。无需在设备端配置网页来源。升级和网络/证书/CORS/401 排查见[连接指南](../../docs/connect-device.md)。
 
 请求层设 12 秒超时，支持调用方取消、最大 8 MB 响应、契约基本格式校验、重定向拒绝和固定中文错误；不输出令牌或设备原始错误。浏览器不能区分的网络、证书和 CORS 异常只给联合排查提示。演示数据在浏览器本地生成，控制请求在 UI 和请求层都被禁止。
 

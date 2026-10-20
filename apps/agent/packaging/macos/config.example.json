@@ -1,5 +1,4 @@
 {
-  "allowed_origins": [],
   "remote_control_enabled": true,
   "darkbloom_binary": "~/.darkbloom/bin/darkbloom",
   "collection_enabled": true,

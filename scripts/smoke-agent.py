@@ -29,7 +29,6 @@ def main():
         logs = root / "logs"
         config.write_text(json.dumps({
             "data_dir": str(state), "log_dir": str(logs),
-            "allowed_origins": ["http://127.0.0.1:18080"],
             "darkbloom_binary": str(root / "nonexistent-darkbloom"),
             "listen": f"127.0.0.1:{port}",
             "upstream_credential_file": str(root / "nonexistent-official-token"),
@@ -98,14 +97,16 @@ def main():
                     "Access-Control-Request-Headers": "authorization,content-type",
                 }) as response:
                     assert response.status == 204
-                    assert response.headers["Access-Control-Allow-Origin"] == origin
-            with request(token, origin=origin) as response:
-                assert response.status == 200
-                assert response.headers["Access-Control-Allow-Origin"] == origin
+                    assert response.headers["Access-Control-Allow-Origin"] == "*"
+            for source in (origin, "http://localhost:18081", "https://dashboard.example", "null"):
+                with request(token, origin=source) as response:
+                    assert response.status == 200
+                    assert response.headers["Access-Control-Allow-Origin"] == "*"
+                    assert response.headers.get("Access-Control-Allow-Credentials") is None
             for auth, source, method, path, data, expected in (
                 (None, origin, "GET", "/v1/health", None, 401),
                 ("incorrect", origin, "POST", "/v1/device/control/jobs", b"{}", 401),
-                (token, "http://localhost:18080", "GET", "/v1/health", None, 403),
+                (None, "https://dashboard.example", "GET", "/v1/health", None, 401),
                 (token, origin, "POST", "/v1/device/control/jobs", b"{}", 400),
             ):
                 try:
@@ -113,7 +114,7 @@ def main():
                     raise AssertionError("expected API rejection")
                 except urllib.error.HTTPError as error:
                     assert error.code == expected
-                    assert error.headers.get("Access-Control-Allow-Origin") == (origin if source == origin else None)
+                    assert error.headers.get("Access-Control-Allow-Origin") == "*"
                     error.close()
             assert timestamp() is None
             deadline = time.monotonic() + 5

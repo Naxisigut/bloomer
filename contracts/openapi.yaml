@@ -11,11 +11,12 @@ info:
     Control requests execute allowlisted local CLI commands as serialized background jobs.
     When remote_control_enabled is true (default), the same Bearer token grants control access.
     Browser clients connect directly via Tailscale HTTPS with Authorization: Bearer.
-    allowed_origins contains exact dashboard origins (scheme, host, port; no path).
-    Omitted/null/empty allows no browser origins. Requests without Origin remain compatible.
-    Allowed origins receive CORS headers on success and error responses. OPTIONS preflights
-    for GET/POST and Authorization/Content-Type/Accept need no token and return 204;
-    disallowed origins/methods/headers return 403. Actual requests always require Bearer.
+    Every browser origin is allowed via Access-Control-Allow-Origin: * on success and error responses.
+    No origin allowlist configuration is required.
+    Browser clients use credentials: omit; Access-Control-Allow-Credentials is not enabled.
+    OPTIONS preflights for GET/POST and explicit Authorization/Content-Type/Accept need no token
+    and return 204; unsupported preflight methods/headers return 403 (cors_forbidden).
+    Actual requests always require the independent Bearer token, including requests without Origin.
     Money is an integer number of micro-USD encoded as a decimal string. Record
     IDs are opaque strings. Official lifetime totals and local retained totals
     have different scopes and must not be added across devices for one account.
@@ -44,8 +45,6 @@ paths:
                 $ref: '#/components/schemas/ControlStatus'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/OriginForbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/device/control/models:
@@ -81,8 +80,6 @@ paths:
                     enum: [catalog_unavailable]
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/OriginForbidden'
         '409':
           description: Another discovery is in progress (control_busy)
         '503':
@@ -107,8 +104,6 @@ paths:
                       $ref: '#/components/schemas/ControlJob'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/OriginForbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
     post:
@@ -141,7 +136,7 @@ paths:
         '401':
           $ref: '#/components/responses/Unauthorized'
         '403':
-          description: Forbidden Origin or control_disabled
+          description: Remote control disabled (control_disabled)
         '409':
           description: control_busy or request_conflict
         '415':
@@ -167,8 +162,6 @@ paths:
                 $ref: '#/components/schemas/Health'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/OriginForbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/device/state:
@@ -206,8 +199,6 @@ paths:
                             description: True if no sample, over 120 seconds old, or future dated
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/OriginForbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/device/state/history:
@@ -263,8 +254,6 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/OriginForbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
   /v1/account/overview:
@@ -301,8 +290,6 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/OriginForbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
         '504':
@@ -362,8 +349,6 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/OriginForbidden'
         '503':
           $ref: '#/components/responses/Unavailable'
         '504':
@@ -443,8 +428,6 @@ paths:
           $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-        '403':
-          $ref: '#/components/responses/OriginForbidden'
         '422':
           description: Too many groups; narrow the time range or model filter
           content:
@@ -910,12 +893,6 @@ components:
           schema:
             type: string
             example: Bearer
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/Error'
-    OriginForbidden:
-      description: Browser Origin is not in allowed_origins (empty by default); no allow-origin header for rejected origins
       content:
         application/json:
           schema:

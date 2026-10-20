@@ -4,15 +4,12 @@ import http from 'node:http';
 import { demoQuery } from '../public/demo.js';
 import { validateControl } from '../public/agent-client.js';
 
-const origin = process.env.MOCK_DASHBOARD_ORIGIN || 'http://127.0.0.1:18080';
 for (const port of [18190, 18191]) {
   const jobs = []; let loseFirstResponse = true;
   const server = http.createServer(async (req, res) => {
-    res.setHeader('Cache-Control', 'no-store'); res.setHeader('Vary', 'Origin');
+    res.setHeader('Cache-Control', 'no-store'); res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
     const send = (status, body) => { res.writeHead(status); res.end(JSON.stringify(body)); };
-    if (req.headers.origin && req.headers.origin !== origin) { send(403, { code: 'origin_forbidden' }); return; }
-    if (req.headers.origin) res.setHeader('Access-Control-Allow-Origin', origin);
     if (req.method === 'OPTIONS') {
       res.setHeader('Access-Control-Allow-Methods', 'GET, POST');
       res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
@@ -48,6 +45,6 @@ for (const port of [18190, 18191]) {
       send(200, body);
     } catch (error) { send(error.status || 500, { code: error.code || 'internal_error' }); }
   });
-  server.listen(port, '127.0.0.1', () => console.log(`Synthetic Agent http://127.0.0.1:${port}; allow ${origin}`));
+  server.listen(port, '127.0.0.1', () => console.log(`Synthetic Agent http://127.0.0.1:${port}; allow any origin`));
   for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, () => server.close());
 }

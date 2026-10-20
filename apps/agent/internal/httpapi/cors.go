@@ -5,28 +5,10 @@ import (
 	"strings"
 )
 
-// WithAllowedOrigins is configured once at startup. Empty keeps CLI-only access.
-func (h *Handler) WithAllowedOrigins(origins []string) *Handler {
-	h.allowedOrigins = make(map[string]bool, len(origins))
-	for _, origin := range origins {
-		h.allowedOrigins[origin] = true
-	}
-	return h
-}
-
-func (h *Handler) cors(w http.ResponseWriter, r *http.Request, id string) bool {
-	w.Header().Add("Vary", "Origin")
-	origin := r.Header.Get("Origin")
-	if origin == "" {
-		return true // Existing authenticated CLI and health callers are unchanged.
-	}
-	if len(r.Header.Values("Origin")) != 1 || !h.allowedOrigins[origin] {
-		failure(w, 403, "origin_forbidden", "This origin is not configured", id)
-		return false
-	}
-	// Set before authentication and routing so allowed browsers can read errors.
-	w.Header().Set("Access-Control-Allow-Origin", origin)
-	if r.Method != http.MethodOptions {
+// CORS permits every browser origin without cookies or HTTP credentials.
+// Only valid preflights bypass Bearer authentication.
+func cors(w http.ResponseWriter, r *http.Request, id string) bool {
+	if r.Header.Get("Origin") == "" || r.Method != http.MethodOptions {
 		return true
 	}
 	w.Header().Add("Vary", "Access-Control-Request-Method")

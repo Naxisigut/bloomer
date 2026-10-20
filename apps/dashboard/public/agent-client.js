@@ -9,7 +9,7 @@ const messages = {
   control_unsupported: '该设备 Agent 尚不支持远程操作，请先升级设备端 Agent。',
   control_busy: '设备正在执行另一项操作，请等待结束后再试。',
   request_conflict: '此请求编号已用于其他操作，请刷新后重新提交。',
-  origin_forbidden: '当前看板来源未获允许，请在设备端 allowed_origins 中加入网页来源并重启 Agent。',
+  origin_forbidden: '该设备仍限制网页来源，请升级 Agent 后重试。',
   unauthorized: '访问令牌无效，请移除设备后使用正确的独立令牌重新连接。',
   data_unavailable: '设备尚未完成首次采集，暂时没有收益数据。',
   database_unavailable: '设备数据库暂不可用，请稍后刷新。',
@@ -85,7 +85,7 @@ export async function queryAgent(device, route, params = new URLSearchParams(), 
     if (signal?.aborted) signal.throwIfAborted();
     if (error instanceof AppError) throw error;
     if (timedOut) throw new AppError(504, 'request_timeout', '连接或读取设备超时，请检查网络与 Agent 状态后重试。');
-    throw new AppError(502, 'device_unreachable', '浏览器无法完成设备请求，无法区分网络、证书或 CORS 问题。请检查 Tailscale、设备在线与 Agent 状态、HTTPS 地址和端口、证书，以及设备 allowed_origins 是否包含当前看板来源。');
+    throw new AppError(502, 'device_unreachable', '浏览器无法完成设备请求，无法区分网络、证书或 CORS 问题。请检查 Tailscale、设备在线与 Agent 状态、HTTPS 地址和端口、证书，以及 Agent 是否已升级为允许任意网页来源的版本。');
   } finally {
     clearTimeout(timer); signal?.removeEventListener('abort', abort);
     if (reader) { try { await reader.cancel(); } catch { /* Aborted stream. */ } reader.releaseLock(); }

@@ -29,27 +29,28 @@ func TestCORSAuthenticationAndErrors(t *testing.T) {
 	}
 	defer manager.Close()
 	const origin = "http://127.0.0.1:18080"
-	h := New(s, testToken, "test", "", nil).WithControl(manager).WithAllowedOrigins([]string{origin})
+	h := New(s, testToken, "test", "", nil).WithControl(manager)
 	for _, tc := range []struct {
 		name, method, path, origin, auth, preflightMethod, headers, body string
 		status                                                           int
-		cors                                                             bool
 	}{
-		{name: "GET preflight without token", method: "OPTIONS", path: "/v1/health", origin: origin, preflightMethod: "GET", headers: "authorization", status: 204, cors: true},
-		{name: "POST preflight without token", method: "OPTIONS", path: "/v1/device/control/jobs", origin: origin, preflightMethod: "POST", headers: "Content-Type, AUTHORIZATION", status: 204, cors: true},
-		{name: "unlisted origin", method: "OPTIONS", path: "/v1/health", origin: "http://127.0.0.1:18081", preflightMethod: "GET", status: 403},
-		{name: "null origin", method: "GET", path: "/v1/health", origin: "null", auth: "Bearer " + testToken, status: 403},
-		{name: "foreign POST", method: "POST", path: "/v1/device/control/jobs", origin: "https://evil.example", auth: "Bearer " + testToken, body: `{"request_id":"0123456789abcdef","action":"stop"}`, status: 403},
-		{name: "no token", method: "GET", path: "/v1/health", origin: origin, status: 401, cors: true},
-		{name: "bad token", method: "POST", path: "/v1/device/control/jobs", origin: origin, auth: "Bearer incorrect", status: 401, cors: true},
-		{name: "authenticated GET", method: "GET", path: "/v1/health", origin: origin, auth: "Bearer " + testToken, status: 200, cors: true},
-		{name: "authenticated POST", method: "POST", path: "/v1/device/control/jobs", origin: origin, auth: "Bearer " + testToken, body: `{"request_id":"0123456789abcdef","action":"stop"}`, status: 202, cors: true},
-		{name: "invalid input", method: "GET", path: "/v1/earnings?limit=bad", origin: origin, auth: "Bearer " + testToken, status: 400, cors: true},
-		{name: "not found", method: "GET", path: "/v1/missing", origin: origin, auth: "Bearer " + testToken, status: 404, cors: true},
-		{name: "unsupported method", method: "DELETE", path: "/v1/health", origin: origin, auth: "Bearer " + testToken, status: 405, cors: true},
-		{name: "bad preflight method", method: "OPTIONS", path: "/v1/health", origin: origin, preflightMethod: "DELETE", status: 403, cors: true},
-		{name: "bad preflight headers", method: "OPTIONS", path: "/v1/health", origin: origin, preflightMethod: "GET", headers: "Authorization, X-Unsafe", status: 403, cors: true},
-		{name: "OPTIONS without method", method: "OPTIONS", path: "/v1/health", origin: origin, status: 403, cors: true},
+		{name: "GET preflight without token", method: "OPTIONS", path: "/v1/health", origin: origin, preflightMethod: "GET", headers: "authorization", status: 204},
+		{name: "POST preflight without token", method: "OPTIONS", path: "/v1/device/control/jobs", origin: origin, preflightMethod: "POST", headers: "Content-Type, AUTHORIZATION", status: 204},
+		{name: "other origin preflight", method: "OPTIONS", path: "/v1/health", origin: "http://127.0.0.1:18081", preflightMethod: "GET", status: 204},
+		{name: "null origin", method: "GET", path: "/v1/health", origin: "null", auth: "Bearer " + testToken, status: 200},
+		{name: "other origin missing POST token", method: "POST", path: "/v1/device/control/jobs", origin: "https://dashboard.example", body: `{"request_id":"0123456789abcdef","action":"stop"}`, status: 401},
+		{name: "no token", method: "GET", path: "/v1/health", origin: origin, status: 401},
+		{name: "bad token", method: "POST", path: "/v1/device/control/jobs", origin: origin, auth: "Bearer incorrect", status: 401},
+		{name: "authenticated GET", method: "GET", path: "/v1/health", origin: origin, auth: "Bearer " + testToken, status: 200},
+		{name: "authenticated other origin POST", method: "POST", path: "/v1/device/control/jobs", origin: "https://other.example:9443", auth: "Bearer " + testToken, body: `{"request_id":"0123456789abcdef","action":"stop"}`, status: 202},
+		{name: "invalid input", method: "GET", path: "/v1/earnings?limit=bad", origin: origin, auth: "Bearer " + testToken, status: 400},
+		{name: "not found", method: "GET", path: "/v1/missing", origin: origin, auth: "Bearer " + testToken, status: 404},
+		{name: "unsupported method", method: "DELETE", path: "/v1/health", origin: origin, auth: "Bearer " + testToken, status: 405},
+		{name: "bad preflight method", method: "OPTIONS", path: "/v1/health", origin: origin, preflightMethod: "DELETE", status: 403},
+		{name: "bad preflight headers", method: "OPTIONS", path: "/v1/health", origin: origin, preflightMethod: "GET", headers: "Authorization, X-Unsafe", status: 403},
+		{name: "OPTIONS without method", method: "OPTIONS", path: "/v1/health", origin: origin, status: 403},
+		{name: "null origin missing token", method: "GET", path: "/v1/health", origin: "null", status: 401},
+		{name: "other origin bad GET token", method: "GET", path: "/v1/health", origin: "https://other.example", auth: "Bearer incorrect", status: 401},
 		{name: "CLI GET", method: "GET", path: "/v1/health", auth: "Bearer " + testToken, status: 200},
 		{name: "CLI POST idempotent", method: "POST", path: "/v1/device/control/jobs", auth: "Bearer " + testToken, body: `{"request_id":"0123456789abcdef","action":"stop"}`, status: 202},
 		{name: "CLI no token", method: "GET", path: "/v1/health", status: 401},
@@ -66,20 +67,16 @@ func TestCORSAuthenticationAndErrors(t *testing.T) {
 			if w.Code != tc.status {
 				t.Fatalf("%d %s", w.Code, w.Body)
 			}
-			want := ""
-			if tc.cors {
-				want = origin
-			}
-			if w.Header().Get("Access-Control-Allow-Origin") != want || w.Header().Get("Access-Control-Allow-Credentials") != "" {
+			if w.Header().Get("Access-Control-Allow-Origin") != "*" || w.Header().Get("Access-Control-Allow-Credentials") != "" {
 				t.Fatal("incorrect CORS headers", w.Header())
-			}
-			if !strings.Contains(strings.Join(w.Header().Values("Vary"), ","), "Origin") {
-				t.Fatal("missing Vary")
 			}
 			if tc.status == 204 && (w.Header().Get("Access-Control-Allow-Methods") != "GET, POST" || !strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "Authorization")) {
 				t.Fatal("missing preflight headers")
 			}
 		})
+	}
+	if len(manager.Status().Jobs) != 1 {
+		t.Fatal("preflight or unauthorized request created a job")
 	}
 	s.Close()
 	r := httptest.NewRequest("GET", "/v1/health", nil)
@@ -87,7 +84,7 @@ func TestCORSAuthenticationAndErrors(t *testing.T) {
 	r.Header.Set("Authorization", "Bearer "+testToken)
 	w := httptest.NewRecorder()
 	h.ServeHTTP(w, r)
-	if w.Code != 503 || w.Header().Get("Access-Control-Allow-Origin") != origin {
+	if w.Code != 503 || w.Header().Get("Access-Control-Allow-Origin") != "*" {
 		t.Fatal("database error lost CORS", w.Code, w.Header())
 	}
 }

@@ -92,7 +92,7 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 	} else {
 		defer controls.Close()
 	}
-	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls).WithAllowedOrigins(c.AllowedOrigins)
+	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls)
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError)}
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.Serve(listener) }()

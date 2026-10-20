@@ -20,7 +20,6 @@ import (
 )
 
 type Handler struct {
-	allowedOrigins     map[string]bool
 	control            *control.Manager
 	store              *store.Store
 	tokenHash          [32]byte
@@ -49,6 +48,8 @@ func failure(w http.ResponseWriter, status int, code, message, id string) {
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	// Public CORS policy; actual requests still require the independent Bearer token.
+	w.Header().Set("Access-Control-Allow-Origin", "*")
 	id := make([]byte, 12)
 	if _, err := rand.Read(id); err != nil {
 		failure(w, 503, "unavailable", "Request identifier unavailable", "")
@@ -58,7 +59,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Request-ID", requestID)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	if !h.cors(w, r, requestID) {
+	if !cors(w, r, requestID) {
 		return
 	}
 	auth := r.Header.Get("Authorization")

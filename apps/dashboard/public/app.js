@@ -7,7 +7,6 @@ import { createAgentClient } from './agent-client.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
-$('#dashboard-origin').textContent = location.origin;
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 const number = value => new Intl.NumberFormat('en-US').format(value);
 const icons = {
