@@ -30,11 +30,22 @@
 
   <div class="app-shell">
     <header id="overview-topbar" class="topbar" aria-label="设备与收益概况">
-      <div class="topbar-device"><div class="device-select-wrap"><label class="sr-only" for="device-select">选择数据来源设备</label><select id="device-select"><option value="demo">演示设备</option></select><span id="device-status" class="status-tag" aria-label="收益采集状态">连接中</span></div><div class="device-overview" aria-live="polite"><div><span>当前是否空闲</span><strong id="activity-status" class="status-tag warning">读取状态中</strong></div><div><span>设备热压力</span><strong id="thermal-status" class="status-tag warning">未知</strong></div><div><span>内存压力</span><strong id="memory-pressure-status" class="status-tag warning">未知</strong></div></div></div>
+      <div class="topbar-device">
+        <div class="device-select-wrap">
+          <span id="device-status" class="collection-dot offline" role="img" aria-label="收益采集状态：检测中" title="收益采集状态：检测中"></span>
+          <label class="sr-only" for="device-select">选择数据来源设备</label>
+          <select id="device-select"><option value="demo">演示设备</option></select>
+        </div>
+      </div>
+      <div class="device-overview" role="group" aria-label="设备状态" aria-live="polite">
+        <div><span>工作状态</span><strong id="activity-status" class="status-tag warning">读取状态中</strong></div>
+        <div><span>温度</span><strong id="thermal-status" class="status-tag warning">未知</strong></div>
+        <div><span>内存</span><strong id="memory-pressure-status" class="status-tag warning">未知</strong></div>
+      </div>
       <div class="summary-metrics" aria-label="当前设备收益，不受下方筛选影响">
-        <div class="summary-metric"><span class="summary-label">近 1 小时收益</span><strong id="last-hour-amount" class="summary-amount">—</strong><span class="summary-hint">滚动 60 分钟</span></div>
-        <div class="summary-metric"><span class="summary-label">近 24 小时收益</span><strong id="last-day-amount" class="summary-amount">—</strong><span class="summary-hint">滚动 24 小时</span></div>
-        <div class="summary-metric"><span class="summary-label">可用余额</span><strong id="available-balance" class="summary-amount">—</strong><span class="summary-hint">可提现 <strong id="withdrawable-balance">—</strong></span></div>
+        <div class="summary-metric"><span class="summary-label">近 1 小时收益</span><strong id="last-hour-amount" class="summary-amount">—</strong></div>
+        <div class="summary-metric"><span class="summary-label">近 24 小时收益</span><strong id="last-day-amount" class="summary-amount">—</strong></div>
+        <div class="summary-metric"><span class="summary-label">可用余额</span><strong id="available-balance" class="summary-amount">—</strong></div>
       </div>
     </header>
     <main id="main" tabindex="-1" data-view="overview">
@@ -88,6 +99,20 @@
       <section id="devices-view" class="devices-only">
         <div class="section-heading"><h2>数据来源设备</h2></div><div id="device-cards" class="device-cards"></div>
         <div class="panel device-state-panel"><div class="panel-heading"><div><h2>设备状态</h2><p id="state-device-label">当前设备</p></div><div class="state-panel-actions"><label class="sr-only" for="detail-device-select">选择详情设备</label><select id="detail-device-select" class="model-filter"></select><span id="device-state-time" class="state-timestamp">每 60 秒更新</span></div></div><p id="device-state-message" class="state-message" role="status">正在读取设备状态…</p><div id="device-state-details" class="health-details"></div><p class="state-footnote">显示设备端最近保存的读数，每 60 秒刷新。未支持或读取失败会单独标注；空闲表示本机没有正在处理或排队的任务，且该设备最新收益距采集时超过 5 分钟；热压力与内存压力直接从 macOS 本地采集。</p></div>
+        <div class="panel control-panel" id="control-panel">
+          <div class="panel-heading"><div><h2>远程操作</h2><p id="control-device-label">当前设备</p></div><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
+          <p id="control-message" class="state-message" role="status">正在检查远程操作能力…</p>
+          <div class="control-content">
+            <div class="control-lifecycle"><button type="button" class="button button-white" data-control="stop" disabled>关闭 Darkbloom</button><button type="button" class="button button-white" data-control="restart" disabled>重启 Darkbloom</button></div>
+            <div class="control-model-grid">
+              <div><label for="control-local-models">本地模型（可多选）</label><select id="control-local-models" multiple size="5" aria-describedby="control-selection-note"></select><p id="control-selection-note">切换会替换整套托管模型；开启使用所选模型。</p><div class="control-lifecycle"><button type="button" class="button button-dark" data-control="switch" disabled>切换模型</button><button type="button" class="button button-white" data-control="start" disabled>开启 Darkbloom</button></div><p id="control-local-error" class="control-note"></p></div>
+              <div><label for="control-download-model">下载模型</label><select id="control-download-model"><option value="">请先刷新模型目录</option></select><p>从设备的官方模型目录选择，下载完成后可在本地模型中选择。</p><button type="button" class="button button-white" data-control="download" disabled>下载所选模型</button><p id="control-catalog-error" class="control-note"></p></div>
+            </div>
+            <p class="control-note">关闭、重启和切换会等待已接收的任务完成。操作期间可离开页面，执行结果保存在设备端；下载可能需要较长时间。</p>
+            <h3>最近操作</h3><div id="control-jobs" aria-live="polite"></div>
+            <button id="control-retry" type="button" class="button button-white" hidden>核对结果并重试提交</button>
+          </div>
+        </div>
         <div class="panel health-panel"><div class="panel-heading"><div><h2>采集健康</h2><p id="health-device-label">当前选择的设备</p></div><span class="subtle-tag">只读监测</span></div><div id="health-details" class="health-details"></div></div>
       </section>
 
@@ -116,6 +141,9 @@
     </main>
   </div>
 
+  <dialog id="control-confirm-dialog">
+    <form method="dialog"><div class="dialog-header"><h2>确认远程操作</h2><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><p id="control-confirm-message"></p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-dark" value="confirm" id="control-confirm-submit">确认执行</button></div></form>
+  </dialog>
   <dialog id="connect-dialog"><form id="connect-form"><div class="dialog-header"><button type="button" id="close-dialog" class="icon-button" aria-label="关闭连接窗口">×</button></div><h2>连接设备</h2><label>设备名称<input name="name" autocomplete="off" placeholder="例如：书房 Mac mini" maxlength="60" required></label><label>Agent 地址<input name="url" type="url" autocomplete="off" placeholder="https://your-device.your-tailnet.ts.net:8443" required><span class="field-hint">Tailscale 私网 HTTPS 地址，或 http://127.0.0.1:17890</span></label><label>独立访问令牌<div class="password-field"><input name="token" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴 Agent 的 access.token" maxlength="4096" required><button type="button" id="toggle-token" aria-label="显示令牌" aria-pressed="false">显示</button></div></label><div class="connection-note">使用 Bloomer access.token，不使用 Darkbloom 官方凭证；令牌仅保存在本机。</div><div id="connection-result" role="status" hidden></div><div class="dialog-actions"><button type="button" id="test-connection" class="button button-white">测试连接</button><button type="submit" id="save-device" class="button button-dark">连接并保存</button></div></form></dialog>
   <dialog id="remove-dialog"><form method="dialog"><h2>移除设备？</h2><p>仅移除连接，设备上的 Agent 和历史数据不变。</p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-danger" value="confirm">移除设备</button></div></form></dialog>
   <dialog id="state-sample-dialog" class="state-sample-dialog"><div class="dialog-header"><button type="button" id="close-state-sample" class="icon-button" aria-label="关闭状态详情">×</button></div><h2>状态记录详情</h2><p id="state-sample-title"></p><div id="state-sample-details" class="health-details"></div></dialog>

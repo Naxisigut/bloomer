@@ -32,6 +32,8 @@ const (
 func Windows() []int { return []int{50, 100, 300, 1000} }
 
 type Config struct {
+	RemoteControlEnabled   bool   `json:"remote_control_enabled"`
+	DarkbloomBinary        string `json:"darkbloom_binary"`
 	CollectionEnabled      bool   `json:"collection_enabled"`
 	DeviceStateEnabled     bool   `json:"device_state_enabled"`
 	ProviderStateFile      string `json:"provider_state_file"`
@@ -51,10 +53,12 @@ func Defaults() (Config, error) {
 	}
 	data := filepath.Join(home, "Library", "Application Support", "Bloomer", "agent")
 	return Config{
-		CollectionEnabled:  true,
-		DeviceStateEnabled: true,
-		ProviderStateFile:  filepath.Join(home, ".darkbloom", "daemon-state.json"),
-		DataDir:            data, LogDir: filepath.Join(home, "Library", "Logs", "Bloomer", "agent"),
+		RemoteControlEnabled: true,
+		DarkbloomBinary:      filepath.Join(home, ".darkbloom", "bin", "darkbloom"),
+		CollectionEnabled:    true,
+		DeviceStateEnabled:   true,
+		ProviderStateFile:    filepath.Join(home, ".darkbloom", "daemon-state.json"),
+		DataDir:              data, LogDir: filepath.Join(home, "Library", "Logs", "Bloomer", "agent"),
 		Listen: "127.0.0.1:17890", UpstreamURL: "https://api.darkbloom.dev/v1/provider/account-earnings",
 		UpstreamCredentialFile: filepath.Join(home, ".darkbloom", "auth_token"),
 	}, nil
@@ -103,7 +107,7 @@ func Load(path string) (Config, error) {
 			return c, errors.New("configuration must be an object")
 		}
 	}
-	for _, p := range []*string{&c.DataDir, &c.LogDir, &c.UpstreamCredentialFile, &c.AccessTokenFile, &c.ProviderStateFile} {
+	for _, p := range []*string{&c.DataDir, &c.LogDir, &c.UpstreamCredentialFile, &c.AccessTokenFile, &c.ProviderStateFile, &c.DarkbloomBinary} {
 		if *p == "" {
 			continue
 		}
@@ -139,7 +143,7 @@ func resolve(p, base string) (string, error) {
 }
 
 func (c Config) Validate() error {
-	for _, p := range []string{c.DataDir, c.LogDir, c.AccessTokenFile, c.UpstreamCredentialFile, c.ProviderStateFile} {
+	for _, p := range []string{c.DataDir, c.LogDir, c.AccessTokenFile, c.UpstreamCredentialFile, c.ProviderStateFile, c.DarkbloomBinary} {
 		if p == "" || !filepath.IsAbs(p) {
 			return errors.New("runtime and credential paths must be absolute and nonempty")
 		}

@@ -9,6 +9,6 @@
     "start": "node server.mjs",
     "dev": "node --watch server.mjs",
     "test": "node --test",
-    "check": "node --check server.mjs && node --check lib/config.mjs && node --check lib/proxy.mjs && node --check lib/demo.mjs && node --check public/app.js && node --check public/data.js && node --check public/pagination.js && node --check public/device-state.js && node --check public/device-ui.js"
+    "check": "node --check server.mjs && node --check lib/config.mjs && node --check lib/proxy.mjs && node --check lib/demo.mjs && node --check public/app.js && node --check public/data.js && node --check public/pagination.js && node --check public/device-state.js && node --check public/device-ui.js && node --check public/control-ui.js"
   }
 }

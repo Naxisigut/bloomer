@@ -1,6 +1,6 @@
 # Bloomer
 
-运行在 Darkbloom 设备上的收益采集 Agent，与独立看板共用接口契约。设备端已提供采集、恢复、留存、只读查询和 macOS 安装管理；看板第一版位于 `apps/dashboard`。
+运行在 Darkbloom 设备上的收益采集 Agent，与独立看板共用接口契约。设备端已提供采集、恢复、留存、认证查询、Darkbloom 远程操作和 macOS 安装管理；看板第一版位于 `apps/dashboard`。
 
 程序启动后立即采集，之后每 60 秒从 50 条开始，按 50 → 100 → 300 → 1000 扩窗。首次导入、达到 30 分钟中断或时钟异常时读取 1000 条。健康、账户概览、收益明细和统计接口均使用独立 Bearer 令牌。
 
@@ -16,6 +16,10 @@ npm start
 打开 <http://127.0.0.1:17891>，即可查看收益分析、趋势、模型贡献和设备采集健康，支持时间 / 模型筛选、游标分页与 CSV 导出。未配置设备时展示明确标注的演示数据；点击“连接设备”填写 Tailscale HTTPS 地址与 Bloomer 独立令牌。默认位置的本机 Agent 可自动识别，令牌保存在看板服务端的私有目录。
 
 详细使用方式见[看板说明](apps/dashboard/README.md)，设计与范围见[看板第一版](docs/dashboard.md)。
+
+## 远程操作设备
+
+在看板“我的设备”页选择真实设备，可远程切换模型、下载模型，以及开启、关闭和重启 Darkbloom。操作以后台任务执行，显示执行结果并保存最近 50 条记录。需要升级设备端 Agent；完整配置、恢复规则与接口见[远程操作说明](docs/remote-control.md)。
 
 ## 开发与构建
 
@@ -40,17 +44,17 @@ make -C apps/agent build
 open apps/agent/dist
 ```
 
-默认版本统一定义在 `apps/agent/internal/release/version.go` 的 `Version` 常量中，当前为 `1.0.4`。日常发布只修改这一处，Agent、管理工具、安装器和 DMG 文件名会使用同一版本，无需打包时手动填写。临时构建仍可用 `VERSION=1.0.5` 覆盖。`make build` 会自动编译 Agent 和 Go 管理工具、生成图形安装器并打包 DMG，同时校验包内文件、应用签名及 DMG 完整性。`make dmg` 和 `make package` 执行相同流程。
+默认版本统一定义在 `apps/agent/internal/release/version.go` 的 `Version` 常量中，当前为 `1.0.5`。日常发布只修改这一处，Agent、管理工具、安装器和 DMG 文件名会使用同一版本，无需打包时手动填写。临时构建仍可用 `VERSION=1.0.6` 覆盖。`make build` 会自动编译 Agent 和 Go 管理工具、生成图形安装器并打包 DMG，同时校验包内文件、应用签名及 DMG 完整性。`make dmg` 和 `make package` 执行相同流程。
 
 生成的文件位于 `apps/agent/dist/`，不进入 Git：
 
-- `bloomer-agent-1.0.4-darwin-arm64.dmg`：设备端安装包。
-- `bloomer-agent-1.0.4-darwin-arm64.dmg.sha256`：安装包的 SHA-256 校验文件。
+- `bloomer-agent-1.0.5-darwin-arm64.dmg`：设备端安装包。
+- `bloomer-agent-1.0.5-darwin-arm64.dmg.sha256`：安装包的 SHA-256 校验文件。
 
 需要校验安装包时，在仓库根目录执行：
 
 ```sh
-(cd apps/agent/dist && shasum -a 256 -c bloomer-agent-1.0.4-darwin-arm64.dmg.sha256)
+(cd apps/agent/dist && shasum -a 256 -c bloomer-agent-1.0.5-darwin-arm64.dmg.sha256)
 ```
 
 将 DMG 复制到目标设备，在运行 Darkbloom 的同一 macOS 用户下打开，双击其中的 **安装 Bloomer.app**，即可安装并启动后台服务。已有版本时会执行升级，沿用配置、访问令牌和数据库，升级前自动创建一致备份。安装完成后可以推出 DMG。
@@ -122,6 +126,7 @@ python3 scripts/smoke-agent.py
 - [数据库迁移与恢复](docs/database.md)
 - [DMG 安装与服务管理](docs/install.md)
 - [macOS 下 Tailscale DNS 与 FlClash TUN 共存及撤销](docs/tailscale-dns-with-flclash.md)
+- [Darkbloom 远程操作](docs/remote-control.md)
 - [共享 OpenAPI 契约](contracts/openapi.yaml)
 - [仓库结构](docs/repository-structure.md)
 

@@ -1,4 +1,6 @@
 {
+  "remote_control_enabled": true,
+  "darkbloom_binary": "~/.darkbloom/bin/darkbloom",
   "collection_enabled": true,
   "device_state_enabled": true,
   "provider_state_file": "~/.darkbloom/daemon-state.json",

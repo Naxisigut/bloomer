@@ -1,13 +1,15 @@
 openapi: 3.0.3
 info:
   title: Bloomer Agent API
-  version: 1.0.0
+  version: 1.1.0
   description: |
-    Six versioned read-only endpoints are implemented. Device state is sampled
+    Six versioned read-only endpoints and authenticated Darkbloom control endpoints are implemented. Device state is sampled
     independently every 60 seconds and retained for 365 days. Health includes live
     collection, recovery, throttling and cleanup status. A successful response
     may contain stale or partial history, as described by its metadata.
-    This API reads local SQLite; requests never initiate an upstream collection.
+    Data queries read local SQLite and never initiate an upstream collection.
+    Control requests execute allowlisted local CLI commands as serialized background jobs.
+    When remote_control_enabled is true (default), the same Bearer token grants control access.
     Money is an integer number of micro-USD encoded as a decimal string. Record
     IDs are opaque strings. Official lifetime totals and local retained totals
     have different scopes and must not be added across devices for one account.
@@ -18,6 +20,128 @@ servers:
 security:
   - bearerAuth: []
 paths:
+  /v1/device/control:
+    get:
+      operationId: getDeviceControl
+      summary: Remote control availability and recent jobs
+      description: |
+        enabled reflects remote_control_enabled. available also requires an executable
+        Darkbloom CLI and a control manager without a known history failure. Jobs are newest first, capped at 50.
+        CLI availability does not imply support for every action or model.
+        No query parameters are accepted on control endpoints.
+      responses:
+        '200':
+          description: Control capability and history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OriginForbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/device/control/models:
+    get:
+      operationId: getControlModels
+      summary: Discover local models and the official catalog through the device CLI
+      description: |
+        Each discovery command has a four second deadline. Partial failure preserves
+        the other list. Results contain allowlisted model metadata, never cache paths.
+        Presence in either list does not guarantee runtime or memory compatibility.
+      responses:
+        '200':
+          description: Independent local and catalog results
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [local, catalog]
+                properties:
+                  local:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ControlModel'
+                  catalog:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/ControlModel'
+                  local_error:
+                    type: string
+                    enum: [models_unavailable]
+                  catalog_error:
+                    type: string
+                    enum: [catalog_unavailable]
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OriginForbidden'
+        '409':
+          description: Another discovery is in progress (control_busy)
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /v1/device/control/jobs:
+    get:
+      operationId: getControlJobs
+      summary: Recent 50 control jobs, newest first
+      responses:
+        '200':
+          description: Durable control history
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [jobs]
+                properties:
+                  jobs:
+                    type: array
+                    maxItems: 50
+                    items:
+                      $ref: '#/components/schemas/ControlJob'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/OriginForbidden'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+    post:
+      operationId: submitControlJob
+      summary: Submit one serialized Darkbloom operation
+      description: |
+        Saves intent before executing; returns immediately. Same request_id with the
+        same ordered selection returns the existing job while retained (last 50 jobs).
+        Reusing an ID for different arguments returns request_conflict. There is no
+        automatic replay after interruption. One mutation including downloads runs
+        at a time. No force mode. Graceful drain budget is 600 seconds; restart
+        adds a 180 second startup confirmation. Overall CLI timeout is 15 minutes,
+        or 6 hours for download. Timed out/interrupted jobs are unconfirmed and may
+        already have affected the provider. Browser disconnect does not cancel a job.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ControlRequest'
+      responses:
+        '202':
+          description: Accepted job or existing job for the same request_id
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlJob'
+        '400':
+          description: Invalid request, model selection, unknown field or query parameter
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Forbidden Origin or control_disabled
+        '409':
+          description: control_busy or request_conflict
+        '415':
+          description: Content-Type must be application/json
+        '503':
+          $ref: '#/components/responses/Unavailable'
   /v1/health:
     get:
       operationId: getHealth
@@ -353,6 +477,77 @@ components:
       schema:
         type: string
   schemas:
+    ControlRequest:
+      type: object
+      additionalProperties: false
+      required: [request_id, action]
+      properties:
+        request_id:
+          type: string
+          pattern: '^[A-Za-z0-9_-]{16,80}$'
+        action:
+          type: string
+          enum: [start, stop, restart, switch, download]
+        models:
+          type: array
+          maxItems: 16
+          uniqueItems: true
+          description: |
+            start/switch require 1-16 models; download requires exactly one;
+            stop/restart require none. Dot/dotdot path segments are rejected.
+          items:
+            type: string
+            pattern: '^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$'
+    ControlJob:
+      type: object
+      required: [id, request_id, action, status, created_at]
+      properties:
+        id:
+          type: string
+        request_id:
+          type: string
+        action:
+          type: string
+          enum: [start, stop, restart, switch, download]
+        models:
+          type: array
+          items:
+            type: string
+        status:
+          type: string
+          enum: [running, succeeded, failed, unconfirmed]
+        created_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        error:
+          type: string
+          enum: [command_failed, command_timeout, agent_interrupted, history_unavailable]
+    ControlStatus:
+      type: object
+      required: [enabled, available, jobs]
+      properties:
+        enabled:
+          type: boolean
+        available:
+          type: boolean
+        jobs:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ControlJob'
+    ControlModel:
+      type: object
+      required: [id]
+      properties:
+        id:
+          type: string
+        display_name:
+          type: string
+        size_gb:
+          type: number
     DeviceIdentity:
       type: object
       required: [device_id, hardware]

@@ -1,6 +1,7 @@
 import { DASHBOARD_TIMEZONE, money, sumMoney, sumCount, timeRange, rollingRange, dateKey, shiftDate, zonedMidnight, trendGroups, csvRows } from './data.js';
 import { CursorPager } from './pagination.js';
 import { createDeviceUI } from './device-ui.js';
+import { createControlUI } from './control-ui.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -51,11 +52,13 @@ function relative(value) {
 async function api(path, options = {}) {
   const response = await fetch(path, { cache: 'no-store', ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } });
   const body = await response.json();
-  if (!response.ok) { const error = new Error(body.message || '请求暂时无法完成。'); error.code = body.code; throw error; }
+  if (!response.ok) { const error = new Error(body.message || '请求暂时无法完成。'); error.code = body.code; error.status = response.status; throw error; }
   return body;
 }
 const query = (route, params, device = state.selected, signal) => api(`/api/devices/${encodeURIComponent(device)}/${route}${params ? '?' + new URLSearchParams(params) : ''}`, { signal });
 const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, dateTime, escape, preference, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
+
+const controlUI = createControlUI({ api, query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
 
 function resetQuery({ clearModel = false, preserveSummary = false } = {}) {
   state.exportController?.abort();
@@ -103,8 +106,10 @@ function renderDevices() {
   $('#demo-banner').hidden = active !== 'demo';
   const currentHealth = state.health.get(active);
   const status = healthStatus(currentHealth);
-  $('#device-status').textContent = status.label;
-  $('#device-status').className = `status-tag ${status.className}`;
+  const collectionDot = $('#device-status');
+  collectionDot.className = `collection-dot${status.className ? ' offline' : ''}`;
+  collectionDot.setAttribute('aria-label', `收益采集状态：${status.label}`);
+  collectionDot.title = `收益采集状态：${status.label}`;
   $('#device-cards').innerHTML = deviceChoices().map(device => {
     const health = state.health.get(device.id);
     const status = healthStatus(health);
@@ -112,6 +117,7 @@ function renderDevices() {
   }).join('');
   renderHealth();
   deviceUI.render();
+  controlUI.render();
 }
 
 function renderHealth() {
@@ -153,8 +159,7 @@ function renderMetrics() {
   $('#last-hour-amount').textContent = money(lastHour ? sumMoney(lastHour.items) : null, 4);
   $('#last-day-amount').textContent = money(lastDay ? sumMoney(lastDay.items) : null, 4);
   $('#available-balance').textContent = money(overview?.official?.available_balance_micro_usd);
-  $('#withdrawable-balance').textContent = money(overview?.official?.withdrawable_balance_micro_usd);
-  $$('.summary-amount, #withdrawable-balance').forEach(element => { element.title = element.textContent; });
+  $$('.summary-amount').forEach(element => { element.title = element.textContent; });
   $('#chart-total').textContent = money(amount);
   syncTrendGrouping();
   const start = state.range?.from;
@@ -356,7 +361,7 @@ function setView(view) {
   if ($('#earnings-filters').parentElement !== slot) slot.append($('#earnings-filters'));
   document.title = `Bloomer · ${titles[view]}`;
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  if (view === 'devices') { checkDevices(); deviceUI.refresh(); }
+  if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); }
   if (view === 'query') deviceUI.enterQuery();
   renderAlerts(); updateClock();
   history.replaceState(null, '', `#${view}`);
@@ -368,7 +373,7 @@ $$('.nav-item').forEach(button => button.addEventListener('click', () => setView
 $('#device-select').addEventListener('change', event => selectDevice(event.target.value));
 $('#refresh').addEventListener('click', () => {
   if (state.view === 'query') { deviceUI.refresh(); deviceUI.queryHistory(); return; }
-  state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData(); if (state.view === 'devices') checkDevices();
+  state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData(); if (state.view === 'devices') { checkDevices(); controlUI.refresh(true); }
 });
 function selectPeriod(period) {
   state.period = period;

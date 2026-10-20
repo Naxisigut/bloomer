@@ -22,6 +22,9 @@ func TestLoadPathsAndValidation(t *testing.T) {
 	if c.DataDir != filepath.Join(dir, "state") || c.LogDir != filepath.Join(home, "logs") || c.AccessTokenFile != filepath.Join(dir, "state", "access.token") {
 		t.Fatalf("incorrect path resolution: %+v", c)
 	}
+	if !c.RemoteControlEnabled || c.DarkbloomBinary != filepath.Join(home, ".darkbloom", "bin", "darkbloom") {
+		t.Fatal("remote control defaults not resolved")
+	}
 	if !c.DeviceStateEnabled || c.ProviderStateFile != filepath.Join(home, ".darkbloom", "daemon-state.json") {
 		t.Fatal("old configuration did not enable device collection by default")
 	}
@@ -70,5 +73,17 @@ func TestRemovedOwnerConfigurationIsIgnoredOnUpgrade(t *testing.T) {
 	}
 	if _, err := Load(path); err != nil {
 		t.Fatal("legacy owner settings prevented upgrade:", err)
+	}
+}
+
+func TestControlConfigurationOptOutAndCustomCLI(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	if err := os.WriteFile(path, []byte(`{"remote_control_enabled":false,"darkbloom_binary":"tools/darkbloom"}`), 0600); err != nil {
+		t.Fatal(err)
+	}
+	c, err := Load(path)
+	if err != nil || c.RemoteControlEnabled || c.DarkbloomBinary != filepath.Join(dir, "tools", "darkbloom") {
+		t.Fatal(c, err)
 	}
 }

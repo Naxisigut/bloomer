@@ -12,6 +12,7 @@ import (
 
 	"bloomer/agent/internal/collector"
 	"bloomer/agent/internal/config"
+	"bloomer/agent/internal/control"
 	"bloomer/agent/internal/health"
 	"bloomer/agent/internal/httpapi"
 	"bloomer/agent/internal/localfs"
@@ -85,7 +86,14 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 		runtime.Collection("disabled", "", "")
 	}
 	cleaner := &retention.Cleaner{Store: db, AccountID: c.AccountID, Now: clock.Now, Runtime: runtime, Logger: logger}
-	server := &http.Server{Handler: httpapi.New(db, token, version, c.AccountID, runtime), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError)}
+	controls, err := control.New(ctx, c.DataDir, c.DarkbloomBinary, c.RemoteControlEnabled)
+	if err != nil {
+		logger.Error("remote control history unavailable")
+	} else {
+		defer controls.Close()
+	}
+	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls)
+	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError)}
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.Serve(listener) }()
 	jobsCtx, cancelJobs := context.WithCancel(ctx)

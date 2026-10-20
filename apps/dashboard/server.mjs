@@ -4,11 +4,11 @@ import { fileURLToPath } from 'node:url';
 import path from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { AppError, DeviceStore, publicDevice, validateDevice } from './lib/config.mjs';
-import { queryAgent } from './lib/proxy.mjs';
+import { queryAgent, submitControl } from './lib/proxy.mjs';
 import { demoQuery } from './lib/demo.mjs';
 
 const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
-const assets = new Map([['/', ['index.html', 'text/html']], ['/styles.css', ['styles.css', 'text/css']], ['/app.js', ['app.js', 'text/javascript']], ['/data.js', ['data.js', 'text/javascript']], ['/device-state.js', ['device-state.js', 'text/javascript']], ['/device-ui.js', ['device-ui.js', 'text/javascript']], ['/pagination.js', ['pagination.js', 'text/javascript']], ['/favicon.svg', ['favicon.svg', 'image/svg+xml']]]);
+const assets = new Map([['/', ['index.html', 'text/html']], ['/styles.css', ['styles.css', 'text/css']], ['/app.js', ['app.js', 'text/javascript']], ['/data.js', ['data.js', 'text/javascript']], ['/device-state.js', ['device-state.js', 'text/javascript']], ['/device-ui.js', ['device-ui.js', 'text/javascript']], ['/control-ui.js', ['control-ui.js', 'text/javascript']], ['/pagination.js', ['pagination.js', 'text/javascript']], ['/favicon.svg', ['favicon.svg', 'image/svg+xml']]]);
 
 async function jsonBody(req) {
   if (!req.headers['content-type']?.startsWith('application/json')) throw new AppError(415, 'invalid_body', '请使用 JSON 提交连接信息。');
@@ -63,8 +63,14 @@ export async function createDashboard(options = {}) {
       } else if (req.method === 'DELETE' && /^\/api\/devices\/[\w-]+$/.test(pathname)) {
         await store.remove(pathname.split('/')[3]);
         send(200, { ok: true });
-      } else if (req.method === 'GET' && /^\/api\/devices\/[\w-]+\/(health|overview|earnings|stats|device-state|device-history)$/.test(pathname)) {
+      } else if (req.method === 'POST' && /^\/api\/devices\/[\w-]+\/control-jobs$/.test(pathname)) {
+        if (searchParams.size) throw new AppError(400, 'invalid_request', '操作不接受查询参数。');
+        const id = pathname.split('/')[3];
+        if (id === 'demo') throw new AppError(403, 'demo_read_only', '演示设备不执行远程操作。');
+        send(202, await submitControl(await store.get(id), await jsonBody(req)));
+      } else if (req.method === 'GET' && /^\/api\/devices\/[\w-]+\/(health|overview|earnings|stats|device-state|device-history|control|control-models|control-jobs)$/.test(pathname)) {
         const [, , , id, route] = pathname.split('/');
+        if (id === 'demo' && route.startsWith('control')) throw new AppError(403, 'demo_read_only', '演示设备不执行远程操作。');
         send(200, id === 'demo' ? demoQuery(route, searchParams) : await queryAgent(await store.get(id), route, searchParams));
       } else {
         throw new AppError(404, 'not_found', '页面或接口不存在。');

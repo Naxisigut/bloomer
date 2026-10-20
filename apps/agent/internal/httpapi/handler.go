@@ -14,11 +14,13 @@ import (
 	"time"
 
 	"bloomer/agent/internal/config"
+	"bloomer/agent/internal/control"
 	"bloomer/agent/internal/health"
 	"bloomer/agent/internal/store"
 )
 
 type Handler struct {
+	control            *control.Manager
 	store              *store.Store
 	tokenHash          [32]byte
 	version, accountID string
@@ -64,6 +66,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Header.Get("Origin") != "" {
 		failure(w, 403, "origin_forbidden", "This origin is not configured", requestID)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/v1/device/control") {
+		h.deviceControl(w, r, requestID)
 		return
 	}
 	if r.URL.Path != "/v1/health" && r.URL.Path != "/v1/account/overview" && r.URL.Path != "/v1/earnings" && r.URL.Path != "/v1/earnings/stats" && r.URL.Path != "/v1/device/state" && r.URL.Path != "/v1/device/state/history" {
