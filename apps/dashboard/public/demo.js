@@ -1,6 +1,6 @@
-import { dateKey, zonedMidnight, shiftDate, sumMoney } from '../public/data.js';
-import { AppError } from './config.mjs';
-import { deviceFields } from '../public/device-state.js';
+import { dateKey, zonedMidnight, shiftDate, sumMoney } from './data.js';
+import { AppError } from './errors.js';
+import { deviceFields } from './device-state.js';
 
 const now = new Date();
 const models = ['Qwen3-32B', 'DeepSeek-R1-Distill-Qwen-32B', 'Qwen3-8B', 'Llama-3.3-70B-Instruct'];
@@ -17,6 +17,9 @@ for (let day = 89; day >= 0; day--) {
   }
 }
 records.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.record_id.localeCompare(a.record_id));
+
+const encodeCursor = value => btoa(String.fromCharCode(...new TextEncoder().encode(JSON.stringify(value)))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const decodeCursor = value => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), character => character.charCodeAt(0))));
 
 const demoHardware = { device_id: 'demo-device', hardware: { os: 'darwin', architecture: 'arm64', chip: 'Apple M4 Max', model: '演示 Mac', logical_cpus: 16, memory_total_bytes: 64 * 2 ** 30 } };
 function stateSample(id) {
@@ -59,7 +62,9 @@ function demoState(route, params, clock) {
   return { device: demoHardware, items, next_before_id: items.length && items.at(-1).id > lowest ? items.at(-1).id : null, meta };
 }
 
-export function demoQuery(route, params, clock = new Date()) {
+export function demoQuery(route, params = new URLSearchParams(), clock = new Date()) {
+  if (route.startsWith('control')) throw new AppError(403, 'demo_read_only', '演示设备不执行远程操作。');
+  if (!['health', 'overview', 'earnings', 'stats', 'device-state', 'device-history'].includes(route)) throw new AppError(404, 'not_found', '接口不存在。');
   if (route === 'device-state' || route === 'device-history') return demoState(route, params, clock);
   const timezone = params.get('timezone') || 'Asia/Shanghai';
   const from = params.get('from') || new Date(+clock - 365 * 86_400_000).toISOString();
@@ -73,13 +78,13 @@ export function demoQuery(route, params, clock = new Date()) {
     const cursor = params.get('cursor');
     if (cursor) {
       try {
-        const page = JSON.parse(Buffer.from(cursor, 'base64url').toString());
+        const page = decodeCursor(cursor);
         if (page.from !== from || page.to !== to || page.model !== (params.get('model') || '') || !Number.isInteger(page.offset) || page.offset < 0) throw new Error();
         offset = page.offset;
       } catch { throw new AppError(400, 'invalid_request', '演示翻页参数无效，请刷新明细。'); }
     }
     const limit = Math.min(500, Math.max(1, Number(params.get('limit') || 10)));
-    const next = offset + limit < selected.length ? Buffer.from(JSON.stringify({ from, to, model: params.get('model') || '', offset: offset + limit })).toString('base64url') : null;
+    const next = offset + limit < selected.length ? encodeCursor({ from, to, model: params.get('model') || '', offset: offset + limit }) : null;
     return { items: selected.slice(offset, offset + limit), next_cursor: next, meta };
   }
   const group = params.get('group_by') || 'day';

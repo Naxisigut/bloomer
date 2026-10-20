@@ -87,3 +87,28 @@ func TestControlConfigurationOptOutAndCustomCLI(t *testing.T) {
 		t.Fatal(c, err)
 	}
 }
+
+func TestAllowedOriginsDefaultsAndValidation(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "config.json")
+	var c Config
+	var err error
+	for _, body := range []string{`{}`, `{"allowed_origins":null}`, `{"allowed_origins":[]}`} {
+		os.WriteFile(path, []byte(body), 0600)
+		c, err = Load(path)
+		if err != nil || len(c.AllowedOrigins) != 0 {
+			t.Fatal("old/empty config must deny browser origins", err)
+		}
+	}
+	os.WriteFile(path, []byte(`{"allowed_origins":["http://127.0.0.1:18080","https://dashboard.example.com","http://[::1]:18080"]}`), 0600)
+	if c, err = Load(path); err != nil || len(c.AllowedOrigins) != 3 {
+		t.Fatal("valid origins rejected", err)
+	}
+	for _, origins := range []string{`["*"]`, `["null"]`, `["https://*.example.com"]`, `["http://localhost:18080/"]`, `["http://user:secret@localhost"]`, `["http://localhost/path"]`, `["http://localhost?key=secret"]`, `["http://localhost#fragment"]`, `["file:///tmp/index.html"]`, `["http://localhost:0"]`, `["http://localhost:65536"]`, `["http://localhost:"]`, `"http://localhost"`} {
+		os.WriteFile(path, []byte(`{"allowed_origins":`+origins+`}`), 0600)
+		if _, err = Load(path); err == nil {
+			t.Fatalf("accepted invalid origins: %s", origins)
+		} else if strings.Contains(err.Error(), "secret") {
+			t.Fatal("leaked config")
+		}
+	}
+}

@@ -90,3 +90,9 @@ BASE="$HOME/Library/Application Support/Bloomer/agent"
 本项目使用 [Tailscale Serve](https://tailscale.com/docs/reference/tailscale-cli/serve) 提供私网 HTTPS，不启用 Funnel。后台采用 [Apple LaunchAgent](https://developer.apple.com/library/archive/documentation/MacOSX/Conceptual/BPSystemStartup/Chapters/CreatingLaunchdJobs.html)；运行 Darkbloom 的用户需要保持登录，不承诺无人登录或休眠时采集。
 
 访问端同时使用 FlClash TUN，且因代理冲突关闭了“使用 Tailscale DNS”时，可参考 [macOS 下 Tailscale DNS 与 FlClash TUN 共存及撤销](tailscale-dns-with-flclash.md)，只为自己的 tailnet 域名配置专用解析器。
+
+## 静态看板连接与本次更新
+
+看板运行不依赖 Node 服务，浏览器通过现有 Tailscale HTTPS 入口直连 Agent。完整步骤见[连接设备指南](connect-device.md)。家中先安装本次新版程序，保留原配置、数据库和令牌；再合并 `"allowed_origins": ["http://127.0.0.1:18080"]`，用新版 `-check` 验证，然后 `bloomerctl stop` / `start` 重启生效。先升级再加字段，避免旧程序不认识新配置。
+
+来源是公司浏览器固定打开的网页地址（协议、主机和端口），不是公司 Mac 的 Tailscale IP。新字段省略、`null` 或空列表时不允许浏览器来源，原 CLI 不受影响；不需要新增组网、配对或 Serve 路由。本次本地实现不自动部署家中设备，未对真实 Darkbloom 执行控制操作。

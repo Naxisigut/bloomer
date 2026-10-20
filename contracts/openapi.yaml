@@ -10,6 +10,12 @@ info:
     Data queries read local SQLite and never initiate an upstream collection.
     Control requests execute allowlisted local CLI commands as serialized background jobs.
     When remote_control_enabled is true (default), the same Bearer token grants control access.
+    Browser clients connect directly via Tailscale HTTPS with Authorization: Bearer.
+    allowed_origins contains exact dashboard origins (scheme, host, port; no path).
+    Omitted/null/empty allows no browser origins. Requests without Origin remain compatible.
+    Allowed origins receive CORS headers on success and error responses. OPTIONS preflights
+    for GET/POST and Authorization/Content-Type/Accept need no token and return 204;
+    disallowed origins/methods/headers return 403. Actual requests always require Bearer.
     Money is an integer number of micro-USD encoded as a decimal string. Record
     IDs are opaque strings. Official lifetime totals and local retained totals
     have different scopes and must not be added across devices for one account.
@@ -909,7 +915,7 @@ components:
           schema:
             $ref: '#/components/schemas/Error'
     OriginForbidden:
-      description: Browser origin is not configured; no CORS origins are enabled
+      description: Browser Origin is not in allowed_origins (empty by default); no allow-origin header for rejected origins
       content:
         application/json:
           schema:

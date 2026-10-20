@@ -2,9 +2,12 @@ import { DASHBOARD_TIMEZONE, money, sumMoney, sumCount, timeRange, rollingRange,
 import { CursorPager } from './pagination.js';
 import { createDeviceUI } from './device-ui.js';
 import { createControlUI } from './control-ui.js';
+import { DeviceStore } from './connections.js';
+import { createAgentClient } from './agent-client.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
+$('#dashboard-origin').textContent = location.origin;
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 const number = value => new Intl.NumberFormat('en-US').format(value);
 const icons = {
@@ -22,8 +25,10 @@ function preference(key, value) {
   try { if (value === undefined) return localStorage.getItem(`bloomer.${key}`); localStorage.setItem(`bloomer.${key}`, value); } catch { return null; }
 }
 
+const connections = new DeviceStore();
+const client = createAgentClient(connections);
 const state = {
-  devices: [], selected: preference('device') || null, period: '1',
+  devices: [], selected: null, period: '1',
   custom: {}, model: '', trendGroup: 'day', view: 'overview', data: {}, health: new Map(), page: 0,
   pageSize: Number(preference('pageSize') || 10), pager: null, pageController: null, pendingPage: null,
   generation: 0, busy: false, exporting: false, exportController: null, fetchedAt: null, errors: [], summaryErrors: [], filterErrors: [], range: null,
@@ -49,16 +54,10 @@ function relative(value) {
   return `${Math.floor(seconds / 86400)} 天前`;
 }
 
-async function api(path, options = {}) {
-  const response = await fetch(path, { cache: 'no-store', ...options, headers: { ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } });
-  const body = await response.json();
-  if (!response.ok) { const error = new Error(body.message || '请求暂时无法完成。'); error.code = body.code; error.status = response.status; throw error; }
-  return body;
-}
-const query = (route, params, device = state.selected, signal) => api(`/api/devices/${encodeURIComponent(device)}/${route}${params ? '?' + new URLSearchParams(params) : ''}`, { signal });
+const query = (route, params, device = state.selected, signal) => client.query(route, params, device, signal);
 const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, dateTime, escape, preference, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
 
-const controlUI = createControlUI({ api, query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
+const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
 
 function resetQuery({ clearModel = false, preserveSummary = false } = {}) {
   state.exportController?.abort();
@@ -113,7 +112,7 @@ function renderDevices() {
   $('#device-cards').innerHTML = deviceChoices().map(device => {
     const health = state.health.get(device.id);
     const status = healthStatus(health);
-    return `<article class="device-card ${device.id === active ? 'selected' : ''}"><div class="device-card-header"><h3>${escape(device.name)}</h3><span class="status-tag ${status.className}">${status.label}</span></div><p class="device-url">${escape(device.url)}</p><div class="device-stat"><span>最近成功采集</span><strong>${escape(relative(health?.last_successful_sync_at))}</strong></div><div class="device-stat"><span>Agent 版本</span><strong>${escape(health?.version || '—')}${device.id === 'demo' ? ' · 演示' : ''}</strong></div>${health?.error ? `<p class="device-url">${escape(health.error)}</p>` : ''}<div class="device-card-actions"><button class="button ${device.id === active ? 'button-dark' : 'button-white'}" data-select-device="${escape(device.id)}">${device.id === active ? '当前数据来源' : '查看收益'}</button>${device.source !== 'local' && device.id !== 'demo' ? `<button class="button remove-device" data-remove-device="${escape(device.id)}">移除</button>` : ''}</div></article>`;
+    return `<article class="device-card ${device.id === active ? 'selected' : ''}"><div class="device-card-header"><h3>${escape(device.name)}</h3><span class="status-tag ${status.className}">${status.label}</span></div><p class="device-url">${escape(device.url)}</p><div class="device-stat"><span>最近成功采集</span><strong>${escape(relative(health?.last_successful_sync_at))}</strong></div><div class="device-stat"><span>Agent 版本</span><strong>${escape(health?.version || '—')}${device.id === 'demo' ? ' · 演示' : ''}</strong></div>${health?.error ? `<p class="device-url">${escape(health.error)}</p>` : ''}<div class="device-card-actions"><button class="button ${device.id === active ? 'button-dark' : 'button-white'}" data-select-device="${escape(device.id)}">${device.id === active ? '当前数据来源' : '查看收益'}</button>${device.id !== 'demo' ? `<button class="button remove-device" data-remove-device="${escape(device.id)}">移除</button>` : ''}</div></article>`;
   }).join('');
   renderHealth();
   deviceUI.render();
@@ -339,9 +338,8 @@ async function loadData({ reset = false, clearModel = false, filtersOnly = false
 }
 
 async function loadDeviceList() {
-  const response = await api('/api/devices'); state.devices = response.devices;
-  if (!deviceChoices().some(device => device.id === state.selected)) state.selected = state.devices[0]?.id || 'demo';
-  preference('device', state.selected); renderDevices();
+  state.devices = connections.list(); state.selected = connections.selected;
+  renderDevices();
 }
 
 async function checkDevices() {
@@ -368,7 +366,10 @@ function setView(view) {
   if (changed) window.scrollTo({ top: 0, behavior: 'auto' });
 }
 
-async function selectDevice(id) { state.selected = id; preference('device', id); await loadData({ reset: true, clearModel: true }); }
+async function selectDevice(id) {
+  try { connections.select(id); } catch (error) { toast(error.message); }
+  state.selected = id; await loadData({ reset: true, clearModel: true });
+}
 $$('.nav-item').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
 $('#device-select').addEventListener('change', event => selectDevice(event.target.value));
 $('#refresh').addEventListener('click', () => {
@@ -490,9 +491,9 @@ async function connect(save) {
   const result = $('#connection-result'); result.hidden = false; result.className = ''; result.textContent = '正在连接设备，请稍候…';
   try {
     const body = Object.fromEntries(new FormData(form));
-    const response = await api(save ? '/api/devices' : '/api/devices/test', { method: 'POST', body: JSON.stringify(body) });
+    const response = await client.connect(body, save);
     if (save) {
-      form.elements.token.value = ''; $('#connect-dialog').close(); await loadDeviceList(); await selectDevice(response.id); toast('设备已连接。');
+      form.elements.token.value = ''; $('#connect-dialog').close(); await loadDeviceList(); await selectDevice(response.device.id); toast('设备已连接。');
     } else {
       result.className = 'success'; result.textContent = `连接成功 · Agent ${response.health.version} · ${healthStatus(response.health).label}`;
     }
@@ -509,8 +510,24 @@ $('#device-cards').addEventListener('click', async event => {
   const dialog = $('#remove-dialog'); dialog.returnValue = 'cancel'; dialog.showModal();
   dialog.addEventListener('close', async () => {
     if (dialog.returnValue !== 'confirm') return;
-    try { await api(`/api/devices/${remove.dataset.removeDevice}`, { method: 'DELETE' }); await loadDeviceList(); await loadData({ reset: true, clearModel: true }); toast('设备连接已移除。'); } catch (error) { toast(error.message); }
+    try { connections.remove(remove.dataset.removeDevice); await loadDeviceList(); await loadData({ reset: true, clearModel: true }); toast('设备连接已移除。'); } catch (error) { toast(error.message); }
   }, { once: true });
+});
+
+$('#import-connections').addEventListener('click', () => $('#connection-file').click());
+$('#connection-file').addEventListener('change', async event => {
+  const file = event.target.files[0]; event.target.value = '';
+  if (!file) return;
+  $('#import-connections').disabled = true;
+  try {
+    if (file.size > 256_000) throw new Error('连接文件过大，最多支持 30 台设备。');
+    let input;
+    try { input = JSON.parse(await file.text()); } catch { throw new Error('请使用有效的设备连接 JSON 文件。'); }
+    toast('正在逐台测试连接，全部通过后保存…');
+    await client.importConnections(input);
+    await loadDeviceList(); await loadData({ reset: true, clearModel: true }); toast('设备连接已导入此浏览器。');
+  } catch (error) { toast(error.message); }
+  finally { $('#import-connections').disabled = false; }
 });
 
 function updateClock() {
@@ -521,16 +538,18 @@ function updateClock() {
   $('#last-refresh').textContent = state.fetchedAt ? `最近刷新 ${dateTime(state.fetchedAt)} · 每 60 秒自动更新` : '等待首次刷新';
 }
 
-// Apply topbar visibility before device discovery, including direct page links.
+// Apply topbar visibility before restoring browser connections, including direct page links.
 $('#overview-topbar').hidden = ['records', 'devices', 'query'].includes(location.hash.slice(1));
 try {
+  if (location.protocol === 'file:') throw new Error('请通过普通静态服务器打开看板，例如 http://127.0.0.1:18080；不支持 file:// 运行。');
+  connections.load();
   await loadDeviceList(); resetQuery();
   const view = location.hash.slice(1); if (['overview', 'records', 'devices', 'query'].includes(view)) setView(view);
   await loadData();
 } catch (error) { $('#alerts').innerHTML = `<div class="alert error">${escape(error.message)}</div>`; }
 setInterval(() => {
   updateClock(); renderDevices();
-  if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open) return;
+  if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open || $('#control-confirm-dialog').open || $('#remove-dialog').open) return;
   deviceUI.refresh();
   if (state.view === 'query') return;
   if (state.view === 'devices') { checkDevices(); refreshSummary(); return; }

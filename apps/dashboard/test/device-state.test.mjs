@@ -1,8 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { reading, activityStatus, pressureStatus, activityReason, localInput, inputRange, DeviceHistoryPager } from '../public/device-state.js';
-import { demoQuery } from '../lib/demo.mjs';
-import { queryAgent } from '../lib/proxy.mjs';
+import { demoQuery } from '../public/demo.js';
+import { queryAgent } from '../public/agent-client.js';
 
 const now = Date.parse('2026-10-19T10:00:00Z');
 const response = overrides => ({ sample: { collected_at: new Date(now).toISOString(), is_idle: true, inference_active: false, request_work_pending: false, quality: { is_idle: 'ok', inference_active: 'ok', request_work_pending: 'ok' }, ...overrides }, meta: { data_stale: false } });
@@ -85,13 +85,13 @@ test('failed or aborted state history pages remain retryable and invalid cursors
   await assert.rejects(invalid.page(0), /翻页位置/);
 });
 
-test('state proxy forwards only whitelisted history params and handles older non-JSON agents', async () => {
+test('browser state client forwards only whitelisted history params and handles older non-JSON agents', async () => {
   let requested;
   const fetcher = async (url, options) => { requested = { url, options }; return new Response(JSON.stringify({ items: [], next_before_id: null }), { status: 200 }); };
-  await queryAgent({ url: 'http://127.0.0.1:17890', token: 'private' }, 'device-history', new URLSearchParams({ from: '2026-10-19T00:00:00Z', to: '2026-10-19T01:00:00Z', before_id: '42', limit: '25' }), fetcher);
+  await queryAgent({ url: 'http://127.0.0.1:17890', token: 'private' }, 'device-history', new URLSearchParams({ from: '2026-10-19T00:00:00Z', to: '2026-10-19T01:00:00Z', before_id: '42', limit: '25' }), { fetcher });
   assert.equal(requested.url.pathname, '/v1/device/state/history');
   assert.equal(requested.url.searchParams.get('before_id'), '42');
   assert.equal(requested.options.headers.Authorization, 'Bearer private');
-  for (const params of [new URLSearchParams({ model: 'no' }), new URLSearchParams('limit=1&limit=2'), new URLSearchParams({ url: 'https://example.com' })]) await assert.rejects(queryAgent({ url: 'http://127.0.0.1', token: 'private' }, 'device-history', params, fetcher), { code: 'invalid_request' });
-  await assert.rejects(queryAgent({ url: 'http://127.0.0.1', token: 'private' }, 'device-state', new URLSearchParams(), async () => new Response('old server', { status: 404 })), { code: 'device_state_unsupported' });
+  for (const params of [new URLSearchParams({ model: 'no' }), new URLSearchParams('limit=1&limit=2'), new URLSearchParams({ url: 'https://example.com' })]) await assert.rejects(queryAgent({ url: 'http://127.0.0.1', token: 'private' }, 'device-history', params, { fetcher }), { code: 'invalid_request' });
+  await assert.rejects(queryAgent({ url: 'http://127.0.0.1', token: 'private' }, 'device-state', new URLSearchParams(), { fetcher: async () => new Response('old server', { status: 404 }) }), { code: 'device_state_unsupported' });
 });

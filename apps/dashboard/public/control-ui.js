@@ -1,3 +1,5 @@
+import { randomID } from './identifiers.js';
+
 const actions = { start: '开启 Darkbloom', stop: '关闭 Darkbloom', restart: '重启 Darkbloom', switch: '切换模型', download: '下载模型' };
 const statuses = { running: '执行中', succeeded: '已完成', failed: '执行失败', unconfirmed: '结果未确认' };
 const reasons = {
@@ -7,7 +9,7 @@ const reasons = {
   history_unavailable: '操作记录保存失败，请在设备端核对结果。',
 };
 
-export function createControlUI({ api, query, selectedDevice, currentView, escape, dateTime, refreshState }) {
+export function createControlUI({ submitControl, query, selectedDevice, currentView, escape, dateTime, refreshState }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, status = null, models = null, loading = false, submitting = false, pending = null, confirmation = null, error = '', requestGeneration = 0;
   const dialog = $('#control-confirm-dialog');
@@ -68,7 +70,7 @@ export function createControlUI({ api, query, selectedDevice, currentView, escap
     const generation = requestGeneration;
     remember(body); submitting = true; error = ''; render();
     try {
-      await api(`/api/devices/${encodeURIComponent(id)}/control-jobs`, { method: 'POST', body: JSON.stringify(body) });
+      await submitControl(id, body);
       if (id !== deviceID || generation !== requestGeneration) return;
       remember(null);
     } catch (failure) {
@@ -84,7 +86,7 @@ export function createControlUI({ api, query, selectedDevice, currentView, escap
   document.querySelectorAll('[data-control]').forEach(button => button.addEventListener('click', () => {
     const action = button.dataset.control;
     const chosen = ['start', 'switch'].includes(action) ? [...$('#control-local-models').selectedOptions].map(option => option.value) : action === 'download' ? [$('#control-download-model').value] : [];
-    confirmation = { id: deviceID, body: { request_id: crypto.randomUUID(), action, ...(chosen.length ? { models: chosen } : {}) } };
+    confirmation = { id: deviceID, body: { request_id: randomID(), action, ...(chosen.length ? { models: chosen } : {}) } };
     $('#control-confirm-message').textContent = `设备：${selectedDevice().name}\n操作：${actions[action]}${chosen.length ? '\n模型：' + chosen.join('、') : ''}\n\n${action === 'download' ? '下载将占用设备网络和磁盘空间。' : action === 'switch' ? '将替换整套托管模型；等待已接收任务完成后生效。' : action === 'start' ? '将使用所选模型启动服务，沿用设备上的其他配置。' : '将先等待已接收的任务完成，再关闭或重启服务。'}`;
     dialog.returnValue = ''; dialog.showModal();
   }));

@@ -32,18 +32,19 @@ const (
 func Windows() []int { return []int{50, 100, 300, 1000} }
 
 type Config struct {
-	RemoteControlEnabled   bool   `json:"remote_control_enabled"`
-	DarkbloomBinary        string `json:"darkbloom_binary"`
-	CollectionEnabled      bool   `json:"collection_enabled"`
-	DeviceStateEnabled     bool   `json:"device_state_enabled"`
-	ProviderStateFile      string `json:"provider_state_file"`
-	DataDir                string `json:"data_dir"`
-	LogDir                 string `json:"log_dir"`
-	Listen                 string `json:"listen"`
-	UpstreamURL            string `json:"upstream_url"`
-	UpstreamCredentialFile string `json:"upstream_credential_file"`
-	AccessTokenFile        string `json:"access_token_file"`
-	AccountID              string `json:"account_id,omitempty"`
+	AllowedOrigins         []string `json:"allowed_origins"`
+	RemoteControlEnabled   bool     `json:"remote_control_enabled"`
+	DarkbloomBinary        string   `json:"darkbloom_binary"`
+	CollectionEnabled      bool     `json:"collection_enabled"`
+	DeviceStateEnabled     bool     `json:"device_state_enabled"`
+	ProviderStateFile      string   `json:"provider_state_file"`
+	DataDir                string   `json:"data_dir"`
+	LogDir                 string   `json:"log_dir"`
+	Listen                 string   `json:"listen"`
+	UpstreamURL            string   `json:"upstream_url"`
+	UpstreamCredentialFile string   `json:"upstream_credential_file"`
+	AccessTokenFile        string   `json:"access_token_file"`
+	AccountID              string   `json:"account_id,omitempty"`
 }
 
 func Defaults() (Config, error) {
@@ -143,6 +144,21 @@ func resolve(p, base string) (string, error) {
 }
 
 func (c Config) Validate() error {
+	for _, origin := range c.AllowedOrigins {
+		u, err := url.Parse(origin)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" || u.User != nil || origin != u.Scheme+"://"+u.Host || strings.ContainsAny(u.Host, "*\\ \t\r\n") {
+			return errors.New("allowed_origins entries must be exact HTTP(S) origins without paths, wildcards or credentials")
+		}
+		if p := u.Port(); p != "" {
+			n, err := strconv.Atoi(p)
+			if err != nil || n < 1 || n > 65535 {
+				return errors.New("allowed_origins port must be between 1 and 65535")
+			}
+		}
+		if strings.HasSuffix(u.Host, ":") {
+			return errors.New("allowed_origins port must not be empty")
+		}
+	}
 	for _, p := range []string{c.DataDir, c.LogDir, c.AccessTokenFile, c.UpstreamCredentialFile, c.ProviderStateFile, c.DarkbloomBinary} {
 		if p == "" || !filepath.IsAbs(p) {
 			return errors.New("runtime and credential paths must be absolute and nonempty")

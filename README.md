@@ -6,16 +6,19 @@
 
 ## 收益看板
 
-需要 Node.js 22 或更新版本，无须安装第三方依赖：
+看板为原生 HTML / CSS / JavaScript 静态网页。普通静态服务器即可运行，例如：
 
 ```sh
-cd apps/dashboard
-npm start
+python3 -m http.server 18080 --bind 127.0.0.1 --directory apps/dashboard/public
 ```
 
-打开 <http://127.0.0.1:17891>，即可查看收益分析、趋势、模型贡献和设备采集健康，支持时间 / 模型筛选、游标分页与 CSV 导出。未配置设备时展示明确标注的演示数据；点击“连接设备”填写 Tailscale HTTPS 地址与 Bloomer 独立令牌。默认位置的本机 Agent 可自动识别，令牌保存在看板服务端的私有目录。
+固定打开 <http://127.0.0.1:18080>。浏览器保存设备名称、地址及 Bloomer `access.token`，通过 Tailscale HTTPS 直接请求 Agent `/v1`；不需要 Node 看板服务、`npm start` 或构建。无设备时显示明确标注的只读演示数据，连接失败不会自动换成演示数据。
 
-详细使用方式见[看板说明](apps/dashboard/README.md)，设计与范围见[看板第一版](docs/dashboard.md)。
+家中 Agent 需升级并在原配置合并 `"allowed_origins": ["http://127.0.0.1:18080"]` 后重启。旧配置省略该字段时仍可启动，默认不允许浏览器来源；无 Origin 的原调用继续工作。来源取看板网页的协议、主机、端口，与公司 Mac 的 Tailscale IP 无关。
+
+请按[完整连接设备指南](docs/connect-device.md)获取 Tailscale HTTPS 地址及端口、配置来源并读取设备端令牌。看板不获取 Darkbloom 官方令牌，不再自动读取本机 Agent 文件；可手动添加或导入旧版连接文件。不要双击 `file://` 运行。
+
+功能与开发验证见[看板说明](apps/dashboard/README.md)，架构见[静态看板架构](docs/dashboard.md)。
 
 ## 远程操作设备
 
@@ -117,17 +120,13 @@ python3 scripts/smoke-agent.py
 
 ## 文档
 
-- [开发目标](docs/agent-development-goals.md)
-- [看板第一版](docs/dashboard.md)
-- [实施计划](docs/agent-development-plan.md)
-- [P2/P3 实现与验收记录](docs/p2-p3-validation.md)
-- [P0/P1 验证记录](docs/p0-p1-validation.md)
+- [静态看板架构](docs/dashboard.md)
+- [连接设备指南](docs/connect-device.md)
 - [官方接口复验与样本说明](docs/upstream-contract.md)
 - [数据库迁移与恢复](docs/database.md)
 - [DMG 安装与服务管理](docs/install.md)
 - [macOS 下 Tailscale DNS 与 FlClash TUN 共存及撤销](docs/tailscale-dns-with-flclash.md)
 - [Darkbloom 远程操作](docs/remote-control.md)
 - [共享 OpenAPI 契约](contracts/openapi.yaml)
-- [仓库结构](docs/repository-structure.md)
 
 真实凭证、私有配置、数据库、WAL、备份、日志和构建产物不进入 Git。Agent 的运行目录应位于仓库之外。

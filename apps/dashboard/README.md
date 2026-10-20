@@ -1,13 +1,16 @@
 # Bloomer Dashboard
 
-设备端独立运行的本地收益看板。Node.js 22 或更新版本即可启动，无第三方运行依赖，无需安装或构建前端依赖。
+原生 HTML / CSS / JavaScript 静态看板；无框架、打包步骤和 Node 运行时服务。普通静态服务器只提供 `public/` 文件，浏览器直接请求所选 Agent。
+
+在仓库根目录启动，例如：
 
 ```sh
-cd apps/dashboard
-npm start
+python3 -m http.server 18080 --bind 127.0.0.1 --directory apps/dashboard/public
 ```
 
-打开 <http://127.0.0.1:17891>。开发时可用 `npm run dev`，修改服务端后自动重启。修改网页文件后刷新浏览器即可。
+打开 <http://127.0.0.1:18080> 并固定使用此来源。也可使用任意等价静态托管；禁止以双击 `file://` 页面作为正式方式。修改文件后刷新浏览器即可。
+
+首次使用请阅读[完整连接设备指南](../../docs/connect-device.md)：家中设备升级 Agent、取得带端口的 Tailscale HTTPS 地址、配置 `allowed_origins`、读取设备端 Bloomer 令牌、测试并保存。默认允许来源为空，旧配置保持兼容。
 
 ## 第一版功能
 
@@ -27,45 +30,36 @@ npm start
 
 ## 设备状态口径
 
-看板通过本机代理读取已有 Agent `/v1/device/state`、`/v1/device/state/history`，查询不触发采集。最新状态每 60 秒刷新；历史结果保留当前查询区间和页面，点击查询重新读取。翻页沿用首次响应的有效范围和 `before_id`，失败保留当前页。
+浏览器携带 Bloomer Bearer 令牌直接读取已有 Agent `/v1/device/state`、`/v1/device/state/history`，查询不触发采集。最新状态每 60 秒刷新；历史结果保留当前查询区间和页面，点击查询重新读取。翻页沿用首次响应的有效范围和 `before_id`，失败保留当前页。
 
 顶栏以“工作状态”“温度”“内存”展示空闲判定、设备热压力和内存压力。空闲必须同时满足：本机没有正在处理或排队的任务，且该设备最新收益距采集时严格超过 5 分钟。收益使用精确匹配的本机 Provider ID，独立于账户其他设备及下方筛选；无匹配收益或采集过期显示未知。热压力和内存压力直接从 macOS 采集。旧 Agent 的活动字段保持未知，收益功能独立运行；完整规则见[设备状态采集](../../docs/device-state.md)。
 
 
-## 连接设备
+## 连接设备与存储
 
-点击页面顶部的“连接设备”，填写名称、Agent 地址和 **Bloomer 独立访问令牌**，测试通过后保存。各页面使用同一连接窗口，侧栏不重复提供连接入口。
+点击“连接设备”，填写名称、Agent 地址和 **Bloomer access.token**，测试成功后保存。地址例如 `https://device.your-tailnet.ts.net:8443`，包含实际 HTTPS 端口，不附加 `/v1`；本机测试可用 `http://127.0.0.1:17890`。远程地址只接受 Tailscale `.ts.net` HTTPS。测试与保存都直接请求 Agent `/v1/health`。
 
-地址示例：
+必须在**运行 Agent 的设备端终端**，使用安装和运行 Agent 的**同一 macOS 用户**获取令牌：
 
-```text
-https://device.your-tailnet.ts.net:8443
-http://127.0.0.1:17890
+```sh
+cat "$HOME/Library/Application Support/Bloomer/agent/access.token"
 ```
 
-远程地址只接受 Tailscale `.ts.net` HTTPS；本机可以使用回环 HTTP。地址不附加 `/v1`。客户端需已连接同一 tailnet；DNS 和证书应正常。
+自定义 `access_token_file` 时使用实际路径。它不是 `~/.darkbloom/auth_token`；只填写到自己的看板，不提交仓库或粘贴到聊天。
 
-令牌位于设备用户的 `~/Library/Application Support/Bloomer/agent/access.token`，不要使用 `~/.darkbloom/auth_token`。在本机表单中填写，不将令牌粘贴到聊天或提交到仓库。需要更换已保存令牌时，移除连接后重新添加。
+浏览器 localStorage 持久保存名称、地址、令牌和所选设备。切换浏览器、主机名、协议或端口，或清除网站数据后需重新添加或导入；来源变化还需更新 Agent 白名单。移除只删除浏览器连接和待核对请求记录，设备数据不变。令牌更换后移除旧连接重新添加。
 
-macOS 看板启动时自动识别默认位置的 Agent 配置；每次查询本机设备时重新读取独立令牌，支持令牌轮转。自定义位置或其他设备通过表单连接。
+“我的设备 → 导入连接”兼容旧版 `devices.json`（`version: 1`、`devices` 列表及 `name/url/token`）；所有设备健康测试通过后原子保存，重复地址拒绝覆盖。旧私有文件不会自动读取或修改；保管在仓库之外。看板取消了依赖本机 Agent 文件的自动发现。
 
 ## 数据与访问边界
 
-浏览器 → 本机看板服务 → Agent `/v1` 认证接口。浏览器不直接访问 Agent，Agent 无须开放 CORS。数据查询不触发采集；远程操作通过独立控制端点调用官方 CLI，改变设备上的 Darkbloom 运行状态和模型选择。启用控制时，既有独立令牌也授予操作权限，可在设备端用 `remote_control_enabled: false` 禁用。
+静态服务器 → 浏览器下载 HTML/CSS/JS；浏览器 → Tailscale HTTPS → Agent `/v1`，每次实际请求携带 `Authorization: Bearer <access.token>`。Agent 负责采集、SQLite 存储、查询、统计及远程操作。静态托管方不需要令牌，但必须信任其所提供的网页代码。
 
-服务固定监听 `127.0.0.1`，验证 Host / Origin，不提供公开托管或远程网页登录。独立令牌保存在本机服务端；浏览器设备列表与本地存储不返回或保存令牌。首次输入时由同源表单提交。设备文件使用 `0600` 权限，目录 `0700`，原子写入；私有配置默认在仓库外：
+Agent 使用精确的 `allowed_origins` 白名单处理 CORS，合法预检免认证，实际请求仍认证。错误响应也保留允许来源的 CORS 头；未配置来源被拒绝，无 Origin 的 CLI 调用兼容。完整配置、重启和网络/证书/CORS/401 排查见[连接指南](../../docs/connect-device.md)。
 
-- macOS：`~/Library/Application Support/Bloomer/dashboard/devices.json`
-- 其他系统：`~/.local/share/bloomer/dashboard/devices.json`
+请求层设 12 秒超时，支持调用方取消、最大 8 MB 响应、契约基本格式校验、重定向拒绝和固定中文错误；不输出令牌或设备原始错误。浏览器不能区分的网络、证书和 CORS 异常只给联合排查提示。演示数据在浏览器本地生成，控制请求在 UI 和请求层都被禁止。
 
-可通过环境变量调整端口和数据目录：
-
-```sh
-BLOOMER_DASHBOARD_PORT=17892 npm start
-BLOOMER_DASHBOARD_DATA_DIR=/absolute/private/path npm start
-```
-
-请使用自己的私有目录，不要指向仓库。不要把该服务转发到公网或共用的远程入口。
+远程控制沿用二次确认、后台状态、原请求编号幂等重试及失败后结果核对；控制开启时同一 Bloomer 令牌也授予操作权限，可在家中配置 `remote_control_enabled: false` 禁用。不引入账号、配对或会话服务。
 
 金额在计算、排序、显示和导出中使用 `BigInt` 保留整数微美元；只有图表几何位置转换为浮点数。官方累计 / 余额与本地已保存收益是不同口径。同一账户的多台设备切换查看，不相加，也不将 Provider 身份推断为物理设备收益。
 
@@ -75,11 +69,15 @@ BLOOMER_DASHBOARD_DATA_DIR=/absolute/private/path npm start
 
 界面只保留窄屏导航图标、实际状态指示和图表图例；指标卡、按钮、设备卡与明细行的装饰图标，以及重复的“已记录”列已移除。
 
-## 验证
+## 开发验证
+
+Node.js 22+ 仅用于开发检查和测试；运行网页不需要它。以下命令在 `apps/dashboard` 执行：
 
 ```sh
 npm run check
 npm test
 ```
 
-测试使用临时目录、回环模拟 Agent 和合成数据，覆盖微美元精度、夏令时日期边界、CSV 转义、连接地址、配置权限、并发保存、Bearer 转发、重定向拒绝、Host / Origin 检查、增删设备和分页。分页测试覆盖远页批量定位、缓存复用、调整条数、末页与空数据、取消、失败重试和异常游标。测试需要允许绑定本机回环端口。界面已验证时间筛选、模型筛选、真实设备分页、设备健康和连接错误提示。
+测试覆盖浏览器直连 GET/POST、鉴权、错误净化、超时/取消/大小及格式检查、连接测试后持久化、恢复选择、导入与存储失败、演示只读，以及既有金额精度、日期、CSV、分页和状态规则。回环模拟测试需允许本机监听。
+
+浏览器复验：保持普通静态服务器运行，另开终端在 `apps/dashboard` 执行 `node dev/mock-agent.mjs`。使用 `http://127.0.0.1:18190` 和 `:18191`，合成测试令牌为 `bloomer-mock-only`（仅用于此模拟服务）。可复验连接与刷新恢复、设备切换、日期和模型筛选、分页、CSV、演示只读及模拟控制结果核对。该模拟器只返回合成数据，不访问真实 Agent、数据库或 Darkbloom。Node 模拟服务是测试工具，不属于看板运行时。

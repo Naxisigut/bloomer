@@ -20,6 +20,7 @@ import (
 )
 
 type Handler struct {
+	allowedOrigins     map[string]bool
 	control            *control.Manager
 	store              *store.Store
 	tokenHash          [32]byte
@@ -57,15 +58,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Request-ID", requestID)
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if !h.cors(w, r, requestID) {
+		return
+	}
 	auth := r.Header.Get("Authorization")
 	hash := sha256.Sum256([]byte(strings.TrimPrefix(auth, "Bearer ")))
 	if !strings.HasPrefix(auth, "Bearer ") || subtle.ConstantTimeCompare(hash[:], h.tokenHash[:]) != 1 {
 		w.Header().Set("WWW-Authenticate", "Bearer")
 		failure(w, 401, "unauthorized", "A valid access token is required", requestID)
-		return
-	}
-	if r.Header.Get("Origin") != "" {
-		failure(w, 403, "origin_forbidden", "This origin is not configured", requestID)
 		return
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/device/control") {

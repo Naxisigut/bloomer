@@ -29,6 +29,8 @@ def main():
         logs = root / "logs"
         config.write_text(json.dumps({
             "data_dir": str(state), "log_dir": str(logs),
+            "allowed_origins": ["http://127.0.0.1:18080"],
+            "darkbloom_binary": str(root / "nonexistent-darkbloom"),
             "listen": f"127.0.0.1:{port}",
             "upstream_credential_file": str(root / "nonexistent-official-token"),
             "provider_state_file": str(root / "nonexistent-daemon-state.json"),
@@ -37,10 +39,13 @@ def main():
         processes = []
         opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
-        def request(token=None, path="/v1/health"):
+        def request(token=None, path="/v1/health", origin=None, method="GET", data=None, extra_headers=None):
             headers = {"Authorization": "Bearer " + token} if token else {}
+            if origin is not None:
+                headers["Origin"] = origin
+            headers.update(extra_headers or {})
             endpoint = f"http://127.0.0.1:{port}" + path
-            return opener.open(urllib.request.Request(endpoint, headers=headers), timeout=1)
+            return opener.open(urllib.request.Request(endpoint, headers=headers, method=method, data=data), timeout=1)
 
         def start():
             process = subprocess.Popen(command, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
@@ -86,6 +91,30 @@ def main():
 
         try:
             first, token = start()
+            origin = "http://127.0.0.1:18080"
+            for method in ("GET", "POST"):
+                with request(path="/v1/device/control/jobs", origin=origin, method="OPTIONS", extra_headers={
+                    "Access-Control-Request-Method": method,
+                    "Access-Control-Request-Headers": "authorization,content-type",
+                }) as response:
+                    assert response.status == 204
+                    assert response.headers["Access-Control-Allow-Origin"] == origin
+            with request(token, origin=origin) as response:
+                assert response.status == 200
+                assert response.headers["Access-Control-Allow-Origin"] == origin
+            for auth, source, method, path, data, expected in (
+                (None, origin, "GET", "/v1/health", None, 401),
+                ("incorrect", origin, "POST", "/v1/device/control/jobs", b"{}", 401),
+                (token, "http://localhost:18080", "GET", "/v1/health", None, 403),
+                (token, origin, "POST", "/v1/device/control/jobs", b"{}", 400),
+            ):
+                try:
+                    request(auth, path, source, method, data, {"Content-Type": "application/json"})
+                    raise AssertionError("expected API rejection")
+                except urllib.error.HTTPError as error:
+                    assert error.code == expected
+                    assert error.headers.get("Access-Control-Allow-Origin") == (origin if source == origin else None)
+                    error.close()
             assert timestamp() is None
             deadline = time.monotonic() + 5
             while time.monotonic() < deadline:
@@ -165,7 +194,7 @@ def main():
                 database.close()
             assert previous_attempt == current_attempt
             stop(fourth)
-            print("Lifecycle/device smoke passed: metrics, history, auth, earnings failure isolation, cleanup, single instance, SIGTERM, SIGKILL restart, persisted throttling, private paths")
+            print("Lifecycle/device smoke passed: metrics, history, CORS/preflight, auth, earnings failure isolation, cleanup, single instance, SIGTERM, SIGKILL restart, persisted throttling, private paths")
         finally:
             for process in processes:
                 if process.poll() is None:

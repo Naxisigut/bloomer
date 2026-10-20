@@ -80,7 +80,7 @@ ORDER BY collected_at_us, id;
 
 ## 只读接口
 
-与既有 `/v1` 接口使用相同的 Bloomer 独立 Bearer 认证和 Origin 限制。请求只读取数据库，不触发采集。看板首页、设备详情与数据查询使用相同的本机任务和该设备收益判定口径。
+与既有 `/v1` 接口使用相同的 Bloomer 独立 Bearer 认证和 `allowed_origins` 来源白名单（合法预检免令牌，实际查询必须认证）。请求只读取数据库，不触发采集。看板首页、设备详情与数据查询使用相同的本机任务和该设备收益判定口径。
 
 - `GET /v1/device/state`：返回 `device`、最近入库 `sample`、`meta.data_stale`。未采集时 sample 为 null；超过 120 秒或时间在未来时为 stale。即使收益尚无首次成功快照也可查询。
 - `GET /v1/device/state/history?from=<RFC3339>&to=<RFC3339>&limit=100&before_id=<id>`：默认近 24 小时，UTC 半开区间，limit 为 1～500。返回 items、next_before_id、有效范围、保留起点及截断标志。按入库 ID 降序分页，时钟回拨也不重复；分析时按 collected_at 排序。

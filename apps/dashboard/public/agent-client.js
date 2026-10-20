@@ -1,0 +1,132 @@
+import { AppError } from './errors.js';
+import { validateDevice, parseConnections } from './connections.js';
+import { demoQuery } from './demo.js';
+
+const routes = { health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', 'device-state': '/v1/device/state', 'device-history': '/v1/device/state/history', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs' };
+const messages = {
+  control_disabled: '该设备已关闭远程操作，请在设备端配置中开启。',
+  control_unavailable: '远程操作不可用，请检查设备端 Darkbloom 安装与 Agent 配置。',
+  control_unsupported: '该设备 Agent 尚不支持远程操作，请先升级设备端 Agent。',
+  control_busy: '设备正在执行另一项操作，请等待结束后再试。',
+  request_conflict: '此请求编号已用于其他操作，请刷新后重新提交。',
+  origin_forbidden: '当前看板来源未获允许，请在设备端 allowed_origins 中加入网页来源并重启 Agent。',
+  unauthorized: '访问令牌无效，请移除设备后使用正确的独立令牌重新连接。',
+  data_unavailable: '设备尚未完成首次采集，暂时没有收益数据。',
+  database_unavailable: '设备数据库暂不可用，请稍后刷新。',
+  cursor_expired: '本次翻页已过期，请刷新明细。',
+  invalid_request: '查询条件无效，请调整筛选后重试。',
+  amount_out_of_range: '设备汇总金额超出支持范围。',
+  query_timeout: '设备查询超时，请稍后重试。',
+  group_limit_exceeded: '统计分组过多，请缩小时间范围。',
+  device_state_unsupported: '该设备暂未提供设备状态接口。',
+};
+
+const invalidResponse = () => new AppError(502, 'invalid_response', '设备返回了无法识别的数据，请检查 Agent 地址和版本。');
+const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
+function validateResponse(route, body, operation) {
+  if (!object(body)) throw invalidResponse();
+  const items = () => Array.isArray(body.items) && body.items.every(object);
+  if (route === 'health' && (typeof body.version !== 'string' || !body.version || typeof body.collection_state !== 'string')) throw invalidResponse();
+  if (route === 'overview' && !(body.official === null || object(body.official))) throw invalidResponse();
+  if (route === 'earnings' && (!items() || body.items.length > 500 || !(body.next_cursor == null || typeof body.next_cursor === 'string') || body.items.some(item => typeof item.record_id !== 'string' || typeof item.model !== 'string' || (typeof item.amount_micro_usd !== 'string' || !/^-?\d+$/.test(item.amount_micro_usd)) || !Number.isFinite(Date.parse(item.created_at))))) throw invalidResponse();
+  if (route === 'stats' && (!items() || body.items.some(item => typeof item.key !== 'string' || (typeof item.amount_micro_usd !== 'string' || !/^-?\d+$/.test(item.amount_micro_usd)) || !Number.isSafeInteger(item.record_count) || item.record_count < 0))) throw invalidResponse();
+  if (route === 'device-state' && !(body.sample === null || object(body.sample))) throw invalidResponse();
+  if (route === 'device-history' && (!items() || body.items.length > 500)) throw invalidResponse();
+  if (route === 'control' && (typeof body.available !== 'boolean' || typeof body.enabled !== 'boolean' || !Array.isArray(body.jobs))) throw invalidResponse();
+  if (route === 'control-models' && (!Array.isArray(body.local) || !Array.isArray(body.catalog))) throw invalidResponse();
+  if (route === 'control-jobs' && (operation ? typeof body.id !== 'string' || typeof body.status !== 'string' : !Array.isArray(body.jobs))) throw invalidResponse();
+  return body;
+}
+
+export async function queryAgent(device, route, params = new URLSearchParams(), { fetcher = fetch, signal, timeoutMs = 12_000 } = {}, operation = null) {
+  if (!Object.hasOwn(routes, route)) throw new AppError(404, 'not_found', '接口不存在。');
+  const url = new URL(routes[route], device.url);
+  const allowed = route === 'earnings' ? ['from', 'to', 'model', 'limit', 'cursor'] : route === 'stats' ? ['from', 'to', 'model', 'group_by', 'timezone'] : route === 'device-history' ? ['from', 'to', 'limit', 'before_id'] : [];
+  for (const [key, value] of params) {
+    if (!allowed.includes(key) || params.getAll(key).length !== 1) throw new AppError(400, 'invalid_request', '查询参数无效。');
+    url.searchParams.set(key, value);
+  }
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal?.throwIfAborted();
+  signal?.addEventListener('abort', abort, { once: true });
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
+  let reader, response;
+  try {
+    response = await fetcher(url, {
+      method: operation ? 'POST' : 'GET', body: operation ? JSON.stringify(operation) : undefined,
+      headers: { Authorization: `Bearer ${device.token}`, Accept: 'application/json', ...(operation ? { 'Content-Type': 'application/json' } : {}) },
+      mode: 'cors', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', redirect: 'error', signal: controller.signal,
+    });
+    if (route.startsWith('control') && [404, 405, 501].includes(response.status)) throw new AppError(404, 'control_unsupported', messages.control_unsupported);
+    if (['device-state', 'device-history'].includes(route) && [404, 405, 501].includes(response.status)) throw new AppError(404, 'device_state_unsupported', messages.device_state_unsupported);
+    if (Number(response.headers.get('content-length')) > 8_000_000) throw invalidResponse();
+    if (!response.body) throw invalidResponse();
+    reader = response.body.getReader();
+    const chunks = []; let size = 0;
+    while (true) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      size += value.byteLength;
+      if (size > 8_000_000) throw invalidResponse();
+      chunks.push(value);
+    }
+    const bytes = new Uint8Array(size); let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    let body;
+    try { body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { throw invalidResponse(); }
+    if (!response.ok) {
+      const code = response.status === 401 ? 'unauthorized' : object(body) && Object.hasOwn(messages, body.code) ? body.code : 'agent_error';
+      throw new AppError(response.status, code, messages[code] || '设备暂时无法完成请求，请稍后重试。');
+    }
+    return validateResponse(route, body, operation);
+  } catch (error) {
+    if (signal?.aborted) signal.throwIfAborted();
+    if (error instanceof AppError) throw error;
+    if (timedOut) throw new AppError(504, 'request_timeout', '连接或读取设备超时，请检查网络与 Agent 状态后重试。');
+    throw new AppError(502, 'device_unreachable', '浏览器无法完成设备请求，无法区分网络、证书或 CORS 问题。请检查 Tailscale、设备在线与 Agent 状态、HTTPS 地址和端口、证书，以及设备 allowed_origins 是否包含当前看板来源。');
+  } finally {
+    clearTimeout(timer); signal?.removeEventListener('abort', abort);
+    if (reader) { try { await reader.cancel(); } catch { /* Aborted stream. */ } reader.releaseLock(); }
+    else { try { await response?.body?.cancel(); } catch { /* Rejected response. */ } }
+  }
+}
+
+export function validateControl(body) {
+  if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => !['request_id', 'action', 'models'].includes(key)) || typeof body.request_id !== 'string' || !/^[A-Za-z0-9_-]{16,80}$/.test(body.request_id)) throw new AppError(400, 'invalid_request', '操作请求格式无效。');
+  const models = body.models ?? [];
+  if (!Array.isArray(models) || models.length > 16 || new Set(models).size !== models.length || models.some(id => typeof id !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$/.test(id) || /(^|\/)\.\.?(\/|$)/.test(id))) throw new AppError(400, 'invalid_request', '模型选择无效。');
+  if (!['start', 'stop', 'restart', 'switch', 'download'].includes(body.action) || (['start', 'switch'].includes(body.action) && !models.length) || (body.action === 'download' && models.length !== 1) || (['stop', 'restart'].includes(body.action) && models.length)) throw new AppError(400, 'invalid_request', '操作与模型选择不匹配。');
+  return { request_id: body.request_id, action: body.action, ...(models.length ? { models } : {}) };
+}
+export function submitControl(device, body, options) {
+  return queryAgent(device, 'control-jobs', new URLSearchParams(), options, validateControl(body));
+}
+
+export function createAgentClient(store, options = {}) {
+  return {
+    query(route, params, id = store.selected, signal) {
+      if (id === 'demo') {
+        if (route.startsWith('control')) return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));
+        signal?.throwIfAborted();
+        return Promise.resolve(demoQuery(route, new URLSearchParams(params || {})));
+      }
+      return queryAgent(store.get(id), route, new URLSearchParams(params || {}), { ...options, signal });
+    },
+    submit(id, body) {
+      if (id === 'demo') return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));
+      return submitControl(store.get(id), body, options);
+    },
+    async connect(input, save = false) {
+      const device = validateDevice(input);
+      const health = await queryAgent(device, 'health', undefined, options);
+      return { health, ...(save ? { device: store.add(device) } : {}) };
+    },
+    async importConnections(input) {
+      const devices = parseConnections(input);
+      for (const device of devices) await queryAgent(device, 'health', undefined, options);
+      return store.addMany(devices);
+    },
+  };
+}
