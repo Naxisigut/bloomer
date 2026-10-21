@@ -624,6 +624,53 @@ main {
   font-size:14px;
   font-variant-numeric:tabular-nums
 }
+.home-models {
+  border:0;
+  padding:14px 22px 0;
+  margin:8px 0 0;
+  min-width:0
+}
+.home-models legend {
+  padding:0;
+  font-size:10px;
+  color:#74826d
+}
+.home-models legend span {
+  margin-left:10px;
+  color:#9aa591;
+  font-size:9px
+}
+.home-model-choices {
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px
+}
+.home-model-choice {
+  display:flex;
+  align-items:center;
+  gap:6px;
+  padding:7px 9px;
+  border:1px solid #e3e8de;
+  border-radius:7px;
+  font-size:10px;
+  color:#75816e;
+  cursor:pointer;
+  overflow-wrap:anywhere;
+  min-width:0
+}
+.home-model-choice:has(input:checked) {
+  background:#f1f5ec;
+  border-color:#c8d8bc;
+  color:#2f493c
+}
+.home-model-choice input { margin:0; accent-color:var(--series-color) }
+.home-model-choice i { width:14px; height:3px; background:var(--series-color); border-radius:2px; flex-shrink:0 }
+.home-revenue-chart { height:260px; margin-top:20px; overflow-x:auto; overflow-y:hidden }
+.home-revenue-chart>svg { min-width:920px }
+.home-revenue-line { fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round }
+.home-revenue-point { stroke:#fff; stroke-width:2; cursor:crosshair }
+.home-revenue-point:hover,.home-revenue-point:focus { r:5px; stroke-width:1; outline:none }
+.home-revenue-tooltip span { display:block; font-size:10px }
 .chart-footer {
   margin:10px 22px 0;
   padding:12px 0;
@@ -847,6 +894,9 @@ tbody tr:hover {
   display:none
 }
 main:not([data-view="analysis"]) .analysis-only {
+  display:none
+}
+main:not([data-view="overview"]) .home-only {
   display:none
 }
 main[data-view="devices"] .devices-only,main[data-view="records"] .records-only,main[data-view="query"] .query-only {

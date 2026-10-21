@@ -4,6 +4,7 @@ import { createDeviceUI } from './device-ui.js';
 import { createControlUI } from './control-ui.js';
 import { DeviceStore } from './connections.js';
 import { createAgentClient } from './agent-client.js';
+import { createHomeRevenueChart } from './home-revenue.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -90,6 +91,7 @@ function relative(value) {
 }
 
 const query = (route, params, device = state.selected, signal) => client.query(route, params, device, signal);
+const homeRevenue = createHomeRevenueChart({ query, selectedDevice, currentView: () => state.view, escape });
 const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, dateTime, escape, preference, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
 
 const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
@@ -312,7 +314,7 @@ function renderRecords() {
   $('#export-csv').disabled = state.busy || state.exporting || !page?.items.length;
 }
 
-function renderAll() { renderDevices(); renderMetrics(); renderTrend(); renderRecords(); renderAlerts(); }
+function renderAll() { renderDevices(); renderMetrics(); renderTrend(); renderRecords(); renderAlerts(); homeRevenue.render(); }
 
 function summaryJobs(device = state.selected) {
   const now = new Date(), params = { group_by: 'day', timezone: DASHBOARD_TIMEZONE };
@@ -339,6 +341,7 @@ async function refreshSummary() {
 
 async function loadData({ reset = false, clearModel = false, filtersOnly = false } = {}) {
   if (!filtersOnly) deviceUI.refresh();
+  if (!filtersOnly && state.view === 'overview') homeRevenue.refresh();
   state.pageController?.abort();
   state.pageController = null; state.pendingPage = null;
   const generation = ++state.generation;
@@ -412,6 +415,7 @@ function setView(view, { load = true } = {}) {
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); }
   if (view === 'query') deviceUI.enterQuery();
+  if (view === 'overview' && load) homeRevenue.refresh();
   if (view === 'analysis' || view === 'records') {
     renderAll();
     if (needsLoad && load) loadData({ reset: true, filtersOnly: true });
@@ -431,6 +435,7 @@ $('#refresh').addEventListener('click', () => {
   if (state.view === 'query') { deviceUI.refresh(); deviceUI.queryHistory(); return; }
   if (state.view === 'overview' || state.view === 'devices') {
     deviceUI.refresh(); checkDevices(); refreshSummary();
+    if (state.view === 'overview') homeRevenue.refresh();
     if (state.view === 'devices') controlUI.refresh(true);
     return;
   }
@@ -612,10 +617,16 @@ setInterval(() => {
   if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open || $('#control-confirm-dialog').open || $('#remove-dialog').open) return;
   deviceUI.refresh();
   if (state.view === 'query') return;
-  if (state.view === 'overview' || state.view === 'devices') { checkDevices(); refreshSummary(); return; }
+  if (state.view === 'overview' || state.view === 'devices') {
+    checkDevices(); refreshSummary();
+    if (state.view === 'overview') homeRevenue.refresh();
+    return;
+  }
   if (state.view === 'analysis' || state.page === 0) {
     state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData();
   } else { checkDevices(); refreshSummary(); }
 }, 60_000);
-document.addEventListener('visibilitychange', () => { if (!document.hidden) updateClock(); });
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden) { updateClock(); if (state.view === 'overview') homeRevenue.refresh(); }
+});
 new ResizeObserver(() => renderTrend()).observe($('#trend-chart'));
