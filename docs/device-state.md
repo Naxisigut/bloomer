@@ -21,6 +21,8 @@
 | `provider_running` | 官方状态文件记录的 daemon 实例是否仍运行；核对进程名，存在 process_identity 时核对 PID 与内核启动时间，避免 PID 重用 |
 | `current_model` | 新鲜官方状态文件的 current_model；没有当前模型可为 null / ok |
 | `model_ready` | 当前模型在 warm_models 中，且未报告加载转换或对应 slot 加载失败；仅表示本地加载状态，不证明平台接单资格。源未报告必要字段时为未知 |
+| `trust_received_at` | 新鲜状态文件的 trust.received_at，浮点 Unix 秒，授权心跳时间，通常约 30 秒刷新；不读取 trust.status 推断连接 |
+| `session_id` | 新鲜状态文件的 trust.authorization.session_id，重连后变化的 Provider 会话 ID |
 | `provider_connected` / `dispatch_tier` | 旧版占位字段，停用并保持空；不推断平台连接、接单资格或优先级 |
 | `inference_active` | 新鲜本地状态文件报告的任务处理标志；确认 daemon 进程身份后读取 |
 | `request_work_pending` | 新鲜本地状态文件报告的已接受或排队工作标志；缺失保持未知 |
@@ -63,7 +65,7 @@
 
 ## 数据库和留存
 
-schema 3 新增 `device_identity`、`device_state_samples`，schema 4 的路由列保留为历史兼容，不再读写或返回。schema 5 新增本地任务、空闲判定、设备最近收益证据及 `device_provider_ids` 身份关联表和按设备查询收益的索引。升级前自动备份；旧样本的新字段保持未知。本安装 `device_id` 独立于官方 Provider ID。
+schema 3 新增 `device_identity`、`device_state_samples`，schema 4 的路由列保留为历史兼容，不再读写或返回。schema 5 新增本地任务、空闲判定、设备最近收益证据及 `device_provider_ids` 身份关联表和按设备查询收益的索引。schema 6 增加授权心跳、会话与 [Bark 告警](alert.md) 状态。升级前自动备份；旧样本的新字段保持未知。本安装 `device_id` 独立于官方 Provider ID。
 
 指标用独立的 SQLite 列保存，时间为 UTC 整数微秒；质量状态为白名单 JSON，官方错误/原因仅使用安全代码。例：
 

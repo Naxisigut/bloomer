@@ -9,5 +9,13 @@
   "listen": "127.0.0.1:17890",
   "upstream_url": "https://api.darkbloom.dev/v1/provider/account-earnings",
   "upstream_credential_file": "~/.darkbloom/auth_token",
-  "access_token_file": "~/Library/Application Support/Bloomer/agent/access.token"
+  "access_token_file": "~/Library/Application Support/Bloomer/agent/access.token",
+  "alert": {
+    "enabled": false,
+    "bark_key_file": "~/Library/Application Support/Bloomer/agent/bark.key",
+    "bark_server": "https://api.day.app",
+    "bind_interface": "en1",
+    "repeat_minutes": 30,
+    "dashboard_url": ""
+  }
 }

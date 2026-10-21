@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"time"
 
+	"bloomer/agent/internal/alert"
 	"bloomer/agent/internal/collector"
 	"bloomer/agent/internal/config"
 	"bloomer/agent/internal/control"
@@ -92,12 +93,15 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 	} else {
 		defer controls.Close()
 	}
-	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls)
+	alerts := alert.New(db, c.Alert, logger)
+	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls).WithAlerts(alerts)
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError)}
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.Serve(listener) }()
 	jobsCtx, cancelJobs := context.WithCancel(ctx)
 	defer cancelJobs()
+	alertsDone := make(chan struct{})
+	go func() { defer close(alertsDone); alerts.Run(jobsCtx) }()
 	jobsDone := make(chan struct{})
 	go func() {
 		defer close(jobsDone)
@@ -109,7 +113,7 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 		if c.DeviceStateEnabled {
 			sampler := telemetry.NewSampler(c.ProviderStateFile, c.DataDir)
 			sampler.LatestEarnings = deviceEarningsSource(db, identityClient)
-			runDeviceCollection(jobsCtx, sampler, db, clock, logger)
+			runDeviceCollection(jobsCtx, sampler, db, clock, logger, alerts.Evaluate)
 		}
 	}()
 	logger.Info("agent started", "version", version, "phase", "P6", "listen", c.Listen, "collection_enabled", c.CollectionEnabled, "device_state_enabled", c.DeviceStateEnabled)
@@ -125,6 +129,7 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 	cancelJobs()
 	<-jobsDone
 	<-deviceDone
+	<-alertsDone
 	shutdownCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()
 	if err = server.Shutdown(shutdownCtx); err != nil {

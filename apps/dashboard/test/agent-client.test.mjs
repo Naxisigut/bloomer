@@ -58,6 +58,6 @@ test('loopback mock accepts once; lost POST response is reconciled with original
   assert.equal((await queryAgent(local, 'control')).jobs[0].request_id, operation.request_id);
   assert.equal((await submitControl(local, operation)).id, 'job-1'); assert.equal(jobs.length, 1);
   const client = createAgentClient({ selected: 'demo', get() { throw new Error('must not access store'); } });
-  assert.equal((await client.query('health')).version, '1.0.4');
+  assert.equal((await client.query('health')).version, '1.0.8');
   await assert.rejects(client.submit('demo', operation), { code: 'demo_read_only' });
 });

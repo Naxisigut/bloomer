@@ -115,13 +115,13 @@ func (s *Store) SaveDeviceSample(ctx context.Context, v telemetry.Sample) error 
 		syncAt = telemetry.Ptr(v.LastEarningsSyncAt.UnixMicro())
 	}
 	return s.Write(ctx, func(tx *sql.Tx) error {
-		_, err := tx.ExecContext(ctx, `INSERT INTO device_state_samples(device_id,collected_at_us,duration_ms,cpu_percent,provider_cpu_percent,memory_total_bytes,memory_available_bytes,memory_pressure,swap_used_bytes,gpu_percent,cpu_temperature_c,gpu_temperature_c,thermal_state,disk_available_bytes,provider_running,provider_connected,current_model,model_ready,dispatch_tier,provider_pid,provider_version,provider_state_at_us,quality_json,inference_active,request_work_pending,is_idle,last_device_earning_at_us,last_earnings_sync_at_us,earnings_provider_id,activity_error)
- VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.DeviceID, v.CollectedAt.UnixMicro(), v.DurationMS, v.CPUPercent, v.ProviderCPUPercent, v.MemoryTotalBytes, v.MemoryAvailableBytes, v.MemoryPressure, v.SwapUsedBytes, v.GPUPercent, v.CPUTemperatureC, v.GPUTemperatureC, v.ThermalState, v.DiskAvailableBytes, v.ProviderRunning, v.ProviderConnected, v.CurrentModel, v.ModelReady, v.DispatchTier, v.ProviderPID, v.ProviderVersion, stateAt, string(body), v.InferenceActive, v.RequestWorkPending, v.IsIdle, earningAt, syncAt, v.EarningsProviderID, v.ActivityError)
+		_, err := tx.ExecContext(ctx, `INSERT INTO device_state_samples(device_id,collected_at_us,duration_ms,cpu_percent,provider_cpu_percent,memory_total_bytes,memory_available_bytes,memory_pressure,swap_used_bytes,gpu_percent,cpu_temperature_c,gpu_temperature_c,thermal_state,disk_available_bytes,provider_running,provider_connected,current_model,model_ready,dispatch_tier,provider_pid,provider_version,provider_state_at_us,quality_json,inference_active,request_work_pending,is_idle,last_device_earning_at_us,last_earnings_sync_at_us,earnings_provider_id,activity_error,trust_received_at,session_id)
+ VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.DeviceID, v.CollectedAt.UnixMicro(), v.DurationMS, v.CPUPercent, v.ProviderCPUPercent, v.MemoryTotalBytes, v.MemoryAvailableBytes, v.MemoryPressure, v.SwapUsedBytes, v.GPUPercent, v.CPUTemperatureC, v.GPUTemperatureC, v.ThermalState, v.DiskAvailableBytes, v.ProviderRunning, v.ProviderConnected, v.CurrentModel, v.ModelReady, v.DispatchTier, v.ProviderPID, v.ProviderVersion, stateAt, string(body), v.InferenceActive, v.RequestWorkPending, v.IsIdle, earningAt, syncAt, v.EarningsProviderID, v.ActivityError, v.TrustReceivedAt, v.SessionID)
 		return err
 	})
 }
 
-const sampleColumns = `id,device_id,collected_at_us,duration_ms,cpu_percent,provider_cpu_percent,memory_total_bytes,memory_available_bytes,memory_pressure,swap_used_bytes,gpu_percent,cpu_temperature_c,gpu_temperature_c,thermal_state,disk_available_bytes,provider_running,provider_connected,current_model,model_ready,dispatch_tier,provider_pid,provider_version,provider_state_at_us,quality_json,inference_active,request_work_pending,is_idle,last_device_earning_at_us,last_earnings_sync_at_us,earnings_provider_id,activity_error`
+const sampleColumns = `id,device_id,collected_at_us,duration_ms,cpu_percent,provider_cpu_percent,memory_total_bytes,memory_available_bytes,memory_pressure,swap_used_bytes,gpu_percent,cpu_temperature_c,gpu_temperature_c,thermal_state,disk_available_bytes,provider_running,provider_connected,current_model,model_ready,dispatch_tier,provider_pid,provider_version,provider_state_at_us,quality_json,inference_active,request_work_pending,is_idle,last_device_earning_at_us,last_earnings_sync_at_us,earnings_provider_id,activity_error,trust_received_at,session_id`
 
 type DevicePage struct {
 	Items        []telemetry.Sample `json:"items"`
@@ -170,7 +170,7 @@ func (s *Store) readDeviceSamples(ctx context.Context, query string, args []any,
 		var stateAt *int64
 		var body string
 		var earningAt, syncAt *int64
-		if err = rows.Scan(&v.ID, &v.DeviceID, &at, &v.DurationMS, &v.CPUPercent, &v.ProviderCPUPercent, &v.MemoryTotalBytes, &v.MemoryAvailableBytes, &v.MemoryPressure, &v.SwapUsedBytes, &v.GPUPercent, &v.CPUTemperatureC, &v.GPUTemperatureC, &v.ThermalState, &v.DiskAvailableBytes, &v.ProviderRunning, &v.ProviderConnected, &v.CurrentModel, &v.ModelReady, &v.DispatchTier, &v.ProviderPID, &v.ProviderVersion, &stateAt, &body, &v.InferenceActive, &v.RequestWorkPending, &v.IsIdle, &earningAt, &syncAt, &v.EarningsProviderID, &v.ActivityError); err != nil {
+		if err = rows.Scan(&v.ID, &v.DeviceID, &at, &v.DurationMS, &v.CPUPercent, &v.ProviderCPUPercent, &v.MemoryTotalBytes, &v.MemoryAvailableBytes, &v.MemoryPressure, &v.SwapUsedBytes, &v.GPUPercent, &v.CPUTemperatureC, &v.GPUTemperatureC, &v.ThermalState, &v.DiskAvailableBytes, &v.ProviderRunning, &v.ProviderConnected, &v.CurrentModel, &v.ModelReady, &v.DispatchTier, &v.ProviderPID, &v.ProviderVersion, &stateAt, &body, &v.InferenceActive, &v.RequestWorkPending, &v.IsIdle, &earningAt, &syncAt, &v.EarningsProviderID, &v.ActivityError, &v.TrustReceivedAt, &v.SessionID); err != nil {
 			return page, err
 		}
 		v.CollectedAt = time.UnixMicro(at).UTC()
@@ -188,7 +188,7 @@ func (s *Store) readDeviceSamples(ctx context.Context, query string, args []any,
 		}
 		delete(v.Quality, "routing_state")
 		delete(v.Quality, "routing_priority")
-		for _, field := range []string{"inference_active", "request_work_pending", "is_idle"} {
+		for _, field := range []string{"inference_active", "request_work_pending", "is_idle", "trust_received_at", "session_id"} {
 			if v.Quality[field] == "" {
 				v.Quality[field] = telemetry.Unsupported
 			}

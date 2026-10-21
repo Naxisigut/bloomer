@@ -14,16 +14,17 @@ var errUnsupported = errors.New("unsupported platform")
 // Only known diagnostic fields are decoded. Identity keys, configuration paths,
 // prompts, and raw error messages from the provider never enter our database.
 type daemonState struct {
-	InferenceActive      *bool     `json:"inference_active"`
-	RequestWorkPending   *bool     `json:"request_work_pending"`
-	AttestationPublicKey string    `json:"attestation_public_key"`
-	Schema               *int      `json:"schema"`
-	PID                  *int      `json:"pid"`
-	Version              string    `json:"version"`
-	WrittenAt            *float64  `json:"written_at"`
-	CurrentModel         *string   `json:"current_model"`
-	WarmModels           *[]string `json:"warm_models"`
-	LoadTransitionActive *bool     `json:"load_transition_active"`
+	Trust                json.RawMessage `json:"trust"`
+	InferenceActive      *bool           `json:"inference_active"`
+	RequestWorkPending   *bool           `json:"request_work_pending"`
+	AttestationPublicKey string          `json:"attestation_public_key"`
+	Schema               *int            `json:"schema"`
+	PID                  *int            `json:"pid"`
+	Version              string          `json:"version"`
+	WrittenAt            *float64        `json:"written_at"`
+	CurrentModel         *string         `json:"current_model"`
+	WarmModels           *[]string       `json:"warm_models"`
+	LoadTransitionActive *bool           `json:"load_transition_active"`
 	ProcessIdentity      *struct {
 		PID             int   `json:"pid"`
 		StartTimeMicros int64 `json:"start_time_micros"`
@@ -36,7 +37,7 @@ type daemonState struct {
 }
 
 func (p *Sampler) provider(ctx context.Context, s *Sample) {
-	names := []string{"provider_running", "provider_cpu_percent", "current_model", "model_ready", "inference_active", "request_work_pending"}
+	names := []string{"provider_running", "provider_cpu_percent", "current_model", "model_ready", "inference_active", "request_work_pending", "trust_received_at", "session_id"}
 	mark := func(status string) {
 		for _, name := range names {
 			s.Quality[name] = status
@@ -103,8 +104,11 @@ func (p *Sampler) provider(ctx context.Context, s *Sample) {
 		s.Quality["current_model"] = status
 		s.Quality["model_ready"] = status
 		s.Quality["inference_active"], s.Quality["request_work_pending"] = status, status
+		s.Quality["trust_received_at"], s.Quality["session_id"] = status, status
 		return
 	}
+	readTrust(s, d.Trust)
+
 	if d.InferenceActive != nil {
 		s.InferenceActive = d.InferenceActive
 		s.Quality["inference_active"] = OK
@@ -150,4 +154,42 @@ func (p *Sampler) provider(ctx context.Context, s *Sample) {
 	s.Quality["model_ready"] = OK
 	// Schema 1 has no authoritative connected flag or dispatch tier. In
 	// particular, trust.status=online is a trust verdict, not a socket probe.
+}
+
+// Optional alert evidence must not invalidate the existing process/model fields.
+func readTrust(s *Sample, raw json.RawMessage) {
+	if len(raw) == 0 || string(raw) == "null" {
+		return
+	}
+	var trust struct {
+		ReceivedAt    json.RawMessage `json:"received_at"`
+		Authorization json.RawMessage `json:"authorization"`
+	}
+	if json.Unmarshal(raw, &trust) != nil {
+		s.Quality["trust_received_at"], s.Quality["session_id"] = Invalid, Invalid
+		return
+	}
+	if len(trust.ReceivedAt) > 0 && string(trust.ReceivedAt) != "null" {
+		s.Quality["trust_received_at"] = Invalid
+		var at float64
+		if json.Unmarshal(trust.ReceivedAt, &at) == nil && !math.IsNaN(at) && !math.IsInf(at, 0) && at > 0 && at <= 253402300799 && at <= float64(s.CollectedAt.Unix())+float64(s.CollectedAt.Nanosecond())/1e9+5 {
+			s.TrustReceivedAt, s.Quality["trust_received_at"] = Ptr(at), OK
+		}
+	}
+	if len(trust.Authorization) > 0 && string(trust.Authorization) != "null" {
+		var authorization struct {
+			SessionID json.RawMessage `json:"session_id"`
+		}
+		if json.Unmarshal(trust.Authorization, &authorization) != nil {
+			s.Quality["session_id"] = Invalid
+			return
+		}
+		if len(authorization.SessionID) > 0 && string(authorization.SessionID) != "null" {
+			s.Quality["session_id"] = Invalid
+			var id string
+			if json.Unmarshal(authorization.SessionID, &id) == nil && len(id) > 0 && len(id) <= 1024 && !strings.ContainsAny(id, "\r\n\x00") {
+				s.SessionID, s.Quality["session_id"] = Ptr(id), OK
+			}
+		}
+	}
 }

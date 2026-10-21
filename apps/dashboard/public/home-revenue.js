@@ -55,7 +55,6 @@ export function createHomeRevenueChart({ query, selectedDevice, currentView, esc
 
   function render() {
     if (currentView() !== 'overview') return;
-    $('#home-revenue-date').textContent = state.day ? `${state.day} · 按小时汇总` : '北京时间当天 · 按小时汇总';
     $('#home-revenue-total').textContent = money(state.all ? sumMoney(state.all.items) : null, 4);
     const errors = [...state.errors, ...[...state.seriesErrors].filter(([model]) => state.selected.has(model)).map(([model, error]) => `${model}：${error}`)];
     const status = $('#home-revenue-status');

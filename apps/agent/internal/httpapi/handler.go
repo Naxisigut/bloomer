@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"bloomer/agent/internal/alert"
 	"bloomer/agent/internal/config"
 	"bloomer/agent/internal/control"
 	"bloomer/agent/internal/health"
@@ -20,6 +21,7 @@ import (
 )
 
 type Handler struct {
+	alerts             *alert.Manager
 	control            *control.Manager
 	store              *store.Store
 	tokenHash          [32]byte
@@ -71,6 +73,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/device/control") {
 		h.deviceControl(w, r, requestID)
+		return
+	}
+	if r.URL.Path == "/v1/alerts" || r.URL.Path == "/v1/alerts/test" {
+		h.alertEndpoints(w, r, requestID)
 		return
 	}
 	if r.URL.Path != "/v1/health" && r.URL.Path != "/v1/account/overview" && r.URL.Path != "/v1/earnings" && r.URL.Path != "/v1/earnings/stats" && r.URL.Path != "/v1/device/state" && r.URL.Path != "/v1/device/state/history" {

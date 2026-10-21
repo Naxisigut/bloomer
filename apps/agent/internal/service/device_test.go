@@ -45,6 +45,7 @@ func TestDeviceCollectionContinuesDuringUpstreamActivityWithoutBacklog(t *testin
 			base := time.Date(2026, 10, 19, 2, 0, 0, 0, time.UTC)
 			clock := &fakeClock{now: base}
 			calls := 0
+			observed := 0
 			sampler := fakeDeviceSampler{collect: func(at time.Time) telemetry.Sample {
 				calls++
 				if calls == 1 && sleep {
@@ -58,7 +59,14 @@ func TestDeviceCollectionContinuesDuringUpstreamActivityWithoutBacklog(t *testin
 			done := make(chan struct{})
 			go func() {
 				defer close(done)
-				runDeviceCollection(ctx, sampler, db, clock, slog.New(slog.NewTextHandler(io.Discard, nil)))
+				runDeviceCollection(ctx, sampler, db, clock, slog.New(slog.NewTextHandler(io.Discard, nil)), func(check context.Context, sample telemetry.Sample) error {
+					stored, err := db.LatestDeviceSample(check, sample.CollectedAt)
+					if err != nil || stored == nil || !stored.CollectedAt.Equal(sample.CollectedAt) || stored.DeviceID != sample.DeviceID {
+						t.Errorf("observer did not receive committed sample: %+v %v", stored, err)
+					}
+					observed++
+					return nil
+				})
 			}()
 			select {
 			case <-done:
@@ -66,7 +74,7 @@ func TestDeviceCollectionContinuesDuringUpstreamActivityWithoutBacklog(t *testin
 				cancel()
 				t.Fatal("telemetry was blocked by upstream activity or did not stop")
 			}
-			if calls != 2 {
+			if calls != 2 || observed != 2 {
 				t.Fatalf("missed samples were queued: %d", calls)
 			}
 			page, err := db.DeviceSamples(context.Background(), clock.now, base.Add(-time.Second), clock.now.Add(time.Second), 0, 100)

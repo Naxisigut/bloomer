@@ -2,8 +2,10 @@ import { AppError } from './errors.js';
 import { validateDevice, parseConnections } from './connections.js';
 import { demoQuery } from './demo.js';
 
-const routes = { health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', 'device-state': '/v1/device/state', 'device-history': '/v1/device/state/history', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs' };
+const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', 'device-state': '/v1/device/state', 'device-history': '/v1/device/state/history', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs' };
 const messages = {
+  alerts_disabled: '该设备尚未开启 Bark 告警，请先在设备端配置并重启 Agent。',
+  alerts_unsupported: '该设备 Agent 尚不支持告警记录，请升级 Agent。',
   control_disabled: '该设备已关闭远程操作，请在设备端配置中开启。',
   control_unavailable: '远程操作不可用，请检查设备端 Darkbloom 安装与 Agent 配置。',
   control_unsupported: '该设备 Agent 尚不支持远程操作，请先升级设备端 Agent。',
@@ -26,6 +28,8 @@ const object = value => value !== null && typeof value === 'object' && !Array.is
 function validateResponse(route, body, operation) {
   if (!object(body)) throw invalidResponse();
   const items = () => Array.isArray(body.items) && body.items.every(object);
+  if (route === 'alerts' && (!items() || body.items.length > 50 || body.items.some(item => typeof item.type !== 'string' || typeof item.event !== 'string' || typeof item.body !== 'string' || typeof item.device_name !== 'string' || typeof item.delivery_status !== 'string' || typeof item.recovered !== 'boolean' || !Number.isFinite(Date.parse(item.created_at)) || !Number.isSafeInteger(item.attempts)))) throw invalidResponse();
+  if (route === 'alert-test' && (typeof body.type !== 'string' || typeof body.delivery_status !== 'string')) throw invalidResponse();
   if (route === 'health' && (typeof body.version !== 'string' || !body.version || typeof body.collection_state !== 'string')) throw invalidResponse();
   if (route === 'overview' && !(body.official === null || object(body.official))) throw invalidResponse();
   if (route === 'earnings' && (!items() || body.items.length > 500 || !(body.next_cursor == null || typeof body.next_cursor === 'string') || body.items.some(item => typeof item.record_id !== 'string' || typeof item.model !== 'string' || (typeof item.amount_micro_usd !== 'string' || !/^-?\d+$/.test(item.amount_micro_usd)) || !Number.isFinite(Date.parse(item.created_at))))) throw invalidResponse();
@@ -55,10 +59,11 @@ export async function queryAgent(device, route, params = new URLSearchParams(), 
   let reader, response;
   try {
     response = await fetcher(url, {
-      method: operation ? 'POST' : 'GET', body: operation ? JSON.stringify(operation) : undefined,
+      method: operation || route === 'alert-test' ? 'POST' : 'GET', body: operation ? JSON.stringify(operation) : undefined,
       headers: { Authorization: `Bearer ${device.token}`, Accept: 'application/json', ...(operation ? { 'Content-Type': 'application/json' } : {}) },
       mode: 'cors', credentials: 'omit', cache: 'no-store', referrerPolicy: 'no-referrer', redirect: 'error', signal: controller.signal,
     });
+    if (['alerts', 'alert-test'].includes(route) && [404, 405, 501].includes(response.status)) throw new AppError(404, 'alerts_unsupported', messages.alerts_unsupported);
     if (route.startsWith('control') && [404, 405, 501].includes(response.status)) throw new AppError(404, 'control_unsupported', messages.control_unsupported);
     if (['device-state', 'device-history'].includes(route) && [404, 405, 501].includes(response.status)) throw new AppError(404, 'device_state_unsupported', messages.device_state_unsupported);
     if (Number(response.headers.get('content-length')) > 8_000_000) throw invalidResponse();
@@ -108,7 +113,7 @@ export function createAgentClient(store, options = {}) {
   return {
     query(route, params, id = store.selected, signal) {
       if (id === 'demo') {
-        if (route.startsWith('control')) return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));
+        if (route.startsWith('control') || route === 'alert-test') return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));
         signal?.throwIfAborted();
         return Promise.resolve(demoQuery(route, new URLSearchParams(params || {})));
       }

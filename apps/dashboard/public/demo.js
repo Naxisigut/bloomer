@@ -63,6 +63,9 @@ function demoState(route, params, clock) {
 }
 
 export function demoQuery(route, params = new URLSearchParams(), clock = new Date()) {
+  if (route === 'alert-test') throw new AppError(403, 'demo_read_only', '演示设备不发送测试推送。');
+  if (route === 'alerts') return { items: [{ id: 1, type: 'coordinator_disconnected', event: 'recovered', level: 'active', device_name: '演示 Mac', title: '演示 Mac · 协调器连接已恢复', body: '设备：演示 Mac\n告警：协调器连接中断\n已恢复，持续 4 小时 21 分钟。', created_at: clock.toISOString(), first_triggered_at: new Date(+clock - 261 * 60_000).toISOString(), last_push_at: clock.toISOString(), recovered: true, duration_seconds: 261 * 60, delivery_status: 'sent', attempts: 1, last_attempt_at: clock.toISOString(), next_attempt_at: null }] };
+
   if (route.startsWith('control')) throw new AppError(403, 'demo_read_only', '演示设备不执行远程操作。');
   if (!['health', 'overview', 'earnings', 'stats', 'device-state', 'device-history'].includes(route)) throw new AppError(404, 'not_found', '接口不存在。');
   if (route === 'device-state' || route === 'device-history') return demoState(route, params, clock);
@@ -70,7 +73,7 @@ export function demoQuery(route, params = new URLSearchParams(), clock = new Dat
   const from = params.get('from') || new Date(+clock - 365 * 86_400_000).toISOString();
   const to = params.get('to') || clock.toISOString();
   const meta = { last_successful_sync_at: new Date(+clock - 18_000).toISOString(), data_stale: false, retention_start: new Date(+clock - 365 * 86_400_000).toISOString(), effective_from: from, effective_to: to, range_truncated: false, coverage: { status: 'partial', start: records.at(-1)?.created_at, gap_count: 0, gaps: [], gaps_truncated: false } };
-  if (route === 'health') return { version: '1.0.4', phase: 'P6', schema_version: 5, collection_state: 'idle', last_successful_sync_at: meta.last_successful_sync_at, data_stale: false, last_error: null, last_attempt_at: meta.last_successful_sync_at, sync_mode: 'normal', recovery_reason: null, retry_not_before: null, retention_start: meta.retention_start, coverage: meta.coverage, cleanup: { state: 'idle', last_success_at: new Date(+clock - 2 * 86_400_000).toISOString(), last_error: null } };
+  if (route === 'health') return { version: '1.0.8', phase: 'P6', schema_version: 6, collection_state: 'idle', last_successful_sync_at: meta.last_successful_sync_at, data_stale: false, last_error: null, last_attempt_at: meta.last_successful_sync_at, sync_mode: 'normal', recovery_reason: null, retry_not_before: null, retention_start: meta.retention_start, coverage: meta.coverage, cleanup: { state: 'idle', last_success_at: new Date(+clock - 2 * 86_400_000).toISOString(), last_error: null } };
   if (route === 'overview') return { account_id: 'demo-account', official: { record_count: 18204, total_micro_usd: '1846728300', available_balance_micro_usd: '286423800', withdrawable_balance_micro_usd: '265100000', observed_at: meta.last_successful_sync_at }, local_last_365_days: { record_count: records.length, amount_micro_usd: sumMoney(records).toString() }, meta };
   let selected = records.filter(item => item.created_at >= from && item.created_at < to && (!params.get('model') || item.model === params.get('model')));
   if (route === 'earnings') {

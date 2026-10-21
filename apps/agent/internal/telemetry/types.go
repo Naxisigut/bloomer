@@ -24,6 +24,7 @@ var Fields = []string{
 	"thermal_state", "disk_available_bytes", "provider_running", "provider_connected",
 	"current_model", "model_ready", "dispatch_tier",
 	"inference_active", "request_work_pending", "is_idle",
+	"trust_received_at", "session_id",
 }
 
 type Hardware struct {
@@ -53,6 +54,8 @@ type Sample struct {
 	DiskAvailableBytes   *int64     `json:"disk_available_bytes"`
 	ProviderRunning      *bool      `json:"provider_running"`
 	ProviderConnected    *bool      `json:"provider_connected"`
+	TrustReceivedAt      *float64   `json:"trust_received_at"`
+	SessionID            *string    `json:"session_id"`
 	CurrentModel         *string    `json:"current_model"`
 	ModelReady           *bool      `json:"model_ready"`
 	DispatchTier         *string    `json:"dispatch_tier"`

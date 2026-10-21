@@ -1,6 +1,7 @@
 import { DASHBOARD_TIMEZONE, money, sumMoney, sumCount, timeRange, rollingRange, dateKey, shiftDate, zonedMidnight, trendGroups, csvRows } from './data.js';
 import { CursorPager } from './pagination.js';
 import { createDeviceUI } from './device-ui.js';
+import { createAlertUI } from './alert-ui.js';
 import { createControlUI } from './control-ui.js';
 import { DeviceStore } from './connections.js';
 import { createAgentClient } from './agent-client.js';
@@ -11,6 +12,7 @@ const $$ = selector => [...document.querySelectorAll(selector)];
 const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
 const number = value => new Intl.NumberFormat('en-US').format(value);
 const icons = {
+  alerts: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
   overview: '<rect x="3" y="3" width="7" height="7" rx="1.3"/><rect x="14" y="3" width="7" height="7" rx="1.3"/><rect x="3" y="14" width="7" height="7" rx="1.3"/><rect x="14" y="14" width="7" height="7" rx="1.3"/>',
   analysis: '<path d="M4 3v18h17M8 17v-5M13 17V8M18 17V4"/>',
   records: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
@@ -94,6 +96,7 @@ const query = (route, params, device = state.selected, signal) => client.query(r
 const homeRevenue = createHomeRevenueChart({ query, selectedDevice, currentView: () => state.view, escape });
 const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, dateTime, escape, preference, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
 
+const alertUI = createAlertUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, escape, dateTime });
 const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
 
 function resetQuery({ clearModel = false, preserveSummary = false } = {}) {
@@ -154,6 +157,7 @@ function renderDevices() {
   renderHealth();
   deviceUI.render();
   controlUI.render();
+  alertUI.render();
 }
 
 function renderHealth() {
@@ -173,7 +177,7 @@ function renderHealth() {
 }
 
 function renderAlerts() {
-  if (state.view === 'query') { $('#alerts').innerHTML = ''; return; }
+  if (state.view === 'query' || state.view === 'alerts') { $('#alerts').innerHTML = ''; return; }
   const health = state.health.get(state.selected);
   const metaList = Object.values(state.data).map(item => item?.meta).filter(Boolean);
   const meta = state.data.overview?.meta || metaList[0];
@@ -408,12 +412,13 @@ function setView(view, { load = true } = {}) {
   state.view = view; $('#main').dataset.view = view;
   const needsLoad = ['analysis', 'records'].includes(view) && activateEarningsView(view);
   $('#overview-topbar').hidden = view !== 'overview';
-  const titles = { overview: '首页', analysis: '收益分析', records: '收益明细', devices: '我的设备', query: '数据查询' };
+  const titles = { overview: '首页', analysis: '收益分析', records: '收益明细', devices: '我的设备', query: '数据查询', alerts: '告警记录' };
   const slot = $(view === 'records' ? '#records-filters-slot' : '#trend-filters-slot');
   if ($('#earnings-filters').parentElement !== slot) slot.append($('#earnings-filters'));
   document.title = `Bloomer · ${titles[view]}`;
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); }
+  if (view === 'alerts') alertUI.refresh();
   if (view === 'query') deviceUI.enterQuery();
   if (view === 'overview' && load) homeRevenue.refresh();
   if (view === 'analysis' || view === 'records') {
@@ -427,11 +432,12 @@ function setView(view, { load = true } = {}) {
 
 async function selectDevice(id) {
   try { connections.select(id); } catch (error) { toast(error.message); }
-  state.selected = id; await loadData({ reset: true, clearModel: true });
+  state.selected = id; await loadData({ reset: true, clearModel: true }); await alertUI.refreshIfVisible();
 }
 $$('.nav-item').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
 $('#device-select').addEventListener('change', event => selectDevice(event.target.value));
 $('#refresh').addEventListener('click', () => {
+  if (state.view === 'alerts') { alertUI.refresh(); return; }
   if (state.view === 'query') { deviceUI.refresh(); deviceUI.queryHistory(); return; }
   if (state.view === 'overview' || state.view === 'devices') {
     deviceUI.refresh(); checkDevices(); refreshSummary();
@@ -604,17 +610,18 @@ function updateClock() {
 }
 
 // Apply topbar visibility before restoring browser connections, including direct page links.
-$('#overview-topbar').hidden = ['analysis', 'records', 'devices', 'query'].includes(location.hash.slice(1));
+$('#overview-topbar').hidden = ['analysis', 'records', 'devices', 'query', 'alerts'].includes(location.hash.slice(1));
 try {
   if (location.protocol === 'file:') throw new Error('请通过普通静态服务器打开看板，例如 http://127.0.0.1:18080；不支持 file:// 运行。');
   connections.load();
   await loadDeviceList(); resetQuery();
-  const view = location.hash.slice(1); if (['overview', 'analysis', 'records', 'devices', 'query'].includes(view)) setView(view, { load: false });
+  const view = location.hash.slice(1); if (['overview', 'analysis', 'records', 'devices', 'query', 'alerts'].includes(view)) setView(view, { load: false });
   await loadData();
 } catch (error) { $('#alerts').innerHTML = `<div class="alert error">${escape(error.message)}</div>`; }
 setInterval(() => {
   updateClock(); renderDevices();
   if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open || $('#control-confirm-dialog').open || $('#remove-dialog').open) return;
+  if (state.view === 'alerts') { alertUI.refresh(); return; }
   deviceUI.refresh();
   if (state.view === 'query') return;
   if (state.view === 'overview' || state.view === 'devices') {

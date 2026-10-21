@@ -70,7 +70,7 @@ def main():
             assert health["collection_state"] in {"idle", "collecting", "degraded", "rate_limited"}
             assert health["data_stale"] is True
             assert health["last_successful_sync_at"] is None
-            assert health["schema_version"] == 5
+            assert health["schema_version"] == 6
             return process, token
 
         def timestamp():

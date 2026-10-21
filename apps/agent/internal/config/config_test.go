@@ -87,3 +87,30 @@ func TestControlConfigurationOptOutAndCustomCLI(t *testing.T) {
 		t.Fatal(c, err)
 	}
 }
+
+func TestAlertDefaultsPartialConfigurationAndValidation(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.json")
+	os.WriteFile(path, []byte(`{}`), 0600)
+	c, err := Load(path)
+	if err != nil || c.Alert.Enabled || c.Alert.DisconnectSeconds != 180 || c.Alert.ConsecutiveSamples != 2 || c.Alert.FlapChanges != 5 || c.Alert.NightEndHour != 8 {
+		t.Fatal(c.Alert, err)
+	}
+	os.WriteFile(path, []byte(`{"alert":{"enabled":true,"bark_key_file":"private/bark.key","repeat_minutes":45}}`), 0600)
+	c, err = Load(path)
+	if err != nil || c.Alert.BarkKeyFile != filepath.Join(dir, "private", "bark.key") || c.Alert.RepeatMinutes != 45 || c.Alert.FlapWindowMinutes != 60 {
+		t.Fatal(c.Alert, err)
+	}
+	for _, body := range []string{
+		`{"alert":{"enabled":true,"repeat_minutes":0}}`, `{"alert":{"enabled":true,"consecutive_samples":-1}}`,
+		`{"alert":{"enabled":true,"night_end_hour":24}}`, `{"alert":{"enabled":true,"bark_server":"https://user:secret@example.com"}}`,
+		`{"alert":{"enabled":true,"dashboard_url":"javascript:secret"}}`, `{"alert":{"device_key":"secret"}}`,
+		`{"alert":{"enabled":true,"bark_key_file":"~other/key"}}`,
+	} {
+		os.WriteFile(path, []byte(body), 0600)
+		_, err = Load(path)
+		if err == nil || strings.Contains(err.Error(), "secret") {
+			t.Fatal("unsafe alert configuration", err)
+		}
+	}
+}

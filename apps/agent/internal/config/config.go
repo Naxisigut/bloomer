@@ -32,6 +32,7 @@ const (
 func Windows() []int { return []int{50, 100, 300, 1000} }
 
 type Config struct {
+	Alert                  Alert  `json:"alert"`
 	RemoteControlEnabled   bool   `json:"remote_control_enabled"`
 	DarkbloomBinary        string `json:"darkbloom_binary"`
 	CollectionEnabled      bool   `json:"collection_enabled"`
@@ -53,6 +54,7 @@ func Defaults() (Config, error) {
 	}
 	data := filepath.Join(home, "Library", "Application Support", "Bloomer", "agent")
 	return Config{
+		Alert:                DefaultAlert(filepath.Join(data, "bark.key")),
 		RemoteControlEnabled: true,
 		DarkbloomBinary:      filepath.Join(home, ".darkbloom", "bin", "darkbloom"),
 		CollectionEnabled:    true,
@@ -107,7 +109,7 @@ func Load(path string) (Config, error) {
 			return c, errors.New("configuration must be an object")
 		}
 	}
-	for _, p := range []*string{&c.DataDir, &c.LogDir, &c.UpstreamCredentialFile, &c.AccessTokenFile, &c.ProviderStateFile, &c.DarkbloomBinary} {
+	for _, p := range []*string{&c.DataDir, &c.LogDir, &c.UpstreamCredentialFile, &c.AccessTokenFile, &c.ProviderStateFile, &c.DarkbloomBinary, &c.Alert.BarkKeyFile} {
 		if *p == "" {
 			continue
 		}
@@ -143,6 +145,16 @@ func resolve(p, base string) (string, error) {
 }
 
 func (c Config) Validate() error {
+	if err := c.Alert.Validate(); err != nil {
+		return err
+	}
+	if c.Alert.Enabled {
+		for _, path := range []string{c.DatabasePath(), c.LockPath(), filepath.Join(c.LogDir, "agent.log"), c.ProviderStateFile, c.UpstreamCredentialFile, c.AccessTokenFile, c.DarkbloomBinary} {
+			if c.Alert.BarkKeyFile == path {
+				return errors.New("Bark key must use a separate credential file")
+			}
+		}
+	}
 	for _, p := range []string{c.DataDir, c.LogDir, c.AccessTokenFile, c.UpstreamCredentialFile, c.ProviderStateFile, c.DarkbloomBinary} {
 		if p == "" || !filepath.IsAbs(p) {
 			return errors.New("runtime and credential paths must be absolute and nonempty")

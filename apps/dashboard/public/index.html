@@ -25,6 +25,7 @@
       <button class="nav-item" data-view="analysis"><span data-icon="analysis"></span>收益分析</button>
       <button class="nav-item" data-view="records"><span data-icon="records"></span>收益明细</button>
       <button class="nav-item" data-view="devices"><span data-icon="devices"></span>我的设备<span id="nav-device-count" class="nav-count">0</span></button>
+      <button class="nav-item" data-view="alerts"><span data-icon="alerts"></span>告警记录</button>
       <button class="nav-item" data-view="query"><span data-icon="query"></span>数据查询</button>
     </nav>
   </aside>
@@ -52,11 +53,16 @@
     <main id="main" tabindex="-1" data-view="overview">
       <div id="demo-banner" class="demo-banner" hidden><span class="demo-label">演示</span><span>当前为演示数据</span></div>
       <div id="alerts" aria-live="polite"></div>
+      <section class="panel alerts-only" aria-label="告警记录">
+        <div class="panel-heading"><div><h2>告警记录</h2><p>最近 50 条 · 北京时间 · 每 60 秒刷新</p></div></div>
+        <div class="alert-controls"><label for="alert-device">选择设备</label><select id="alert-device" aria-label="告警记录设备"></select><button id="alert-refresh" class="button button-white">刷新记录</button><button id="alert-test" class="button button-dark">发送测试推送</button></div>
+        <p id="alert-message" class="state-message" role="status" hidden></p>
+        <div id="alert-records" aria-live="polite"><p class="control-note">暂无告警记录</p></div>
+      </section>
 
       <section class="panel chart-panel home-only home-revenue-panel" aria-label="当天收益">
-        <div class="panel-heading"><div><h2>今日收益<span class="subtle-tag">按小时</span></h2><p id="home-revenue-date">北京时间当天 · 按小时汇总</p></div></div>
-        <div class="chart-summary"><span class="chart-total-label">今日总收益</span><strong id="home-revenue-total">—</strong></div>
-        <fieldset class="home-models"><legend>查看收益曲线<span>可同时选择多个模型</span></legend><div id="home-revenue-models" class="home-model-choices"></div></fieldset>
+        <div class="panel-heading home-revenue-heading"><h2>今日收益</h2><strong id="home-revenue-total">—</strong></div>
+        <fieldset class="home-models" aria-label="收益曲线模型选择"><div id="home-revenue-models" class="home-model-choices"></div></fieldset>
         <p id="home-revenue-status" class="state-message warning" role="status" hidden></p>
         <div id="home-revenue-chart" class="trend-chart home-revenue-chart" aria-label="当天按小时收益折线图"><div class="empty-state">正在读取当天收益…</div></div>
         <div class="chart-footer"><span>无收益小时显示 0，未来时段留空 · 当前小时截至最近刷新</span><span>北京时间 UTC+8</span></div>

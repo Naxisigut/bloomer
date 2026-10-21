@@ -17,7 +17,7 @@ type deviceSampler interface {
 // Device collection deliberately bypasses the earnings/cleanup activity lock:
 // upstream waits must not erase the local observations that explain them.
 // Only the short SQLite commits use Store.Write's existing serialization.
-func runDeviceCollection(ctx context.Context, sampler deviceSampler, db *store.Store, clock Clock, logger *slog.Logger) {
+func runDeviceCollection(ctx context.Context, sampler deviceSampler, db *store.Store, clock Clock, logger *slog.Logger, observers ...func(context.Context, telemetry.Sample) error) {
 	var deviceID string
 	for ctx.Err() == nil {
 		started := clock.Now().UTC()
@@ -39,6 +39,13 @@ func runDeviceCollection(ctx context.Context, sampler deviceSampler, db *store.S
 					logger.Error("device sample save failed")
 				}
 				stop()
+				for _, observe := range observers {
+					check, finish := context.WithTimeout(ctx, 5*time.Second)
+					if err := observe(check, sample); err != nil && ctx.Err() == nil {
+						logger.Error("alert evaluation failed")
+					}
+					finish()
+				}
 			}
 		}
 		cancel()

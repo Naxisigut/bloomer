@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -103,5 +104,43 @@ func TestStateReadDoesNotFollowLinksOrAcceptNonRegularFiles(t *testing.T) {
 	}
 	if _, err := readState(path); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestTrustEvidenceFreshnessPrecisionAndIsolation(t *testing.T) {
+	now := time.Date(2026, 10, 21, 2, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name, trust string
+		age         time.Duration
+		quality     string
+		want        bool
+	}{
+		{"fractional", `{"status":"online","received_at":HEARTBEAT,"authorization":{"session_id":"provider-session"}}`, 0, OK, true},
+		{"stale", `{"received_at":HEARTBEAT,"authorization":{"session_id":"provider-session"}}`, 91 * time.Second, Stale, false},
+		{"future state", `{"received_at":HEARTBEAT}`, -6 * time.Second, Invalid, false},
+		{"missing", `{}`, 0, Unsupported, false},
+		{"invalid heartbeat", `{"received_at":"bad","authorization":{"session_id":"provider-session"}}`, 0, Invalid, false},
+		{"invalid trust", `[]`, 0, Invalid, false},
+		{"future heartbeat", `{"received_at":253402300799}`, 0, Invalid, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			trust := strings.ReplaceAll(tc.trust, "HEARTBEAT", fmt.Sprintf("%.3f", float64(now.Unix())-9.875))
+			body := []byte(`{"schema":1,"pid":42,"written_at":` + fmt.Sprint(now.Add(-tc.age).Unix()) + `,"current_model":"model","warm_models":["model"],"trust":` + trust + `}`)
+			p := &Sampler{read: func(string) ([]byte, error) { return body, nil }, process: func(int, *int64) (bool, error) { return true, nil }, run: func(context.Context, string, ...string) ([]byte, error) { return []byte("0"), nil }}
+			s := NewSample(now)
+			p.provider(context.Background(), &s)
+			if s.Quality["trust_received_at"] != tc.quality || (s.TrustReceivedAt != nil) != tc.want {
+				t.Fatalf("%+v", s)
+			}
+			if tc.want && (*s.TrustReceivedAt != float64(now.Unix())-9.875 || s.SessionID == nil || *s.SessionID != "provider-session") {
+				t.Fatal("precision/session lost")
+			}
+			if tc.age == 0 && (s.ProviderRunning == nil || !*s.ProviderRunning || s.ModelReady == nil || !*s.ModelReady) {
+				t.Fatal("optional trust corrupted process/model semantics")
+			}
+			if s.ProviderConnected != nil || s.Quality["provider_connected"] != Unsupported {
+				t.Fatal("legacy connection semantics changed")
+			}
+		})
 	}
 }
