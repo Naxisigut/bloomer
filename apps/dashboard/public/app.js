@@ -33,6 +33,41 @@ const state = {
   pageSize: Number(preference('pageSize') || 10), pager: null, pageController: null, pendingPage: null,
   generation: 0, busy: false, exporting: false, exportController: null, fetchedAt: null, errors: [], summaryErrors: [], filterErrors: [], range: null,
 };
+const earningsViews = new Map();
+let earningsView = 'analysis';
+const earningsFilterKeys = ['period', 'custom', 'model', 'trendGroup', 'range', 'page', 'pager', 'fetchedAt', 'filterErrors'];
+
+function activateEarningsView(view) {
+  if (view === earningsView) return false;
+  const { trend, models, earnings, overview, lastHour, lastDay } = state.data;
+  earningsViews.set(earningsView, {
+    filters: Object.fromEntries(earningsFilterKeys.map(key => [key, state[key]])),
+    data: { trend, models, earnings }, device: state.selected, needsLoad: state.busy || !earnings,
+  });
+  // In-flight responses for the previous menu must never replace this menu's data.
+  state.generation++;
+  state.pageController?.abort(); state.exportController?.abort();
+  state.pageController = null; state.pendingPage = null; state.busy = false;
+  $('#trend-chart').setAttribute('aria-busy', 'false');
+  const saved = earningsViews.get(view);
+  Object.assign(state, saved?.filters || {
+    period: '1', custom: {}, model: '', trendGroup: 'day', range: null,
+    page: 0, pager: null, fetchedAt: null, filterErrors: [],
+  });
+  const sameDevice = saved?.device === state.selected;
+  if (!sameDevice) { state.model = ''; state.page = 0; state.pager = null; state.filterErrors = []; }
+  state.range ||= timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom);
+  state.data = { overview, lastHour, lastDay, ...(sameDevice ? saved.data : {}) };
+  state.errors = [...new Set([...state.summaryErrors, ...state.filterErrors])];
+  earningsView = view;
+  $('#period-select').value = state.period;
+  $$('[data-period]').forEach(button => {
+    const selected = button.dataset.period === state.period;
+    button.classList.toggle('selected', selected); button.setAttribute('aria-pressed', String(selected));
+  });
+  $('#date-form').hidden = true; $('#date-error').textContent = ''; $('#export-status').hidden = true;
+  return !sameDevice || saved.needsLoad;
+}
 if (!Number.isInteger(state.pageSize) || state.pageSize < 1 || state.pageSize > 500) state.pageSize = 10;
 $('#page-size').value = state.pageSize;
 const demoDevice = { id: 'demo', name: '演示设备', url: '演示数据', source: 'demo' };
@@ -364,10 +399,11 @@ async function checkDevices() {
   renderDevices(); renderAlerts();
 }
 
-function setView(view) {
+function setView(view, { load = true } = {}) {
   const changed = state.view !== view;
   if (state.view === 'query' && view !== 'query') deviceUI.leaveQuery();
   state.view = view; $('#main').dataset.view = view;
+  const needsLoad = ['analysis', 'records'].includes(view) && activateEarningsView(view);
   $('#overview-topbar').hidden = view !== 'overview';
   const titles = { overview: '首页', analysis: '收益分析', records: '收益明细', devices: '我的设备', query: '数据查询' };
   const slot = $(view === 'records' ? '#records-filters-slot' : '#trend-filters-slot');
@@ -376,7 +412,10 @@ function setView(view) {
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); }
   if (view === 'query') deviceUI.enterQuery();
-  if (view === 'analysis') renderTrend();
+  if (view === 'analysis' || view === 'records') {
+    renderAll();
+    if (needsLoad && load) loadData({ reset: true, filtersOnly: true });
+  }
   renderAlerts(); updateClock();
   history.replaceState(null, '', `#${view}`);
   if (changed) window.scrollTo({ top: 0, behavior: 'auto' });
@@ -390,7 +429,12 @@ $$('.nav-item').forEach(button => button.addEventListener('click', () => setView
 $('#device-select').addEventListener('change', event => selectDevice(event.target.value));
 $('#refresh').addEventListener('click', () => {
   if (state.view === 'query') { deviceUI.refresh(); deviceUI.queryHistory(); return; }
-  state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData(); if (state.view === 'devices') { checkDevices(); controlUI.refresh(true); }
+  if (state.view === 'overview' || state.view === 'devices') {
+    deviceUI.refresh(); checkDevices(); refreshSummary();
+    if (state.view === 'devices') controlUI.refresh(true);
+    return;
+  }
+  state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData();
 });
 function selectPeriod(period) {
   state.period = period;
@@ -560,7 +604,7 @@ try {
   if (location.protocol === 'file:') throw new Error('请通过普通静态服务器打开看板，例如 http://127.0.0.1:18080；不支持 file:// 运行。');
   connections.load();
   await loadDeviceList(); resetQuery();
-  const view = location.hash.slice(1); if (['overview', 'analysis', 'records', 'devices', 'query'].includes(view)) setView(view);
+  const view = location.hash.slice(1); if (['overview', 'analysis', 'records', 'devices', 'query'].includes(view)) setView(view, { load: false });
   await loadData();
 } catch (error) { $('#alerts').innerHTML = `<div class="alert error">${escape(error.message)}</div>`; }
 setInterval(() => {
@@ -568,8 +612,8 @@ setInterval(() => {
   if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open || $('#control-confirm-dialog').open || $('#remove-dialog').open) return;
   deviceUI.refresh();
   if (state.view === 'query') return;
-  if (state.view === 'devices') { checkDevices(); refreshSummary(); return; }
-  if (state.view === 'overview' || state.view === 'analysis' || state.page === 0) {
+  if (state.view === 'overview' || state.view === 'devices') { checkDevices(); refreshSummary(); return; }
+  if (state.view === 'analysis' || state.page === 0) {
     state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData();
   } else { checkDevices(); refreshSummary(); }
 }, 60_000);
