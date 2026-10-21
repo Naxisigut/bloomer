@@ -3,6 +3,30 @@ import { DASHBOARD_TIMEZONE, dateKey, money, sumMoney, timeRange } from './data.
 const HOUR = 3_600_000;
 const colors = ['#447da1', '#bd8037', '#8570ad', '#328b80', '#b86772', '#798c3a', '#97704c', '#5770b0'];
 
+// Choose exact 1/2/5 monetary steps before computing labels or drawing coordinates.
+export function revenueAxis(amounts) {
+  let low = 0n, high = 0n;
+  for (const amount of amounts) {
+    const value = BigInt(amount);
+    if (value < low) low = value;
+    if (value > high) high = value;
+  }
+  const padded = value => (value * 105n + 99n) / 100n;
+  low = -padded(-low); high = padded(high);
+  if (low === high) high = 1_000_000n;
+  const roughStep = (high - low + 4n) / 5n;
+  const magnitude = 10n ** BigInt(roughStep.toString().length - 1);
+  const step = [1n, 2n, 5n, 10n].map(factor => factor * magnitude).find(value => value >= roughStep);
+  const first = -((-low + step - 1n) / step), last = (high + step - 1n) / step;
+  const digits = Math.max(2, 6 - (step.toString().length - 1));
+  const ticks = [];
+  for (let index = first; index <= last; index++) {
+    const amount = index * step;
+    ticks.push({ value: Number(amount) / 1e6, label: money(amount, digits) });
+  }
+  return { low: ticks[0].value, high: ticks.at(-1).value, ticks };
+}
+
 // Successful queries include zero earnings for elapsed hours, never future hours.
 export function hourlyPoints(items, range) {
   const from = Date.parse(range.from), to = Date.parse(range.to);
@@ -74,18 +98,16 @@ export function createHomeRevenueChart({ query, selectedDevice, currentView, esc
       return;
     }
     const width = Math.max(920, chart.clientWidth), height = chart.clientHeight || 260;
-    const left = 47, right = 18, top = 14, bottom = 28;
+    const axis = revenueAxis(allPoints.map(point => point.amount_micro_usd));
+    const left = Math.max(47, ...axis.ticks.map(tick => tick.label.length * 6 + 10)), right = 18, top = 14, bottom = 28;
     const plotWidth = width - left - right, plotHeight = height - top - bottom;
     // Micro-USD amounts stay exact; only drawing coordinates use floating point.
-    const values = allPoints.map(item => Number(BigInt(item.amount_micro_usd)) / 1e6);
-    const low = Math.min(0, ...values) * 1.15, high = Math.max(0, ...values) * 1.15 || 1;
+    const { low, high } = axis;
     const y = value => top + (high - value) / (high - low) * plotHeight;
     const start = Date.parse(state.range.from);
     const x = instant => left + (instant - start) / (23 * HOUR) * plotWidth;
     let svg = '';
-    for (let step = 0; step <= 4; step++) {
-      const value = low + (high - low) * step / 4;
-      const label = `$${Math.abs(value) >= 1000 ? (value / 1000).toFixed(1) + 'k' : value.toFixed(Math.abs(value) < 1 ? 2 : 0)}`;
+    for (const { value, label } of axis.ticks) {
       svg += `<line class="chart-grid" x1="${left}" x2="${width - right}" y1="${y(value)}" y2="${y(value)}"/><text class="chart-label" x="${left - 10}" y="${y(value) + 3}" text-anchor="end">${escape(label)}</text>`;
     }
     const ticks = Array.from({ length: 24 }, (_, hour) => hour);
@@ -95,7 +117,7 @@ export function createHomeRevenueChart({ query, selectedDevice, currentView, esc
       const path = smoothLinePath(line.points.map(point => ({ x: x(point.instant), y: y(Number(BigInt(point.amount_micro_usd)) / 1e6) })));
       svg += `<path class="home-revenue-line" stroke="${line.color}" d="${path}"/>`;
       for (const point of line.points) {
-        const index = points.push({ ...point, name: line.name }) - 1;
+        const index = points.push({ ...point, color: line.color }) - 1;
         const label = `${hourLabel.format(new Date(point.instant))} · ${line.name} · ${money(point.amount_micro_usd, 4)}`;
         svg += `<circle class="home-revenue-point" data-home-point="${index}" tabindex="0" role="img" aria-label="${escape(label)}" fill="${line.color}" cx="${x(point.instant)}" cy="${y(Number(BigInt(point.amount_micro_usd)) / 1e6)}" r="4"/>`;
       }
@@ -106,7 +128,9 @@ export function createHomeRevenueChart({ query, selectedDevice, currentView, esc
       const target = event.target.closest('[data-home-point]');
       if (!target) return;
       const point = points[Number(target.dataset.homePoint)];
-      tooltip.innerHTML = `${escape(hourLabel.format(new Date(point.instant)))}<span>${escape(point.name)}</span><strong>${escape(money(point.amount_micro_usd, 4))}</strong>`;
+      tooltip.innerHTML = `<strong>${escape(money(point.amount_micro_usd, 4))}</strong>`;
+      tooltip.style.backgroundColor = point.color;
+      tooltip.style.borderColor = point.color;
       tooltip.hidden = false;
       const bounds = chart.getBoundingClientRect(), dot = target.getBoundingClientRect();
       const gap = 8, tooltipWidth = tooltip.offsetWidth, tooltipHeight = tooltip.offsetHeight;

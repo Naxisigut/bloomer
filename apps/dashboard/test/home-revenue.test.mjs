@@ -1,7 +1,40 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { hourlyPoints, smoothLinePath } from '../public/home-revenue.js';
+import { hourlyPoints, revenueAxis, smoothLinePath } from '../public/home-revenue.js';
 import { timeRange, sumMoney } from '../public/data.js';
+
+test('single and multiple models use exact monetary ticks around the same observation', () => {
+  const single = revenueAxis(['0', '44000', '28700']);
+  const multiple = revenueAxis(['0', '44000', '28700', '87000']);
+  assert.deepEqual(single.ticks.map(tick => tick.label), ['$0.00', '$0.01', '$0.02', '$0.03', '$0.04', '$0.05']);
+  assert.deepEqual(multiple.ticks.map(tick => tick.label), ['$0.00', '$0.02', '$0.04', '$0.06', '$0.08', '$0.10']);
+  for (const axis of [single, multiple]) {
+    const y = value => (axis.high - value) / (axis.high - axis.low);
+    for (const tick of axis.ticks) {
+      const labeledAmount = Number(tick.label.slice(1));
+      assert.equal(tick.value, labeledAmount);
+      assert.equal(y(tick.value), y(labeledAmount));
+      if (tick.value > 0.0287) assert.ok(y(0.0287) > y(tick.value));
+      if (tick.value < 0.0287) assert.ok(y(0.0287) < y(tick.value));
+    }
+  }
+});
+
+test('monetary axes preserve tiny, negative, zero and large tick values without duplicate labels', () => {
+  for (const amounts of [[], ['0'], ['1'], ['-1'], ['-28700', '87000'], ['1001000000'], ['9223372036854775807']]) {
+    const axis = revenueAxis(amounts);
+    assert.ok(axis.low <= Math.min(0, ...amounts.map(amount => Number(amount) / 1e6)));
+    assert.ok(axis.high >= Math.max(0, ...amounts.map(amount => Number(amount) / 1e6)));
+    assert.ok(axis.high > axis.low);
+    assert.ok(axis.ticks.some(tick => tick.value === 0));
+    assert.ok(axis.ticks.length >= 2 && axis.ticks.length <= 8);
+    assert.equal(new Set(axis.ticks.map(tick => tick.label)).size, axis.ticks.length);
+    for (const tick of axis.ticks) {
+      assert.equal(Number(tick.label.replace(/[,$]/g, '').replace('−', '-')), tick.value);
+    }
+  }
+  assert.deepEqual(revenueAxis(['1']).ticks.map(tick => tick.label), ['$0.000000', '$0.000001', '$0.000002']);
+});
 
 test('today hourly lines use China dates and exclude yesterday and future buckets', () => {
   const range = timeRange('1', 'Asia/Shanghai', new Date('2026-10-21T04:30:00Z'));

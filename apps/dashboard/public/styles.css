@@ -669,7 +669,7 @@ main {
 .home-revenue-line { fill:none; stroke-width:2; stroke-linecap:round; stroke-linejoin:round }
 .home-revenue-point { stroke:#fff; stroke-width:2; cursor:crosshair }
 .home-revenue-point:hover,.home-revenue-point:focus { r:5px; stroke-width:1; outline:none }
-.home-revenue-tooltip span { display:block; font-size:10px }
+.home-revenue-tooltip { min-width:0; padding:6px 10px }
 .chart-footer {
   margin:10px 22px 0;
   padding:12px 0;
