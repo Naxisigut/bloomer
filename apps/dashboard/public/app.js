@@ -11,6 +11,7 @@ const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ 
 const number = value => new Intl.NumberFormat('en-US').format(value);
 const icons = {
   overview: '<rect x="3" y="3" width="7" height="7" rx="1.3"/><rect x="14" y="3" width="7" height="7" rx="1.3"/><rect x="3" y="14" width="7" height="7" rx="1.3"/><rect x="14" y="14" width="7" height="7" rx="1.3"/>',
+  analysis: '<path d="M4 3v18h17M8 17v-5M13 17V8M18 17V4"/>',
   records: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   devices: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M7 13h4"/>',
   query: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6M10 7v6"/>',
@@ -165,6 +166,7 @@ function renderMetrics() {
 }
 
 function renderTrend() {
+  if (state.view !== 'analysis') return;
   const items = state.data.trend?.items;
   if (!items?.length) { $('#trend-chart').innerHTML = `<div class="empty-state">${items ? '暂无收益记录' : state.busy ? '正在读取收益趋势…' : '趋势数据不可用'}</div>`; return; }
   const hourFormatter = new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -367,13 +369,14 @@ function setView(view) {
   if (state.view === 'query' && view !== 'query') deviceUI.leaveQuery();
   state.view = view; $('#main').dataset.view = view;
   $('#overview-topbar').hidden = view !== 'overview';
-  const titles = { overview: '首页', records: '收益明细', devices: '我的设备', query: '数据查询' };
+  const titles = { overview: '首页', analysis: '收益分析', records: '收益明细', devices: '我的设备', query: '数据查询' };
   const slot = $(view === 'records' ? '#records-filters-slot' : '#trend-filters-slot');
   if ($('#earnings-filters').parentElement !== slot) slot.append($('#earnings-filters'));
   document.title = `Bloomer · ${titles[view]}`;
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); }
   if (view === 'query') deviceUI.enterQuery();
+  if (view === 'analysis') renderTrend();
   renderAlerts(); updateClock();
   history.replaceState(null, '', `#${view}`);
   if (changed) window.scrollTo({ top: 0, behavior: 'auto' });
@@ -552,12 +555,12 @@ function updateClock() {
 }
 
 // Apply topbar visibility before restoring browser connections, including direct page links.
-$('#overview-topbar').hidden = ['records', 'devices', 'query'].includes(location.hash.slice(1));
+$('#overview-topbar').hidden = ['analysis', 'records', 'devices', 'query'].includes(location.hash.slice(1));
 try {
   if (location.protocol === 'file:') throw new Error('请通过普通静态服务器打开看板，例如 http://127.0.0.1:18080；不支持 file:// 运行。');
   connections.load();
   await loadDeviceList(); resetQuery();
-  const view = location.hash.slice(1); if (['overview', 'records', 'devices', 'query'].includes(view)) setView(view);
+  const view = location.hash.slice(1); if (['overview', 'analysis', 'records', 'devices', 'query'].includes(view)) setView(view);
   await loadData();
 } catch (error) { $('#alerts').innerHTML = `<div class="alert error">${escape(error.message)}</div>`; }
 setInterval(() => {
@@ -566,7 +569,7 @@ setInterval(() => {
   deviceUI.refresh();
   if (state.view === 'query') return;
   if (state.view === 'devices') { checkDevices(); refreshSummary(); return; }
-  if (state.view === 'overview' || state.page === 0) {
+  if (state.view === 'overview' || state.view === 'analysis' || state.page === 0) {
     state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData();
   } else { checkDevices(); refreshSummary(); }
 }, 60_000);

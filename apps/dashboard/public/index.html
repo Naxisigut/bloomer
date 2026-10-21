@@ -22,6 +22,7 @@
     </div>
     <nav class="navigation" aria-label="主导航">
       <button class="nav-item active" data-view="overview" aria-current="page"><span data-icon="overview"></span>首页</button>
+      <button class="nav-item" data-view="analysis"><span data-icon="analysis"></span>收益分析</button>
       <button class="nav-item" data-view="records"><span data-icon="records"></span>收益明细</button>
       <button class="nav-item" data-view="devices"><span data-icon="devices"></span>我的设备<span id="nav-device-count" class="nav-count">0</span></button>
       <button class="nav-item" data-view="query"><span data-icon="query"></span>数据查询</button>
@@ -52,15 +53,15 @@
       <div id="demo-banner" class="demo-banner" hidden><span class="demo-label">演示</span><span>当前为演示数据</span></div>
       <div id="alerts" aria-live="polite"></div>
 
-      <div id="trend-filters-slot" class="panel analysis-filter-panel overview-only">
+      <div id="trend-filters-slot" class="panel analysis-filter-panel analysis-only">
           <section id="earnings-filters" class="earnings-filters" aria-label="收益筛选">
             <div class="filter-bar" id="filter-bar">
               <div class="range-controls">
-                <select id="period-select" class="period-select overview-only" aria-label="时间范围"><option value="1" selected>近 1 天</option><option value="7">近 7 天</option><option value="30">近 30 天</option><option value="365">近一年</option><option value="custom" disabled hidden>自选日期</option></select>
+                <select id="period-select" class="period-select analysis-only" aria-label="时间范围"><option value="1" selected>近 1 天</option><option value="7">近 7 天</option><option value="30">近 30 天</option><option value="365">近一年</option><option value="custom" disabled hidden>自选日期</option></select>
                 <div class="period-tabs records-only" role="group" aria-label="时间范围"><button class="selected" data-period="1" aria-pressed="true">近 1 天</button><button data-period="7">近 7 天</button><button data-period="30">近 30 天</button><button data-period="365">近一年</button></div>
                 <button class="button date-button" id="custom-range"><span id="range-label">选择日期</span></button>
               </div>
-              <div class="analysis-controls overview-only">
+              <div class="analysis-controls analysis-only">
                 <div class="analysis-model-filter"><label for="trend-model-filter">模型</label><select id="trend-model-filter" class="model-filter" data-model-filter aria-label="分析模型"><option value="">全部模型</option></select></div>
                 <div class="chart-toggle" id="trend-grouping" role="group" aria-label="趋势粒度" hidden><button class="selected" data-group="day" aria-pressed="true">按天</button><button data-group="month" aria-pressed="false">按月</button></div>
               </div>
@@ -69,7 +70,7 @@
           </section>
       </div>
 
-      <section class="panel chart-panel overview-only">
+      <section class="panel chart-panel analysis-only">
         <div class="panel-heading"><h2>收益趋势<span class="subtle-tag" id="chart-grain">按小时</span></h2></div>
         <div class="chart-summary"><span class="chart-total-label">所选时段收益</span><strong id="chart-total">—</strong><div class="chart-legend"><i></i> <span>收益 (USD)</span></div></div><div id="trend-chart" class="trend-chart" aria-label="收益趋势图"><div class="empty-state">正在读取收益趋势…</div></div><div class="chart-footer"><span>空白时段无已保存记录</span><span id="chart-timezone">中国标准时间 UTC+8</span></div>
       </section>
@@ -136,7 +137,7 @@
         </div>
       </section>
 
-      <section class="data-note overview-only"><p>收益来自本地明细，保留 365 天；顶栏为当前设备全部模型的滚动收益，不受下方筛选影响。余额来自官方快照，金额单位为 USD。</p><span id="coverage-tag" class="subtle-tag">等待历史信息</span></section>
+      <section class="data-note analysis-only"><p>收益来自本地明细，保留 365 天；首页顶栏为当前设备全部模型的滚动收益，不受分析筛选影响。余额来自官方快照，金额单位为 USD。</p><span id="coverage-tag" class="subtle-tag">等待历史信息</span></section>
       <footer class="page-footer"><span id="last-refresh">等待首次刷新</span></footer>
     </main>
   </div>

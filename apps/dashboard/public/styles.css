@@ -846,7 +846,7 @@ tbody tr:hover {
 .devices-only,.records-only,.query-only {
   display:none
 }
-main[data-view="records"] .overview-only,main[data-view="devices"] .overview-only,main[data-view="query"] .overview-only {
+main:not([data-view="analysis"]) .analysis-only {
   display:none
 }
 main[data-view="devices"] .devices-only,main[data-view="records"] .records-only,main[data-view="query"] .query-only {
