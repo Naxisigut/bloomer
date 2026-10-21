@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { money, sumMoney, sumCount, timeRange, rollingRange, trendGroups, zonedMidnight, csvRows } from '../public/data.js';
+import { DASHBOARD_TIMEZONE, dateKey, money, sumMoney, sumCount, timeRange, rollingRange, trendGroups, zonedMidnight, csvRows } from '../public/data.js';
 import { demoQuery } from '../public/demo.js';
 
 test('money preserves micro-USD precision including int64 values and rounding', () => {
@@ -28,6 +28,27 @@ test('CSV escapes formulas and commas while retaining exact micro amounts', () =
   assert.ok(csv.includes('Qwen,""test""'));
   assert.ok(csv.includes('9007199254.740993'));
   assert.ok(csv.includes("'@bad"));
+});
+
+test('single-day CSV uses the selected China calendar date across UTC midnight', () => {
+  const custom = { from: '2026-10-21', to: '2026-10-21' };
+  const range = timeRange('custom', DASHBOARD_TIMEZONE, new Date('2026-10-22T04:00:00Z'), custom);
+  assert.equal(range.from, '2026-10-20T16:00:00.000Z');
+  assert.equal(range.to, '2026-10-21T16:00:00.000Z');
+  assert.equal(dateKey(range.from, DASHBOARD_TIMEZONE), custom.from);
+  const times = ['2026-10-20T16:00:00Z', '2026-10-20T16:30:00.123456Z', '2026-10-21T15:59:59.999999Z'];
+  const items = times.map((created_at, index) => ({ record_id: String(index), created_at, model: 'test', amount_micro_usd: '1', prompt_tokens: 1, completion_tokens: 2, provider_id: 'provider', job_id: 'job' }));
+  const lines = csvRows(items).split('\r\n');
+  assert.ok(lines[0].includes('时间 (北京时间 UTC+8)'));
+  for (const [index, time] of ['2026-10-21T00:00:00+08:00', '2026-10-21T00:30:00.123456+08:00', '2026-10-21T23:59:59.999999+08:00'].entries()) {
+    assert.ok(lines[index + 1].includes(`"${time}"`));
+    assert.equal(Date.parse(time), Date.parse(times[index]));
+  }
+  const today = timeRange('custom', DASHBOARD_TIMEZONE, new Date('2026-10-21T04:00:00Z'), custom);
+  assert.equal(today.from, range.from);
+  assert.equal(today.to, '2026-10-21T04:00:00.000Z');
+  // Explicit source offsets are normalized to the same dashboard timezone.
+  assert.ok(csvRows([{ ...items[1], created_at: '2026-10-20T17:30:00.123456+01:00' }]).includes('2026-10-21T00:30:00.123456+08:00'));
 });
 
 test('rolling earnings windows keep exact elapsed hours across midnight and DST', () => {

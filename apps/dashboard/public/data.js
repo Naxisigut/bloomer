@@ -71,8 +71,16 @@ export function csvCell(value) {
   return '"' + text.replaceAll('"', '""') + '"';
 }
 
+const csvTimeFormatter = new Intl.DateTimeFormat('en-CA', { timeZone: DASHBOARD_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+function csvTimestamp(value) {
+  const parts = Object.fromEntries(csvTimeFormatter.formatToParts(new Date(value)).map(part => [part.type, part.value]));
+  // Preserve the source's subsecond precision, which Date truncates to milliseconds.
+  const fraction = String(value).match(/\.\d+(?=Z$|[+-]\d{2}:\d{2}$)/)?.[0] || '';
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:${parts.second}${fraction}+08:00`;
+}
+
 export function csvRows(items) {
-  const columns = ['记录 ID', '时间 (UTC)', '模型', '收益 (USD)', '输入 Token', '输出 Token', 'Provider ID', '任务 ID'];
-  const rows = items.map(item => [item.record_id, item.created_at, item.model, money(item.amount_micro_usd, 6).replace('$', '').replaceAll(',', '').replace('−', '-'), item.prompt_tokens, item.completion_tokens, item.provider_id, item.job_id]);
+  const columns = ['记录 ID', '时间 (北京时间 UTC+8)', '模型', '收益 (USD)', '输入 Token', '输出 Token', 'Provider ID', '任务 ID'];
+  const rows = items.map(item => [item.record_id, csvTimestamp(item.created_at), item.model, money(item.amount_micro_usd, 6).replace('$', '').replaceAll(',', '').replace('−', '-'), item.prompt_tokens, item.completion_tokens, item.provider_id, item.job_id]);
   return '\uFEFF' + [columns, ...rows].map(row => row.map(csvCell).join(',')).join('\r\n');
 }

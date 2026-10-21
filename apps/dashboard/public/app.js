@@ -467,8 +467,8 @@ $('#export-csv').addEventListener('click', async () => {
       cursor = response.next_cursor;
     } while (cursor);
     const url = URL.createObjectURL(new Blob([csvRows(items)], { type: 'text/csv;charset=utf-8' }));
-    const link = document.createElement('a'); link.href = url; link.download = `bloomer-${state.selected === 'demo' ? 'demo-' : ''}${range.from.slice(0, 10)}.csv`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
-    status.textContent = `已导出 ${number(items.length)} 条明细 · USD 精确到 6 位小数 · 时间采用 UTC。`;
+    const link = document.createElement('a'); link.href = url; link.download = `bloomer-${selected === 'demo' ? 'demo-' : ''}${dateKey(range.from, DASHBOARD_TIMEZONE)}.csv`; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    status.textContent = `已导出 ${number(items.length)} 条明细 · USD 精确到 6 位小数 · 时间采用北京时间（UTC+8）。`;
   } catch (error) { status.textContent = error.name === 'AbortError' ? '筛选已改变，本次导出已取消。' : error.message; }
   finally { state.exporting = false; state.exportController = null; renderRecords(); }
 });
