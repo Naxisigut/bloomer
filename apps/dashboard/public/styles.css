@@ -613,10 +613,10 @@ main {
   padding:10px 12px;
   box-shadow:0 5px 20px #183e3519;
   border-radius:8px;
-  min-width:130px;
+  min-width:min(130px, calc(100% - 16px));
+  max-width:calc(100% - 16px);
+  overflow-wrap:anywhere;
   font-size:10px;
-  top:8px;
-  right:5px;
   line-height:1.8
 }
 .chart-tooltip strong {

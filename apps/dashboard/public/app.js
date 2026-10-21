@@ -167,6 +167,8 @@ function renderMetrics() {
 function renderTrend() {
   const items = state.data.trend?.items;
   if (!items?.length) { $('#trend-chart').innerHTML = `<div class="empty-state">${items ? '暂无收益记录' : state.busy ? '正在读取收益趋势…' : '趋势数据不可用'}</div>`; return; }
+  const hourFormatter = new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+  const pointLabel = item => state.trendGroup === 'hour' ? hourFormatter.format(new Date(item.from)) : item.key;
   const width = $('#trend-chart').clientWidth || 720, height = $('#trend-chart').clientHeight || 220;
   const left = 47, right = 8, top = 10, bottom = 27;
   const plotWidth = width - left - right, plotHeight = height - top - bottom;
@@ -189,8 +191,8 @@ function renderTrend() {
     const barWidth = Math.min(28, Math.max(1, (end - start) / (to - from) * plotWidth * 0.65));
     const x = left + (timestamp - from) / (to - from) * plotWidth - barWidth / 2;
     const value = values[index];
-    const title = `${item.key} · ${money(item.amount_micro_usd, 4)}`;
-    svg += `<rect class="chart-bar" data-point="${index}" tabindex="0" role="img" aria-label="${escape(title)}" x="${x}" y="${Math.min(y(value), y(0))}" width="${barWidth}" height="${Math.max(1, Math.abs(y(value) - y(0)))}" rx="2"><title>${escape(title)}</title></rect>`;
+    const title = `${pointLabel(item)} · ${money(item.amount_micro_usd, 4)}`;
+    svg += `<rect class="chart-bar" data-point="${index}" tabindex="0" role="img" aria-label="${escape(title)}" x="${x}" y="${Math.min(y(value), y(0))}" width="${barWidth}" height="${Math.max(1, Math.abs(y(value) - y(0)))}" rx="2"></rect>`;
   });
   svg += '</g>';
   const ticks = trendTicks(from, to, Math.max(2, Math.floor(plotWidth / (state.trendGroup === 'month' ? 80 : 48))));
@@ -204,14 +206,26 @@ function renderTrend() {
     if (!bar) return;
     const item = items[Number(bar.dataset.point)];
     const tooltip = $('#trend-chart .chart-tooltip');
-    tooltip.innerHTML = `${escape(item.key)}<strong>${escape(money(item.amount_micro_usd, 4))}</strong>`;
+    tooltip.innerHTML = `${escape(pointLabel(item))}<strong>${escape(money(item.amount_micro_usd, 4))}</strong>`;
     tooltip.hidden = false;
+    const chart = $('#trend-chart'), bounds = chart.getBoundingClientRect(), barBounds = bar.getBoundingClientRect();
+    const gap = 8, tooltipWidth = tooltip.offsetWidth, tooltipHeight = tooltip.offsetHeight;
+    let x = barBounds.left - bounds.left + barBounds.width / 2 - tooltipWidth / 2;
+    let y = barBounds.top - bounds.top - tooltipHeight - gap;
+    // Tall bars leave no room above; place the label beside the bar instead.
+    if (y < gap) {
+      x = barBounds.right - bounds.left + gap;
+      if (x + tooltipWidth > chart.clientWidth - gap) x = barBounds.left - bounds.left - tooltipWidth - gap;
+      y = barBounds.top - bounds.top;
+    }
+    tooltip.style.left = `${Math.max(gap, Math.min(x, chart.clientWidth - tooltipWidth - gap))}px`;
+    tooltip.style.top = `${Math.max(gap, Math.min(y, chart.clientHeight - tooltipHeight - gap))}px`;
   };
   $('#trend-chart').onpointerover = showTooltip;
-  $('#trend-chart').onfocusin = showTooltip;
   const hideTooltip = () => { const tooltip = $('#trend-chart .chart-tooltip'); if (tooltip) tooltip.hidden = true; };
   $('#trend-chart').onpointerleave = hideTooltip;
-  $('#trend-chart').onfocusout = hideTooltip;
+  $('#trend-chart').onpointerout = event => { if (event.target.closest('[data-point]')) hideTooltip(); };
+  $$('#trend-chart [data-point]').forEach(bar => { bar.onfocus = showTooltip; bar.onblur = hideTooltip; });
 }
 
 function trendTicks(from, to, maxTicks) {
@@ -353,7 +367,7 @@ function setView(view) {
   if (state.view === 'query' && view !== 'query') deviceUI.leaveQuery();
   state.view = view; $('#main').dataset.view = view;
   $('#overview-topbar').hidden = view !== 'overview';
-  const titles = { overview: '收益分析', records: '收益明细', devices: '我的设备', query: '数据查询' };
+  const titles = { overview: '首页', records: '收益明细', devices: '我的设备', query: '数据查询' };
   const slot = $(view === 'records' ? '#records-filters-slot' : '#trend-filters-slot');
   if ($('#earnings-filters').parentElement !== slot) slot.append($('#earnings-filters'));
   document.title = `Bloomer · ${titles[view]}`;
