@@ -9,7 +9,6 @@ import (
 	"errors"
 	"time"
 
-	"bloomer/agent/internal/config"
 	"bloomer/agent/internal/telemetry"
 )
 
@@ -115,6 +114,9 @@ func (s *Store) SaveDeviceSample(ctx context.Context, v telemetry.Sample) error 
 		syncAt = telemetry.Ptr(v.LastEarningsSyncAt.UnixMicro())
 	}
 	return s.Write(ctx, func(tx *sql.Tx) error {
+		if _, err := tx.ExecContext(ctx, "DELETE FROM device_state_samples WHERE device_id=?", v.DeviceID); err != nil {
+			return err
+		}
 		_, err := tx.ExecContext(ctx, `INSERT INTO device_state_samples(device_id,collected_at_us,duration_ms,cpu_percent,provider_cpu_percent,memory_total_bytes,memory_available_bytes,memory_pressure,swap_used_bytes,gpu_percent,cpu_temperature_c,gpu_temperature_c,thermal_state,disk_available_bytes,provider_running,provider_connected,current_model,model_ready,dispatch_tier,provider_pid,provider_version,provider_state_at_us,quality_json,inference_active,request_work_pending,is_idle,last_device_earning_at_us,last_earnings_sync_at_us,earnings_provider_id,activity_error,trust_received_at,session_id)
  VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`, v.DeviceID, v.CollectedAt.UnixMicro(), v.DurationMS, v.CPUPercent, v.ProviderCPUPercent, v.MemoryTotalBytes, v.MemoryAvailableBytes, v.MemoryPressure, v.SwapUsedBytes, v.GPUPercent, v.CPUTemperatureC, v.GPUTemperatureC, v.ThermalState, v.DiskAvailableBytes, v.ProviderRunning, v.ProviderConnected, v.CurrentModel, v.ModelReady, v.DispatchTier, v.ProviderPID, v.ProviderVersion, stateAt, string(body), v.InferenceActive, v.RequestWorkPending, v.IsIdle, earningAt, syncAt, v.EarningsProviderID, v.ActivityError, v.TrustReceivedAt, v.SessionID)
 		return err
@@ -123,84 +125,45 @@ func (s *Store) SaveDeviceSample(ctx context.Context, v telemetry.Sample) error 
 
 const sampleColumns = `id,device_id,collected_at_us,duration_ms,cpu_percent,provider_cpu_percent,memory_total_bytes,memory_available_bytes,memory_pressure,swap_used_bytes,gpu_percent,cpu_temperature_c,gpu_temperature_c,thermal_state,disk_available_bytes,provider_running,provider_connected,current_model,model_ready,dispatch_tier,provider_pid,provider_version,provider_state_at_us,quality_json,inference_active,request_work_pending,is_idle,last_device_earning_at_us,last_earnings_sync_at_us,earnings_provider_id,activity_error,trust_received_at,session_id`
 
-type DevicePage struct {
-	Items        []telemetry.Sample `json:"items"`
-	NextBeforeID *int64             `json:"next_before_id"`
-}
-
-// Queries are independent of earnings initialization and always enforce the
-// rolling retention window, including before physical cleanup runs.
-func (s *Store) DeviceSamples(ctx context.Context, now, from, to time.Time, before int64, limit int) (DevicePage, error) {
-	page := DevicePage{Items: make([]telemetry.Sample, 0)}
-	if limit < 1 || limit > 500 || !from.Before(to) || before < 0 {
-		return page, errors.New("invalid device query")
-	}
-	cutoff := now.UTC().Add(-config.Retention)
-	if from.Before(cutoff) {
-		from = cutoff
-	}
-	// Sort IDs from the covering time index before fetching payloads. A broad
-	// yearly range must not load every quality JSON/metric row just to page 500.
-	query := "SELECT " + sampleColumns + ` FROM device_state_samples WHERE id IN (
- SELECT id FROM device_state_samples WHERE collected_at_us>=? AND collected_at_us<? AND (?=0 OR id<?) ORDER BY id DESC LIMIT ?)
- ORDER BY id DESC`
-	return s.readDeviceSamples(ctx, query, []any{from.UnixMicro(), to.UnixMicro(), before, before, limit + 1}, limit)
-}
-
-func (s *Store) LatestDeviceSample(ctx context.Context, now time.Time) (*telemetry.Sample, error) {
-	// Walking newest row IDs finds the current sample without sorting a year
-	// of history. Future observations after a clock rollback remain visible.
-	page, err := s.readDeviceSamples(ctx, "SELECT "+sampleColumns+" FROM device_state_samples NOT INDEXED WHERE collected_at_us>=? ORDER BY id DESC LIMIT 1", []any{now.Add(-config.Retention).UnixMicro()}, 1)
-	if err != nil || len(page.Items) == 0 {
+func (s *Store) LatestDeviceSample(ctx context.Context) (*telemetry.Sample, error) {
+	rows, err := s.reader.QueryContext(ctx, "SELECT "+sampleColumns+" FROM device_state_samples ORDER BY id DESC LIMIT 1")
+	if err != nil {
 		return nil, err
 	}
-	return &page.Items[0], nil
-}
-
-func (s *Store) readDeviceSamples(ctx context.Context, query string, args []any, limit int) (DevicePage, error) {
-	page := DevicePage{Items: make([]telemetry.Sample, 0)}
-	rows, err := s.reader.QueryContext(ctx, query, args...)
-	if err != nil {
-		return page, err
-	}
 	defer rows.Close()
-	for rows.Next() {
-		var v telemetry.Sample
-		var at int64
-		var stateAt *int64
-		var body string
-		var earningAt, syncAt *int64
-		if err = rows.Scan(&v.ID, &v.DeviceID, &at, &v.DurationMS, &v.CPUPercent, &v.ProviderCPUPercent, &v.MemoryTotalBytes, &v.MemoryAvailableBytes, &v.MemoryPressure, &v.SwapUsedBytes, &v.GPUPercent, &v.CPUTemperatureC, &v.GPUTemperatureC, &v.ThermalState, &v.DiskAvailableBytes, &v.ProviderRunning, &v.ProviderConnected, &v.CurrentModel, &v.ModelReady, &v.DispatchTier, &v.ProviderPID, &v.ProviderVersion, &stateAt, &body, &v.InferenceActive, &v.RequestWorkPending, &v.IsIdle, &earningAt, &syncAt, &v.EarningsProviderID, &v.ActivityError, &v.TrustReceivedAt, &v.SessionID); err != nil {
-			return page, err
+	if !rows.Next() {
+		return nil, rows.Err()
+	}
+	var v telemetry.Sample
+	var at int64
+	var stateAt *int64
+	var body string
+	var earningAt, syncAt *int64
+	if err = rows.Scan(&v.ID, &v.DeviceID, &at, &v.DurationMS, &v.CPUPercent, &v.ProviderCPUPercent, &v.MemoryTotalBytes, &v.MemoryAvailableBytes, &v.MemoryPressure, &v.SwapUsedBytes, &v.GPUPercent, &v.CPUTemperatureC, &v.GPUTemperatureC, &v.ThermalState, &v.DiskAvailableBytes, &v.ProviderRunning, &v.ProviderConnected, &v.CurrentModel, &v.ModelReady, &v.DispatchTier, &v.ProviderPID, &v.ProviderVersion, &stateAt, &body, &v.InferenceActive, &v.RequestWorkPending, &v.IsIdle, &earningAt, &syncAt, &v.EarningsProviderID, &v.ActivityError, &v.TrustReceivedAt, &v.SessionID); err != nil {
+		return nil, err
+	}
+	v.CollectedAt = time.UnixMicro(at).UTC()
+	if stateAt != nil {
+		v.ProviderStateAt = telemetry.Ptr(time.UnixMicro(*stateAt).UTC())
+	}
+	if err = json.Unmarshal([]byte(body), &v.Quality); err != nil {
+		return nil, err
+	}
+	if earningAt != nil {
+		v.LastDeviceEarningAt = telemetry.Ptr(time.UnixMicro(*earningAt).UTC())
+	}
+	if syncAt != nil {
+		v.LastEarningsSyncAt = telemetry.Ptr(time.UnixMicro(*syncAt).UTC())
+	}
+	delete(v.Quality, "routing_state")
+	delete(v.Quality, "routing_priority")
+	for _, field := range []string{"inference_active", "request_work_pending", "is_idle", "trust_received_at", "session_id"} {
+		if v.Quality[field] == "" {
+			v.Quality[field] = telemetry.Unsupported
 		}
-		v.CollectedAt = time.UnixMicro(at).UTC()
-		if stateAt != nil {
-			v.ProviderStateAt = telemetry.Ptr(time.UnixMicro(*stateAt).UTC())
-		}
-		if err = json.Unmarshal([]byte(body), &v.Quality); err != nil {
-			return page, err
-		}
-		if earningAt != nil {
-			v.LastDeviceEarningAt = telemetry.Ptr(time.UnixMicro(*earningAt).UTC())
-		}
-		if syncAt != nil {
-			v.LastEarningsSyncAt = telemetry.Ptr(time.UnixMicro(*syncAt).UTC())
-		}
-		delete(v.Quality, "routing_state")
-		delete(v.Quality, "routing_priority")
-		for _, field := range []string{"inference_active", "request_work_pending", "is_idle", "trust_received_at", "session_id"} {
-			if v.Quality[field] == "" {
-				v.Quality[field] = telemetry.Unsupported
-			}
-		}
-		page.Items = append(page.Items, v)
 	}
 	if err = rows.Err(); err != nil {
-		return page, err
+		return nil, err
 	}
-	if len(page.Items) > limit {
-		page.Items = page.Items[:limit]
-		page.NextBeforeID = telemetry.Ptr(page.Items[len(page.Items)-1].ID)
-	}
-	return page, nil
+	return &v, nil
 }

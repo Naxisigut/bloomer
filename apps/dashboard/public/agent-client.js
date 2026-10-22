@@ -2,7 +2,7 @@ import { AppError } from './errors.js';
 import { validateDevice, parseConnections } from './connections.js';
 import { demoQuery } from './demo.js';
 
-const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', 'device-history': '/v1/device/state/history', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs' };
+const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs' };
 const messages = {
   analysis_unsupported: '该设备 Agent 尚不支持收益分析，请升级 Agent。',
   device_identity_unavailable: '设备身份尚未识别，暂时无法统计本机收益。',
@@ -48,7 +48,6 @@ function validateResponse(route, body, operation) {
     if (!Array.isArray(body.weekday_hour) || body.weekday_hour.some(item => !weekdayRow(item))) throw invalidResponse();
   }
   if (route === 'device-state' && !(body.sample === null || object(body.sample))) throw invalidResponse();
-  if (route === 'device-history' && (!items() || body.items.length > 500)) throw invalidResponse();
   if (route === 'control' && (typeof body.available !== 'boolean' || typeof body.enabled !== 'boolean' || !Array.isArray(body.jobs))) throw invalidResponse();
   if (route === 'control-models' && (!Array.isArray(body.local) || !Array.isArray(body.catalog))) throw invalidResponse();
   if (route === 'control-jobs' && (operation ? typeof body.id !== 'string' || typeof body.status !== 'string' : !Array.isArray(body.jobs))) throw invalidResponse();
@@ -58,7 +57,7 @@ function validateResponse(route, body, operation) {
 export async function queryAgent(device, route, params = new URLSearchParams(), { fetcher = fetch, signal, timeoutMs = 12_000 } = {}, operation = null) {
   if (!Object.hasOwn(routes, route)) throw new AppError(404, 'not_found', '接口不存在。');
   const url = new URL(routes[route], device.url);
-  const allowed = route === 'earnings' ? ['from', 'to', 'model', 'limit', 'cursor'] : route === 'stats' ? ['from', 'to', 'model', 'group_by', 'timezone'] : route === 'analysis' ? ['from', 'to', 'timezone', 'granularity', 'model'] : route === 'device-history' ? ['from', 'to', 'limit', 'before_id'] : [];
+  const allowed = route === 'earnings' ? ['from', 'to', 'model', 'limit', 'cursor'] : route === 'stats' ? ['from', 'to', 'model', 'group_by', 'timezone'] : route === 'analysis' ? ['from', 'to', 'timezone', 'granularity', 'model'] : [];
   const search = params instanceof URLSearchParams ? params : new URLSearchParams(params || undefined);
   for (const key of new Set(search.keys())) {
     if (!allowed.includes(key)) throw new AppError(400, 'invalid_request', '查询参数无效。');
@@ -82,7 +81,7 @@ export async function queryAgent(device, route, params = new URLSearchParams(), 
     });
     if (['alerts', 'alert-test'].includes(route) && [404, 405, 501].includes(response.status)) throw new AppError(404, 'alerts_unsupported', messages.alerts_unsupported);
     if (route.startsWith('control') && [404, 405, 501].includes(response.status)) throw new AppError(404, 'control_unsupported', messages.control_unsupported);
-    if (['device-state', 'device-history'].includes(route) && [404, 405, 501].includes(response.status)) throw new AppError(404, 'device_state_unsupported', messages.device_state_unsupported);
+    if (route === 'device-state' && [404, 405, 501].includes(response.status)) throw new AppError(404, 'device_state_unsupported', messages.device_state_unsupported);
     if (route === 'analysis' && [404, 405, 501].includes(response.status)) throw new AppError(404, 'analysis_unsupported', messages.analysis_unsupported);
     if (Number(response.headers.get('content-length')) > 8_000_000) throw invalidResponse();
     if (!response.body) throw invalidResponse();

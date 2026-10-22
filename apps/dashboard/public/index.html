@@ -26,7 +26,6 @@
       <button class="nav-item" data-view="records"><span data-icon="records"></span>收益明细</button>
       <button class="nav-item" data-view="devices"><span data-icon="devices"></span>我的设备<span id="nav-device-count" class="nav-count">0</span></button>
       <button class="nav-item" data-view="alerts"><span data-icon="alerts"></span>告警记录</button>
-      <button class="nav-item" data-view="query"><span data-icon="query"></span>数据查询</button>
     </nav>
   </aside>
 
@@ -145,7 +144,7 @@
 
       <section id="devices-view" class="devices-only">
         <div class="section-heading"><h2>数据来源设备</h2><button type="button" id="import-connections" class="button button-white">导入连接</button><input type="file" id="connection-file" accept="application/json,.json" hidden></div><div id="device-cards" class="device-cards"></div>
-        <div class="panel device-state-panel"><div class="panel-heading"><div><h2>设备状态</h2><p id="state-device-label">当前设备</p></div><div class="state-panel-actions"><label class="sr-only" for="detail-device-select">选择详情设备</label><select id="detail-device-select" class="model-filter"></select><span id="device-state-time" class="state-timestamp">每 60 秒更新</span></div></div><p id="device-state-message" class="state-message" role="status">正在读取设备状态…</p><div id="device-state-details" class="health-details"></div><p class="state-footnote">显示设备端最近保存的读数，每 60 秒刷新。未支持或读取失败会单独标注；空闲表示本机没有正在处理或排队的任务，且该设备最新收益距采集时超过 5 分钟；热压力与内存压力直接从 macOS 本地采集。</p></div>
+        <div class="panel device-state-panel"><div class="panel-heading"><div><h2>设备状态</h2><p id="state-device-label">当前设备</p></div><div class="state-panel-actions"><label class="sr-only" for="detail-device-select">选择详情设备</label><select id="detail-device-select" class="model-filter"></select><span id="device-state-time" class="state-timestamp">每 60 秒更新</span></div></div><p id="device-state-message" class="state-message" role="status">正在读取设备状态…</p><div id="device-state-details" class="health-details"></div><p class="state-footnote">显示设备端保存的最新读数，每 60 秒刷新。未支持或读取失败会单独标注；空闲表示本机没有正在处理或排队的任务，且该设备最新收益距采集时超过 5 分钟；热压力与内存压力直接从 macOS 本地采集。</p></div>
         <div class="panel control-panel" id="control-panel">
           <div class="panel-heading"><div><h2>远程操作</h2><p id="control-device-label">当前设备</p></div><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
           <p id="control-message" class="state-message" role="status">正在检查远程操作能力…</p>
@@ -163,26 +162,6 @@
         <div class="panel health-panel"><div class="panel-heading"><div><h2>采集健康</h2><p id="health-device-label">当前选择的设备</p></div><span class="subtle-tag">只读监测</span></div><div id="health-details" class="health-details"></div></div>
       </section>
 
-      <section id="query-view" class="query-only">
-        <div class="panel state-query-filters"><div class="panel-heading"><div><h2>设备状态查询</h2><p>按设备和时间范围查看采集明细，时间均为中国标准时间（UTC+8）</p></div></div>
-          <form id="state-query-form" class="state-query-form">
-            <label>设备<select id="state-query-device"></select></label>
-            <label>开始时间<input id="state-query-from" type="datetime-local" step="60" required></label>
-            <label>结束时间（不含）<input id="state-query-to" type="datetime-local" step="60" required></label>
-            <label>每页条数<select id="state-query-limit"><option>25</option><option selected>50</option><option>100</option><option>200</option><option>500</option></select></label>
-            <div class="state-query-buttons"><button id="state-query-submit" type="submit" class="button button-dark">查询</button><button type="button" class="button button-white" data-state-hours="24">近 24 小时</button><button type="button" class="button button-white" data-state-hours="168">近 7 天</button></div>
-          </form>
-          <p id="state-query-error" class="state-message warning" role="alert" hidden></p>
-        </div>
-        <div id="state-query-panel" class="panel state-history-panel" aria-busy="false">
-          <div class="panel-heading"><div><h2>设备状态明细</h2><p id="state-query-range">选择设备和时间范围，查询每次采集的状态。</p></div><span class="subtle-tag">每次采集一条</span></div>
-          <p id="state-query-note" class="state-message" role="status" hidden></p>
-          <div class="table-scroll state-history-scroll" tabindex="0" aria-label="设备状态明细，可横向滚动"><table class="state-history-table"><thead><tr><th>采集时间</th><th>是否空闲</th><th>任务活动</th><th>当前模型 / 就绪</th><th>该设备最新收益</th><th>CPU / 进程 CPU</th><th>GPU</th><th>可用 / 总内存</th><th>内存压力 / Swap</th><th>热压力 / 温度</th><th>磁盘可用</th><th>详情</th></tr></thead><tbody id="state-history-body"><tr><td colspan="12"><div class="empty-state">请选择查询条件</div></td></tr></tbody></table></div>
-          <div class="table-footer"><span id="state-page-info">等待查询</span><div class="page-nav" aria-label="状态明细分页"><button id="state-prev-page" class="button button-white" disabled>上一页</button><span id="state-page-number">第 1 页</span><button id="state-next-page" class="button button-white" disabled>下一页</button></div></div>
-          <p class="state-footnote">结果按保存顺序从新到旧显示，翻页期间固定时间范围。修改条件后点击查询；没有记录的时间段保持空白。</p>
-        </div>
-      </section>
-
       <footer class="page-footer"><span id="last-refresh">等待首次刷新</span></footer>
     </main>
   </div>
@@ -192,7 +171,6 @@
   </dialog>
   <dialog id="connect-dialog"><form id="connect-form"><div class="dialog-header"><button type="button" id="close-dialog" class="icon-button" aria-label="关闭连接窗口">×</button></div><h2>连接设备</h2><label>设备名称<input name="name" autocomplete="off" placeholder="例如：书房 Mac mini" maxlength="60" required></label><label>Agent 地址<input name="url" type="url" autocomplete="off" placeholder="https://your-device.your-tailnet.ts.net:8443" required><span class="field-hint">填写 Tailscale HTTPS 域名及端口（通常 :8443），不附加 /v1。本机测试可用回环 HTTP。</span></label><label>独立访问令牌<div class="password-field"><input name="token" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴 Agent 的 access.token" maxlength="4096" required><button type="button" id="toggle-token" aria-label="显示令牌" aria-pressed="false">显示</button></div></label><div class="connection-note">使用 Bloomer access.token，不使用 Darkbloom 官方凭证；测试通过后，名称、地址和令牌保存在当前浏览器的此网站本地存储中。Agent 允许任意网页来源，实际查询和操作仍须使用有效令牌。</div><div id="connection-result" role="status" hidden></div><div class="dialog-actions"><button type="button" id="test-connection" class="button button-white">测试连接</button><button type="submit" id="save-device" class="button button-dark">连接并保存</button></div></form></dialog>
   <dialog id="remove-dialog"><form method="dialog"><h2>移除设备？</h2><p>仅移除连接，设备上的 Agent 和历史数据不变。</p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-danger" value="confirm">移除设备</button></div></form></dialog>
-  <dialog id="state-sample-dialog" class="state-sample-dialog"><div class="dialog-header"><button type="button" id="close-state-sample" class="icon-button" aria-label="关闭状态详情">×</button></div><h2>状态记录详情</h2><p id="state-sample-title"></p><div id="state-sample-details" class="health-details"></div></dialog>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>
 </html>

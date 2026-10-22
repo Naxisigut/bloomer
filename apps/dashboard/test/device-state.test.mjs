@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { reading, activityStatus, pressureStatus, activityReason, localInput, inputRange, DeviceHistoryPager } from '../public/device-state.js';
+import { reading, activityStatus, pressureStatus, activityReason } from '../public/device-state.js';
 import { demoQuery } from '../public/demo.js';
 import { queryAgent } from '../public/agent-client.js';
 
@@ -44,54 +44,17 @@ test('metric formatting preserves zero and false, respects quality and rejects i
   assert.equal(reading(null, 'cpu_percent').text, '未提供');
 });
 
-test('query inputs use explicit timezones and reject invalid dates and backwards intervals', () => {
-  assert.equal(localInput(now, 'Asia/Shanghai'), '2026-10-19T18:00');
-  assert.deepEqual(inputRange('2026-10-19T17:00', '2026-10-19T18:00', 'Asia/Shanghai'), { from: '2026-10-19T09:00:00.000Z', to: '2026-10-19T10:00:00.000Z' });
-  assert.equal(inputRange('2026-10-19T09:00', '2026-10-19T10:00', 'UTC').to, '2026-10-19T10:00:00.000Z');
-  assert.throws(() => inputRange('2026-02-30T09:00', '2026-03-01T10:00', 'UTC'));
-  assert.throws(() => inputRange('2026-10-19T10:00', '2026-10-19T09:00', 'UTC'));
-});
-
-test('state history freezes bounds, caches previous pages, and never repeats IDs', async () => {
-  const clock = new Date(now), range = { from: new Date(now - 86400000).toISOString(), to: clock.toISOString() };
-  const calls = [];
-  const pager = new DeviceHistoryPager(async params => { calls.push(params); return demoQuery('device-history', new URLSearchParams(params), clock); }, range, 50);
-  const first = await pager.page(0), second = await pager.page(1);
-  assert.equal(first.items.length, 50); assert.equal(second.items.length, 50);
-  assert.ok(second.items.every(item => item.id < first.items.at(-1).id));
-  assert.equal(calls[1].before_id, first.next_before_id);
-  assert.equal(calls[1].to, range.to);
-  assert.equal(await pager.page(0), first); assert.equal(calls.length, 2);
-  const old = demoQuery('device-history', new URLSearchParams({ from: new Date(now - 30 * 86400000).toISOString(), to: range.to, limit: '1' }), clock);
-  assert.equal(old.meta.range_truncated, true);
+test('demo latest state omits legacy routing fields', () => {
+  const clock = new Date(now);
   const latest = demoQuery('device-state', new URLSearchParams(), clock);
-  assert.equal(latest.sample.dispatch_tier, null); assert.equal(latest.sample.quality.dispatch_tier, 'unsupported');
+  assert.equal(latest.sample.dispatch_tier, null);
+  assert.equal(latest.sample.quality.dispatch_tier, 'unsupported');
   assert.equal(reading(latest.sample, 'inference_active').known, true);
-  const states = new Set([...first.items, ...second.items].map(item => item.is_idle));
-  assert.ok(states.has(true)); assert.ok(states.has(false)); assert.ok(states.has(null));
-  assert.equal(Object.hasOwn(latest.sample,'routing_state'),false);
+  assert.equal(Object.hasOwn(latest.sample, 'routing_state'), false);
+  assert.equal(latest.meta.sample_interval_seconds, 60);
 });
 
-test('failed or aborted state history pages remain retryable and invalid cursors fail', async () => {
-  const range = { from: new Date(now - 86400000).toISOString(), to: new Date(now).toISOString() };
-  let fail = true;
-  const pager = new DeviceHistoryPager(async () => { if (fail) { fail = false; throw new Error('offline'); } return { items: [], next_before_id: null }; }, range, 50);
-  await assert.rejects(pager.page(0), /offline/); assert.equal(pager.pages.length, 0);
-  assert.equal((await pager.page(0)).items.length, 0);
-  const controller = new AbortController();
-  const cancelled = new DeviceHistoryPager(async () => { controller.abort(); return { items: [], next_before_id: null }; }, range, 50);
-  await assert.rejects(cancelled.page(0, controller.signal), { name: 'AbortError' }); assert.equal(cancelled.pages.length, 0);
-  const invalid = new DeviceHistoryPager(async () => ({ items: [{ id: 10, collected_at: new Date(now).toISOString() }], next_before_id: 11 }), range, 50);
-  await assert.rejects(invalid.page(0), /翻页位置/);
-});
-
-test('browser state client forwards only whitelisted history params and handles older non-JSON agents', async () => {
-  let requested;
-  const fetcher = async (url, options) => { requested = { url, options }; return new Response(JSON.stringify({ items: [], next_before_id: null }), { status: 200 }); };
-  await queryAgent({ url: 'http://127.0.0.1:17890', token: 'private' }, 'device-history', new URLSearchParams({ from: '2026-10-19T00:00:00Z', to: '2026-10-19T01:00:00Z', before_id: '42', limit: '25' }), { fetcher });
-  assert.equal(requested.url.pathname, '/v1/device/state/history');
-  assert.equal(requested.url.searchParams.get('before_id'), '42');
-  assert.equal(requested.options.headers.Authorization, 'Bearer private');
-  for (const params of [new URLSearchParams({ model: 'no' }), new URLSearchParams('limit=1&limit=2'), new URLSearchParams({ url: 'https://example.com' })]) await assert.rejects(queryAgent({ url: 'http://127.0.0.1', token: 'private' }, 'device-history', params, { fetcher }), { code: 'invalid_request' });
+test('browser state client rejects unknown query params and handles older non-JSON agents', async () => {
+  await assert.rejects(queryAgent({ url: 'http://127.0.0.1', token: 'private' }, 'device-state', new URLSearchParams({ limit: '1' }), { fetcher: async () => new Response('{}', { status: 200 }) }), { code: 'invalid_request' });
   await assert.rejects(queryAgent({ url: 'http://127.0.0.1', token: 'private' }, 'device-state', new URLSearchParams(), { fetcher: async () => new Response('old server', { status: 404 }) }), { code: 'device_state_unsupported' });
 });

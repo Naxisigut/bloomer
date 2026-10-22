@@ -34,7 +34,7 @@ func TestSchemaConnectionsAndAtomicWrites(t *testing.T) {
 	ctx := context.Background()
 	s, path := openTest(t)
 	version, err := s.SchemaVersion(ctx)
-	if err != nil || version != 6 {
+	if err != nil || version != 7 {
 		t.Fatalf("schema: %d %v", version, err)
 	}
 	st, _ := os.Stat(path)
@@ -145,7 +145,11 @@ func TestBackupIncludesWALAndCheckpoints(t *testing.T) {
 }
 func TestMigrationRollbackUpgradeAndVersionRejection(t *testing.T) {
 	ctx := context.Background()
-	s, path := openTest(t)
+	path := filepath.Join(t.TempDir(), "agent.db")
+	db, err := sql.Open("sqlite", dsn(path, false))
+	if err != nil {
+		t.Fatal(err)
+	}
 	initial, err := fs.ReadFile(migrations.Files, "001_initial.sql")
 	if err != nil {
 		t.Fatal(err)
@@ -170,23 +174,30 @@ func TestMigrationRollbackUpgradeAndVersionRejection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	seventh, err := fs.ReadFile(migrations.Files, "007_device_latest.sql")
+	if err != nil {
+		t.Fatal(err)
+	}
 	files := fstest.MapFS{
-		"006_alerts.sql":           &fstest.MapFile{Data: sixth},
 		"001_initial.sql":          &fstest.MapFile{Data: initial},
 		"002_collection.sql":       &fstest.MapFile{Data: second},
 		"003_device_state.sql":     &fstest.MapFile{Data: third},
 		"004_provider_routing.sql": &fstest.MapFile{Data: fourth},
 		"005_device_activity.sql":  &fstest.MapFile{Data: fifth},
-		"007_upgrade.sql":          &fstest.MapFile{Data: []byte("CREATE TABLE should_rollback(id INTEGER); INVALID SQL;")},
+		"006_alerts.sql":           &fstest.MapFile{Data: sixth},
 	}
-	if err = migrate(ctx, s.writer, files, path); err == nil {
+	if err = migrate(ctx, db, files, path); err != nil {
+		t.Fatal(err)
+	}
+	files["007_upgrade.sql"] = &fstest.MapFile{Data: []byte("CREATE TABLE should_rollback(id INTEGER); INVALID SQL;")}
+	if err = migrate(ctx, db, files, path); err == nil {
 		t.Fatal("broken migration succeeded")
 	}
 	var count, v int
-	if err = s.writer.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE name='should_rollback'").Scan(&count); err != nil {
+	if err = db.QueryRowContext(ctx, "SELECT count(*) FROM sqlite_master WHERE name='should_rollback'").Scan(&count); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.writer.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
+	if err = db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v); err != nil {
 		t.Fatal(err)
 	}
 	if count != 0 || v != 6 {
@@ -196,18 +207,19 @@ func TestMigrationRollbackUpgradeAndVersionRejection(t *testing.T) {
 	if len(backups) != 1 {
 		t.Fatal("upgrade backup missing")
 	}
-	files["007_upgrade.sql"].Data = []byte("CREATE TABLE upgraded(id INTEGER) STRICT;")
-	if err = migrate(ctx, s.writer, files, path); err != nil {
+	files["007_device_latest.sql"] = &fstest.MapFile{Data: seventh}
+	delete(files, "007_upgrade.sql")
+	if err = migrate(ctx, db, files, path); err != nil {
 		t.Fatal(err)
 	}
-	s.writer.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v)
+	db.QueryRowContext(ctx, "PRAGMA user_version").Scan(&v)
 	if v != 7 {
 		t.Fatal("schema version did not advance")
 	}
-	if _, err = s.writer.ExecContext(ctx, "PRAGMA user_version=99"); err != nil {
+	if _, err = db.ExecContext(ctx, "PRAGMA user_version=99"); err != nil {
 		t.Fatal(err)
 	}
-	if err = s.Close(); err != nil {
+	if err = db.Close(); err != nil {
 		t.Fatal(err)
 	}
 	if reopened, err := Open(ctx, path); err == nil {

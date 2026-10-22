@@ -44,19 +44,6 @@ func (s *Store) CleanupBatch(ctx context.Context, cutoff, completed time.Time, l
 		if count == int64(limit) {
 			return nil
 		}
-		remaining := int64(limit) - count
-		res, err = tx.ExecContext(ctx, `DELETE FROM device_state_samples WHERE id IN
-  (SELECT id FROM device_state_samples WHERE collected_at_us<? ORDER BY collected_at_us LIMIT ?)`, cutoff.UnixMicro(), remaining)
-		if err != nil {
-			return err
-		}
-		removed, err := res.RowsAffected()
-		if err != nil {
-			return err
-		}
-		if removed == remaining {
-			return nil
-		}
 		if _, err = tx.ExecContext(ctx, "DELETE FROM coverage_gaps WHERE interruption_end_us<?", cutoff.UnixMicro()); err != nil {
 			return err
 		}

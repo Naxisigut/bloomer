@@ -60,7 +60,7 @@ func TestDeviceCollectionContinuesDuringUpstreamActivityWithoutBacklog(t *testin
 			go func() {
 				defer close(done)
 				runDeviceCollection(ctx, sampler, db, clock, slog.New(slog.NewTextHandler(io.Discard, nil)), func(check context.Context, sample telemetry.Sample) error {
-					stored, err := db.LatestDeviceSample(check, sample.CollectedAt)
+					stored, err := db.LatestDeviceSample(check)
 					if err != nil || stored == nil || !stored.CollectedAt.Equal(sample.CollectedAt) || stored.DeviceID != sample.DeviceID {
 						t.Errorf("observer did not receive committed sample: %+v %v", stored, err)
 					}
@@ -77,15 +77,15 @@ func TestDeviceCollectionContinuesDuringUpstreamActivityWithoutBacklog(t *testin
 			if calls != 2 || observed != 2 {
 				t.Fatalf("missed samples were queued: %d", calls)
 			}
-			page, err := db.DeviceSamples(context.Background(), clock.now, base.Add(-time.Second), clock.now.Add(time.Second), 0, 100)
-			if err != nil || len(page.Items) != 2 {
-				t.Fatalf("samples not committed: %+v %v", page, err)
+			stored, err := db.LatestDeviceSample(context.Background())
+			if err != nil || stored == nil || !stored.CollectedAt.After(base) {
+				t.Fatalf("latest sample not committed: %+v %v", stored, err)
 			}
-			gap := page.Items[0].CollectedAt.Sub(page.Items[1].CollectedAt)
-			if !sleep && gap != time.Minute {
-				t.Fatalf("unexpected cadence: %v", gap)
+			var count int
+			if err = db.ReadDB().QueryRowContext(context.Background(), "SELECT count(*) FROM device_state_samples").Scan(&count); err != nil || count != 1 {
+				t.Fatalf("telemetry history accumulated: %d %v", count, err)
 			}
-			if sleep && gap < time.Hour {
+			if sleep && stored.CollectedAt.Sub(base) < time.Hour {
 				t.Fatal("sleep was filled with synthetic samples")
 			}
 		})

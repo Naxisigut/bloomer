@@ -25,7 +25,7 @@ test('Chinese errors cover 401, old agents, network and malformed or oversized r
   for (const route of ['control', 'control-models', 'control-jobs']) await assert.rejects(failure(new Response('old', { status: 404 }), route), { code: 'control_unsupported' });
   await assert.rejects(failure(new Response('old', { status: 501 }), 'device-state'), { code: 'device_state_unsupported' });
   for (const response of [new Response('not JSON'), Response.json(null), Response.json([]), Response.json({}), new Response('{}', { headers: { 'content-length': '8000001' } }), new Response(' '.repeat(8_000_001))]) await assert.rejects(failure(response), { code: 'invalid_response' });
-  for (const [route, body] of [['earnings', { items: [{}] }], ['stats', { items: [{ key: 'm', amount_micro_usd: '1', record_count: -1 }] }], ['stats', { items: [{ key: 'm', amount_micro_usd: 9007199254740992, record_count: 1 }] }], ['device-history', {}], ['control-models', { local: null, catalog: [] }]]) await assert.rejects(failure(Response.json(body), route), { code: 'invalid_response' });
+  for (const [route, body] of [['earnings', { items: [{}] }], ['stats', { items: [{ key: 'm', amount_micro_usd: '1', record_count: -1 }] }], ['stats', { items: [{ key: 'm', amount_micro_usd: 9007199254740992, record_count: 1 }] }], ['control-models', { local: null, catalog: [] }]]) await assert.rejects(failure(Response.json(body), route), { code: 'invalid_response' });
   await assert.rejects(queryAgent(device, 'health', undefined, { fetcher: async () => { throw new TypeError(device.token); } }), error => error.code === 'device_unreachable' && /无法区分网络、证书或 CORS/.test(error.message) && !error.message.includes(device.token));
 });
 
@@ -58,6 +58,6 @@ test('loopback mock accepts once; lost POST response is reconciled with original
   assert.equal((await queryAgent(local, 'control')).jobs[0].request_id, operation.request_id);
   assert.equal((await submitControl(local, operation)).id, 'job-1'); assert.equal(jobs.length, 1);
   const client = createAgentClient({ selected: 'demo', get() { throw new Error('must not access store'); } });
-  assert.equal((await client.query('health')).version, '1.0.8');
+  assert.equal((await client.query('health')).version, '1.0.10');
   await assert.rejects(client.submit('demo', operation), { code: 'demo_read_only' });
 });

@@ -20,7 +20,6 @@ const icons = {
   analysis: '<path d="M4 3v18h17M8 17v-5M13 17V8M18 17V4"/>',
   records: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   devices: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M7 13h4"/>',
-  query: '<circle cx="10" cy="10" r="6"/><path d="m15 15 6 6M7 10h6M10 7v6"/>',
   refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6.1a8 8 0 0 1 13.2 3L20 12M4 12l.7 2.9a8 8 0 0 0 13.2 3"/>',
   connect: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M9 10.5h6M12 7.5v6"/>',
 };
@@ -79,7 +78,7 @@ function syncSelectedDevice(id) {
 const analysisPage = createAnalysisPage({
   query, deviceChoices, syncDevice: syncSelectedDevice, escape, correctedNow, currentView: () => state.view,
 });
-const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, dateTime, escape, preference, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
+const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, dateTime, escape, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
 
 const alertUI = createAlertUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, escape, dateTime });
 const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
@@ -157,7 +156,7 @@ function renderHealth() {
 }
 
 function renderAlerts() {
-  if (state.view === 'query' || state.view === 'alerts') { $('#alerts').innerHTML = ''; return; }
+  if (state.view === 'alerts') { $('#alerts').innerHTML = ''; return; }
   const health = state.health.get(state.selected);
   const metaList = Object.values(state.data).map(item => item?.meta).filter(Boolean);
   const meta = state.data.overview?.meta || metaList[0];
@@ -331,15 +330,13 @@ async function checkCurrentDevice() {
 
 function setView(view, { load = true } = {}) {
   const changed = state.view !== view;
-  if (state.view === 'query' && view !== 'query') deviceUI.leaveQuery();
   state.view = view; $('#main').dataset.view = view;
   $('#overview-topbar').hidden = view !== 'overview';
-  const titles = { overview: '首页', analysis: '收益分析', records: '收益明细', devices: '我的设备', query: '数据查询', alerts: '告警记录' };
+  const titles = { overview: '首页', analysis: '收益分析', records: '收益明细', devices: '我的设备', alerts: '告警记录' };
   document.title = `Bloomer · ${titles[view]}`;
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); }
   if (view === 'alerts') alertUI.refresh();
-  if (view === 'query') deviceUI.enterQuery();
   if (view === 'overview' && load) homeRevenue.refresh();
   if (view === 'analysis') {
     analysisPage.onEnter(state.selected);
@@ -366,7 +363,6 @@ $$('.nav-item').forEach(button => button.addEventListener('click', () => setView
 $('#device-select').addEventListener('change', event => selectDevice(event.target.value));
 $('#refresh').addEventListener('click', async () => {
   if (state.view === 'alerts') { alertUI.refresh(); return; }
-  if (state.view === 'query') { deviceUI.refresh(); deviceUI.queryHistory(); return; }
   if (state.view === 'overview') {
     deviceUI.refresh(); resetAutoRefreshBackoff(); await checkCurrentDevice(); await refreshSummary(); homeRevenue.refresh();
     scheduleAutoRefresh(nextAutoRefreshDelayMs({ health: state.health.get(state.selected), failStreak: autoRefreshFailStreak }));
@@ -528,8 +524,8 @@ $('#connection-file').addEventListener('change', async event => {
 });
 
 function updateClock() {
-  if (state.view === 'query' || state.view === 'devices') {
-    $('#last-refresh').textContent = state.deviceFetchedAt ? `最新状态刷新 ${dateTime(state.deviceFetchedAt)} · 每 60 秒更新${state.view === 'query' ? '；历史明细按查询范围展示' : ''}` : '等待设备状态刷新';
+  if (state.view === 'devices') {
+    $('#last-refresh').textContent = state.deviceFetchedAt ? `最新状态刷新 ${dateTime(state.deviceFetchedAt)} · 每 60 秒更新` : '等待设备状态刷新';
     return;
   }
   const retry = autoRefreshFailStreak > 0 && nextAutoRefreshAt ? ` · 下次重试 ${dateTime(nextAutoRefreshAt)}` : '';
@@ -538,12 +534,14 @@ function updateClock() {
 }
 
 // Apply topbar visibility before restoring browser connections, including direct page links.
-$('#overview-topbar').hidden = ['analysis', 'records', 'devices', 'query', 'alerts'].includes(location.hash.slice(1));
+$('#overview-topbar').hidden = ['analysis', 'records', 'devices', 'alerts'].includes(location.hash.slice(1));
 try {
   if (location.protocol === 'file:') throw new Error('请通过普通静态服务器打开看板，例如 http://127.0.0.1:18080；不支持 file:// 运行。');
   connections.load();
   await loadDeviceList(); resetQuery();
-  const view = location.hash.slice(1); if (['overview', 'analysis', 'records', 'devices', 'query', 'alerts'].includes(view)) setView(view, { load: false });
+  const view = location.hash.slice(1);
+  if (view === 'query') { history.replaceState(null, '', '#overview'); setView('overview', { load: false }); }
+  else if (['overview', 'analysis', 'records', 'devices', 'alerts'].includes(view)) setView(view, { load: false });
   await loadData();
   scheduleAutoRefresh(nextAutoRefreshDelayMs({ health: state.health.get(state.selected), failStreak: 0 }));
 } catch (error) { $('#alerts').innerHTML = `<div class="alert error">${escape(error.message)}</div>`; }
@@ -565,7 +563,6 @@ async function autoRefresh() {
   if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open || $('#control-confirm-dialog').open || $('#remove-dialog').open) return;
   if (state.view === 'alerts') { await alertUI.refresh(); return; }
   deviceUI.refresh();
-  if (state.view === 'query') return;
   if (state.view === 'overview') {
     let failed = false;
     try { await checkCurrentDevice(); } catch { failed = true; }

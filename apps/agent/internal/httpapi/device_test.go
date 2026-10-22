@@ -2,7 +2,6 @@ package httpapi
 
 import (
 	"context"
-	"encoding/json"
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
@@ -13,7 +12,7 @@ import (
 	"bloomer/agent/internal/telemetry"
 )
 
-func TestDeviceAPIOfflineAccountFreshnessAndBoundedHistory(t *testing.T) {
+func TestDeviceAPIOfflineAccountFreshnessAndLatestOnly(t *testing.T) {
 	s, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "agent.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -29,7 +28,6 @@ func TestDeviceAPIOfflineAccountFreshnessAndBoundedHistory(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
-	// Reuse only the token from the query fixtures, without an account snapshot.
 	auth := "Bearer " + testToken
 	if w := request("/v1/device/state", ""); w.Code != 401 {
 		t.Fatal("unauthenticated telemetry exposed")
@@ -37,6 +35,9 @@ func TestDeviceAPIOfflineAccountFreshnessAndBoundedHistory(t *testing.T) {
 	w := request("/v1/device/state", auth)
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"sample":null`) || !strings.Contains(w.Body.String(), `"data_stale":true`) {
 		t.Fatalf("empty history: %d %s", w.Code, w.Body)
+	}
+	if w := request("/v1/device/state/history", auth); w.Code != 404 {
+		t.Fatalf("history endpoint removed: %d", w.Code)
 	}
 	id, err := s.SaveDeviceIdentity(context.Background(), telemetry.Hardware{OS: "darwin"}, now)
 	if err != nil {
@@ -58,19 +59,13 @@ func TestDeviceAPIOfflineAccountFreshnessAndBoundedHistory(t *testing.T) {
 	if w.Code != 200 || !strings.Contains(w.Body.String(), `"data_stale":false`) {
 		t.Fatalf("fresh telemetry unavailable without earnings: %s", w.Body)
 	}
+	if !strings.Contains(w.Body.String(), `"cpu_percent":2`) || strings.Contains(w.Body.String(), `"cpu_percent":0`) {
+		t.Fatalf("latest sample not retained: %s", w.Body)
+	}
 	if !strings.Contains(w.Body.String(), `"is_idle":true`) || !strings.Contains(w.Body.String(), `"inference_active":false`) || strings.Contains(w.Body.String(), "routing_") {
 		t.Fatalf("activity payload incorrect: %s", w.Body)
 	}
-
-	w = request("/v1/device/state/history?limit=2", auth)
-	var body struct {
-		Items []telemetry.Sample `json:"items"`
-		Next  *int64             `json:"next_before_id"`
-	}
-	if err = json.Unmarshal(w.Body.Bytes(), &body); err != nil || len(body.Items) != 2 || body.Next == nil {
-		t.Fatalf("history: %s", w.Body)
-	}
-	for _, path := range []string{"/v1/device/state?limit=1", "/v1/device/state/history?limit=501", "/v1/device/state/history?limit=0", "/v1/device/state/history?before_id=0", "/v1/device/state/history?limit=1&limit=2", "/v1/device/state/history?from=oops"} {
+	for _, path := range []string{"/v1/device/state?limit=1", "/v1/device/state?from=oops"} {
 		if w := request(path, auth); w.Code != 400 {
 			t.Fatalf("invalid query %s: %d", path, w.Code)
 		}
@@ -79,7 +74,6 @@ func TestDeviceAPIOfflineAccountFreshnessAndBoundedHistory(t *testing.T) {
 	if w := request("/v1/device/state", auth); !strings.Contains(w.Body.String(), `"data_stale":true`) {
 		t.Fatal("stale telemetry looks live")
 	}
-	// Wall-clock rollback leaves a future-dated observation visible and stale.
 	h.now = func() time.Time { return now.Add(-time.Minute) }
 	if w := request("/v1/device/state", auth); !strings.Contains(w.Body.String(), `"data_stale":true`) {
 		t.Fatal("future observation looks live")

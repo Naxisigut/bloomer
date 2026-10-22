@@ -37,7 +37,7 @@ for (const port of [18190, 18191]) {
       else send(200, { enabled: true, available: true, jobs });
       return;
     }
-    const routes = { '/v1/alerts': 'alerts', '/v1/health': 'health', '/v1/account/overview': 'overview', '/v1/earnings': 'earnings', '/v1/earnings/stats': 'stats', '/v1/earnings/analysis': 'analysis', '/v1/device/state': 'device-state', '/v1/device/state/history': 'device-history' };
+    const routes = { '/v1/alerts': 'alerts', '/v1/health': 'health', '/v1/account/overview': 'overview', '/v1/earnings': 'earnings', '/v1/earnings/stats': 'stats', '/v1/earnings/analysis': 'analysis', '/v1/device/state': 'device-state' };
     try {
       if (!routes[url.pathname] || req.method !== 'GET') { send(404, { code: 'not_found' }); return; }
       const body = demoQuery(routes[url.pathname], url.searchParams);

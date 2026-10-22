@@ -14,7 +14,7 @@ import (
 	"bloomer/agent/migrations"
 )
 
-func TestDeviceIdentityHistoryPaginationAndRetention(t *testing.T) {
+func TestDeviceIdentityAndLatestSampleReplace(t *testing.T) {
 	ctx := context.Background()
 	s, _ := openTest(t)
 	now := time.Date(2026, 10, 19, 2, 0, 0, 0, time.UTC)
@@ -30,10 +30,10 @@ func TestDeviceIdentityHistoryPaginationAndRetention(t *testing.T) {
 	if err != nil || identity.Hardware.Chip == nil || *identity.Hardware.Chip != "Apple M4" {
 		t.Fatal("partial hardware probe erased known metadata")
 	}
-	for _, at := range []time.Time{now.Add(-config.Retention - time.Second), now.Add(-config.Retention), now.Add(-time.Minute), now} {
+	for i, at := range []time.Time{now.Add(-time.Minute), now} {
 		v := telemetry.NewSample(at)
 		v.DeviceID = id
-		v.CPUPercent = telemetry.Ptr(float64(0))
+		v.CPUPercent = telemetry.Ptr(float64(i))
 		v.Quality["cpu_percent"] = telemetry.OK
 		v.ProviderRunning = telemetry.Ptr(false)
 		v.Quality["provider_running"] = telemetry.OK
@@ -41,29 +41,41 @@ func TestDeviceIdentityHistoryPaginationAndRetention(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	page, err := s.DeviceSamples(ctx, now, now.Add(-2*config.Retention), now.Add(time.Second), 0, 2)
-	if err != nil || len(page.Items) != 2 || page.NextBeforeID == nil {
-		t.Fatalf("first page: %+v %v", page, err)
+	latest, err := s.LatestDeviceSample(ctx)
+	if err != nil || latest == nil || latest.CPUPercent == nil || *latest.CPUPercent != 1 {
+		t.Fatalf("latest sample: %+v %v", latest, err)
 	}
-	v := page.Items[0]
-	if v.CPUPercent == nil || *v.CPUPercent != 0 || v.ProviderRunning == nil || *v.ProviderRunning || v.GPUPercent != nil || v.Quality["gpu_percent"] != telemetry.Unsupported {
+	if latest.GPUPercent != nil || latest.Quality["gpu_percent"] != telemetry.Unsupported {
 		t.Fatal("NULL and zero/false did not round trip")
 	}
-	second, err := s.DeviceSamples(ctx, now, now.Add(-2*config.Retention), now.Add(time.Second), *page.NextBeforeID, 2)
-	if err != nil || len(second.Items) != 1 || second.NextBeforeID != nil || !second.Items[0].CollectedAt.Equal(now.Add(-config.Retention)) {
-		t.Fatalf("retention or paging: %+v %v", second, err)
-	}
-	done, err := s.CleanupBatch(ctx, now.Add(-config.Retention), now, 1)
-	if err != nil || done {
-		t.Fatal("full telemetry deletion batch should yield")
-	}
-	done, err = s.CleanupBatch(ctx, now.Add(-config.Retention), now, 1)
-	if err != nil || !done {
-		t.Fatal("cleanup did not finish")
-	}
 	var n int
-	if err = s.reader.QueryRow("SELECT count(*) FROM device_state_samples").Scan(&n); err != nil || n != 3 {
-		t.Fatal("cleanup removed retained samples")
+	if err = s.reader.QueryRow("SELECT count(*) FROM device_state_samples").Scan(&n); err != nil || n != 1 {
+		t.Fatalf("expected one telemetry row: %d %v", n, err)
+	}
+}
+
+func TestCleanupSkipsDeviceTelemetry(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openTest(t)
+	now := time.Date(2026, 10, 19, 2, 0, 0, 0, time.UTC)
+	id, err := s.SaveDeviceIdentity(ctx, telemetry.Hardware{OS: "darwin"}, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	v := telemetry.NewSample(now.Add(-config.Retention - time.Hour))
+	v.DeviceID = id
+	v.CPUPercent = telemetry.Ptr(1.0)
+	v.Quality["cpu_percent"] = telemetry.OK
+	if err = s.SaveDeviceSample(ctx, v); err != nil {
+		t.Fatal(err)
+	}
+	done, err := s.CleanupBatch(ctx, now.Add(-config.Retention), now, 1000)
+	if err != nil || !done {
+		t.Fatal("cleanup did not finish", err)
+	}
+	var rows int
+	if err = s.reader.QueryRow("SELECT count(*) FROM device_state_samples").Scan(&rows); err != nil || rows != 1 {
+		t.Fatal("cleanup removed latest telemetry")
 	}
 }
 
@@ -96,7 +108,7 @@ func TestSchemaFourActivityMigrationPreservesUnknownAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	old, err := s.LatestDeviceSample(ctx, now)
+	old, err := s.LatestDeviceSample(ctx)
 	if err != nil || old.IsIdle != nil || old.InferenceActive != nil || old.Quality["is_idle"] != telemetry.Unsupported || old.Quality["routing_state"] != "" {
 		t.Fatalf("old state fabricated: %+v %v", old, err)
 	}
@@ -116,7 +128,7 @@ func TestSchemaFourActivityMigrationPreservesUnknownAndHistory(t *testing.T) {
 	if err = s.SaveDeviceSample(ctx, v); err != nil {
 		t.Fatal(err)
 	}
-	latest, err := s.LatestDeviceSample(ctx, now)
+	latest, err := s.LatestDeviceSample(ctx)
 	if err != nil || latest.IsIdle == nil || *latest.IsIdle || latest.LastDeviceEarningAt == nil || !latest.LastDeviceEarningAt.Equal(*v.LastDeviceEarningAt) || latest.LastEarningsSyncAt == nil || latest.EarningsProviderID == nil || *latest.EarningsProviderID != "own-provider" {
 		t.Fatalf("activity round trip: %+v %v", latest, err)
 	}
@@ -157,8 +169,8 @@ func TestSchemaTwoUpgradeKeepsEarningsAndBacksUp(t *testing.T) {
 	if len(backups) != 1 {
 		t.Fatal("schema 2 upgrade backup missing")
 	}
-	if v, err := s.SchemaVersion(ctx); err != nil || v != 6 {
-		t.Fatal("schema did not advance")
+	if v, err := s.SchemaVersion(ctx); err != nil || v != 7 {
+		t.Fatal("schema did not advance", v, err)
 	}
 }
 
@@ -190,7 +202,7 @@ func TestSchemaFiveAlertMigrationAndTrustRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer s.Close()
-	old, err := s.LatestDeviceSample(ctx, now)
+	old, err := s.LatestDeviceSample(ctx)
 	if err != nil || old.TrustReceivedAt != nil || old.SessionID != nil || old.Quality["trust_received_at"] != telemetry.Unsupported {
 		t.Fatal(old, err)
 	}
@@ -206,8 +218,52 @@ func TestSchemaFiveAlertMigrationAndTrustRoundTrip(t *testing.T) {
 	if err = s.SaveDeviceSample(ctx, v); err != nil {
 		t.Fatal(err)
 	}
-	got, err := s.LatestDeviceSample(ctx, now.Add(time.Minute))
+	got, err := s.LatestDeviceSample(ctx)
 	if err != nil || got.TrustReceivedAt == nil || *got.TrustReceivedAt != *v.TrustReceivedAt || got.SessionID == nil || *got.SessionID != "session" {
 		t.Fatal(got, err)
+	}
+}
+
+func TestSchemaSevenPrunesHistoryKeepsLatest(t *testing.T) {
+	ctx := context.Background()
+	path := filepath.Join(t.TempDir(), "agent.db")
+	db, err := sql.Open("sqlite", dsn(path, false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	files := fstest.MapFS{}
+	for _, name := range []string{"001_initial.sql", "002_collection.sql", "003_device_state.sql", "004_provider_routing.sql", "005_device_activity.sql", "006_alerts.sql"} {
+		body, err := fs.ReadFile(migrations.Files, name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		files[name] = &fstest.MapFile{Data: body}
+	}
+	if err = migrate(ctx, db, files, path); err != nil {
+		t.Fatal(err)
+	}
+	now := time.Date(2026, 10, 22, 2, 0, 0, 0, time.UTC)
+	if _, err = db.Exec(`INSERT INTO device_identity VALUES(1,'device','{}',?);
+INSERT INTO device_state_samples(device_id,collected_at_us,duration_ms,quality_json) VALUES
+('device',?,1,'{}'),('device',?,1,'{}')`, now.UnixMicro(), now.Add(-2*time.Minute).UnixMicro(), now.UnixMicro()); err != nil {
+		t.Fatal(err)
+	}
+	db.Close()
+	s, err := Open(ctx, path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	backups, _ := filepath.Glob(path + ".pre-v7-*.bak")
+	if len(backups) != 1 {
+		t.Fatal("schema 6 backup missing")
+	}
+	var n int
+	if err = s.reader.QueryRow("SELECT count(*) FROM device_state_samples").Scan(&n); err != nil || n != 1 {
+		t.Fatal("migration did not prune history", n, err)
+	}
+	latest, err := s.LatestDeviceSample(ctx)
+	if err != nil || latest == nil || !latest.CollectedAt.Equal(now) {
+		t.Fatal(latest, err)
 	}
 }

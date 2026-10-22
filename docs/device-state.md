@@ -1,6 +1,6 @@
 # 设备状态采集
 
-设备端功能，默认启用；每次启动立即采集，之后每 60 秒采集一次，写入本机 `agent.db`。采集与收益请求独立，收益接口失败、限流或 `collection_enabled=false` 时仍采集。休眠/进程停止期间没有样本，恢复后不补造历史。
+设备端功能，默认启用；每次启动立即采集，之后每 60 秒采集一次，覆盖写入本机 `agent.db` 中的最新一条 telemetry。采集与收益请求独立，收益接口失败、限流或 `collection_enabled=false` 时仍采集。休眠/进程停止期间没有样本，恢复后不补造历史。
 
 当前实现面向已发布的 macOS / Apple Silicon Agent，不增加运行依赖，不需要管理员权限。其他系统指标标记为 `unsupported`。
 
@@ -47,7 +47,7 @@
 }
 ```
 
-上面是合并到既有配置的字段示例，不是完整配置。`device_state_enabled=false` 关闭后续状态采集，已有历史仍可查询。自定义 Darkbloom 数据位置时设置 `provider_state_file`；不会因查询访问凭证或执行 Darkbloom 控制命令。
+上面是合并到既有配置的字段示例，不是完整配置。`device_state_enabled=false` 关闭后续状态采集，已保存的最新样本仍可查询。自定义 Darkbloom 数据位置时设置 `provider_state_file`；不会因查询访问凭证或执行 Darkbloom 控制命令。
 
 ## 本机任务与设备收益匹配
 
@@ -65,29 +65,15 @@
 
 ## 数据库和留存
 
-schema 3 新增 `device_identity`、`device_state_samples`，schema 4 的路由列保留为历史兼容，不再读写或返回。schema 5 新增本地任务、空闲判定、设备最近收益证据及 `device_provider_ids` 身份关联表和按设备查询收益的索引。schema 6 增加授权心跳、会话与 [Bark 告警](alert.md) 状态。升级前自动备份；旧样本的新字段保持未知。本安装 `device_id` 独立于官方 Provider ID。
+schema 3 新增 `device_identity`、`device_state_samples`，schema 4 的路由列保留为历史兼容，不再读写或返回。schema 5 新增本地任务、空闲判定、设备最近收益证据及 `device_provider_ids` 身份关联表和按设备查询收益的索引。schema 6 增加授权心跳、会话与 [Bark 告警](alert.md) 状态。schema 7 升级时删除更早的状态历史，此后每个 `device_id` 仅保留最新一行。升级前自动备份；旧样本的新字段保持未知。本安装 `device_id` 独立于官方 Provider ID。
 
-指标用独立的 SQLite 列保存，时间为 UTC 整数微秒；质量状态为白名单 JSON，官方错误/原因仅使用安全代码。例：
-
-```sql
-SELECT collected_at_us, cpu_percent, memory_pressure,
-       gpu_percent, thermal_state, current_model, model_ready,
-       json_extract(quality_json, '$.model_ready') AS model_quality
-FROM device_state_samples
-WHERE collected_at_us >= ? AND collected_at_us < ?
-ORDER BY collected_at_us, id;
-```
-
-状态查询始终限制最近 365 天。物理删除沿用每周清理，每个事务的收益与状态删除合计不超过 1000 条；数据库升级前沿用一致性备份。不会记录完整状态文件、模型请求/输出、官方凭证、认证公钥或原始错误消息。
+指标用独立的 SQLite 列保存，时间为 UTC 整数微秒；质量状态为白名单 JSON，官方错误/原因仅使用安全代码。表不参与收益 365 天 weekly 清理；数据库升级前沿用一致性备份。不会记录完整状态文件、模型请求/输出、官方凭证、认证公钥或原始错误消息。
 
 ## 只读接口
 
-与既有 `/v1` 接口使用相同的 Bloomer 独立 Bearer 认证；允许任意网页来源（合法预检免令牌，实际查询必须认证）。请求只读取数据库，不触发采集。看板首页、设备详情与数据查询使用相同的本机任务和该设备收益判定口径。
+与既有 `/v1` 接口使用相同的 Bloomer 独立 Bearer 认证；允许任意网页来源（合法预检免令牌，实际查询必须认证）。请求只读取数据库，不触发采集。看板首页与「我的设备」使用相同的本机任务和该设备收益判定口径。
 
-- `GET /v1/device/state`：返回 `device`、最近入库 `sample`、`meta.data_stale`。未采集时 sample 为 null；超过 120 秒或时间在未来时为 stale。即使收益尚无首次成功快照也可查询。
-- `GET /v1/device/state/history?from=<RFC3339>&to=<RFC3339>&limit=100&before_id=<id>`：默认近 24 小时，UTC 半开区间，limit 为 1～500。返回 items、next_before_id、有效范围、保留起点及截断标志。按入库 ID 降序分页，时钟回拨也不重复；分析时按 collected_at 排序。
-
-历史翻页使用返回的 `next_before_id`，同时沿用首个响应 meta.effective_from / effective_to 作为 from / to。null 表示末页。缺失的时间段保持空白，不自动补零；较早范围以 range_truncated 标注。
+- `GET /v1/device/state`：返回 `device`、最新 `sample`、`meta.sample_interval_seconds` 与 `meta.data_stale`。未采集时 sample 为 null；超过 120 秒或时间在未来时为 stale。即使收益尚无首次成功快照也可查询。不接受查询参数。
 
 ### 收益分析（本机口径）
 
@@ -106,4 +92,4 @@ ORDER BY collected_at_us, id;
 
 官方 [DaemonStateFile.swift](https://github.com/Layr-Labs/d-inference/blob/master/provider-swift/Sources/ProviderCore/Service/DaemonStateFile.swift)定义 snake_case 状态文件字段与 PID 身份；本机已只读核验 schema 1 字段结构。实际设备版本缺少字段时保留未知。
 
-测试覆盖：本地采集与部分失败、未知/零/false、任务字段缺失/过期和进程停止、严格 5 分钟边界、收益同步过期、未来时间、公开身份精确匹配与冲突、跨设备/账户收益隔离、已确认会话重连、身份变化、schema 4→5 升级备份与旧样本未知、365 天保留和历史分页、设备状态独立调度。
+测试覆盖：本地采集与部分失败、未知/零/false、任务字段缺失/过期和进程停止、严格 5 分钟边界、收益同步过期、未来时间、公开身份精确匹配与冲突、跨设备/账户收益隔离、已确认会话重连、身份变化、schema 4→7 升级备份与旧样本未知、最新样本覆盖与 schema 7 历史裁剪、设备状态独立调度。

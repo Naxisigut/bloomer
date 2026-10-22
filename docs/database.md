@@ -1,6 +1,6 @@
 # Agent 数据库、迁移与恢复
 
-当前数据库 schema 为 **6**；迁移位于 `apps/agent/migrations`，编译时嵌入程序。schema 1 是 P1 的基础表，schema 2 增加采集与维护的进程级检查点和清理索引，schema 3 增加设备身份和设备状态历史，schema 4 的旧路由列仅保留为升级历史；schema 5 增加本机任务标志、设备最新收益、空闲判定与已确认设备身份关联。schema 6 增加授权心跳、会话 ID、告警规则状态、最近 50 条告警记录与持久化发送队列。数据库默认位于用户应用数据目录，不进入仓库。
+当前数据库 schema 为 **7**；迁移位于 `apps/agent/migrations`，编译时嵌入程序。schema 1 是 P1 的基础表，schema 2 增加采集与维护的进程级检查点和清理索引，schema 3 增加设备身份和设备状态历史，schema 4 的旧路由列仅保留为升级历史；schema 5 增加本机任务标志、设备最新收益、空闲判定与已确认设备身份关联。schema 6 增加授权心跳、会话 ID、告警规则状态、最近 50 条告警记录与持久化发送队列。schema 7 将设备 telemetry 改为每安装仅保留最新一条样本，升级时删除更早历史并建立 `device_id` 唯一索引。数据库默认位于用户应用数据目录，不进入仓库。
 
 ## 表和连接
 
@@ -11,7 +11,7 @@
 - `maintenance_state`：单行启动、正常关闭、清理成功和限流截止时间；schema 2 增加绑定账户、最近尝试/错误/恢复原因、时钟高水位、持久化清理截止时间、最近清理尝试及错误。首次成功事务绑定账户；已有单账户历史在读取时推断，多账户库拒绝作为本服务运行。
 - `schema_migrations`：版本、文件名、SHA-256 与迁移时间；与 `PRAGMA user_version` 共同检查。
 - `device_identity`：本安装持久标识与最近成功读取的固定硬件信息；不声称等于官方 Provider 身份。
-- `device_state_samples`：每 60 秒保存设备资源和 Provider 观察；指标是可空的明确列，`quality_json` 区分未知与零值。按采集时间保留 365 天，和收益共用每周分批清理，但独立于收益网络请求采集。详见[设备状态采集](device-state.md)。
+- `device_state_samples`：每 60 秒覆盖保存本安装最新一条设备资源和 Provider 观察；指标是可空的明确列，`quality_json` 区分未知与零值。不参与收益 365 天清理。详见[设备状态采集](device-state.md)。
 
 SQLite 使用 WAL、FULL 同步、5000 ms 忙等待和外键检查。写连接最多 1 个，只读池最多 2 个；配置通过 DSN 应用于每个连接。只读连接使用 `mode=ro` 和 `query_only=1`。所有写操作经存储模块的串行事务入口；P2/P3 使用同一任务协调器，采集全轮与清理批次之间互斥，网络阶段不持有 SQL 事务。另建 `earnings_retention_time(created_at_us)` 索引支持过期分批删除。
 
