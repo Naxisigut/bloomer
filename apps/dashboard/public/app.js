@@ -6,6 +6,8 @@ import { createControlUI } from './control-ui.js';
 import { DeviceStore } from './connections.js';
 import { createAgentClient } from './agent-client.js';
 import { createHomeRevenueChart } from './home-revenue.js';
+import { enrichHealthTiming, correctedNow as deviceCorrectedNow } from './clock.js';
+import { nextAutoRefreshDelayMs } from './refresh-schedule.js';
 
 const $ = selector => document.querySelector(selector);
 const $$ = selector => [...document.querySelectorAll(selector)];
@@ -93,7 +95,14 @@ function relative(value) {
 }
 
 const query = (route, params, device = state.selected, signal) => client.query(route, params, device, signal);
-const homeRevenue = createHomeRevenueChart({ query, selectedDevice, currentView: () => state.view, escape });
+const deviceClockOffset = (id = state.selected) => state.health.get(id)?.clockOffset ?? 0;
+const correctedNow = (id = state.selected) => deviceCorrectedNow(deviceClockOffset(id));
+async function fetchHealth(id) {
+  const started = Date.now();
+  const value = await query('health', null, id);
+  return enrichHealthTiming(value, started, Date.now());
+}
+const homeRevenue = createHomeRevenueChart({ query, selectedDevice, currentView: () => state.view, escape, correctedNow: () => correctedNow() });
 const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, dateTime, escape, preference, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
 
 const alertUI = createAlertUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, escape, dateTime });
@@ -321,7 +330,7 @@ function renderRecords() {
 function renderAll() { renderDevices(); renderMetrics(); renderTrend(); renderRecords(); renderAlerts(); homeRevenue.render(); }
 
 function summaryJobs(device = state.selected) {
-  const now = new Date(), params = { group_by: 'day', timezone: DASHBOARD_TIMEZONE };
+  const now = correctedNow(device), params = { group_by: 'day', timezone: DASHBOARD_TIMEZONE };
   return [
     ['overview', query('overview', null, device)],
     ['lastHour', query('stats', { ...rollingRange(1, now), ...params }, device)],
@@ -363,7 +372,7 @@ async function loadData({ reset = false, clearModel = false, filtersOnly = false
   state.pager = pager;
   const jobs = [
     ...(!filtersOnly ? [
-      ['health', query('health')], ...summaryJobs(device),
+      ['health', fetchHealth(device)], ...summaryJobs(device),
     ] : []),
     ['trend', query('stats', { ...params, group_by: state.trendGroup, timezone: DASHBOARD_TIMEZONE })],
     ['models', query('stats', { ...state.range, group_by: 'model', timezone: DASHBOARD_TIMEZONE })],
@@ -401,8 +410,18 @@ async function loadDeviceList() {
 
 async function checkDevices() {
   const ids = deviceChoices().map(device => device.id);
-  const results = await Promise.allSettled(ids.map(id => query('health', null, id)));
+  const results = await Promise.allSettled(ids.map(id => fetchHealth(id)));
   results.forEach((result, index) => state.health.set(ids[index], result.status === 'fulfilled' ? result.value : { error: result.reason.message }));
+  renderDevices(); renderAlerts();
+}
+
+async function checkCurrentDevice() {
+  const id = state.selected;
+  try {
+    state.health.set(id, await fetchHealth(id));
+  } catch (error) {
+    state.health.set(id, { error: error.message });
+  }
   renderDevices(); renderAlerts();
 }
 
@@ -436,13 +455,16 @@ async function selectDevice(id) {
 }
 $$('.nav-item').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
 $('#device-select').addEventListener('change', event => selectDevice(event.target.value));
-$('#refresh').addEventListener('click', () => {
+$('#refresh').addEventListener('click', async () => {
   if (state.view === 'alerts') { alertUI.refresh(); return; }
   if (state.view === 'query') { deviceUI.refresh(); deviceUI.queryHistory(); return; }
-  if (state.view === 'overview' || state.view === 'devices') {
-    deviceUI.refresh(); checkDevices(); refreshSummary();
-    if (state.view === 'overview') homeRevenue.refresh();
-    if (state.view === 'devices') controlUI.refresh(true);
+  if (state.view === 'overview') {
+    deviceUI.refresh(); resetAutoRefreshBackoff(); await checkCurrentDevice(); await refreshSummary(); homeRevenue.refresh();
+    scheduleAutoRefresh(nextAutoRefreshDelayMs({ health: state.health.get(state.selected), failStreak: autoRefreshFailStreak }));
+    return;
+  }
+  if (state.view === 'devices') {
+    deviceUI.refresh(); resetAutoRefreshBackoff(); await checkDevices(); await refreshSummary(); controlUI.refresh(true);
     return;
   }
   state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData();
@@ -562,7 +584,9 @@ async function connect(save) {
   const result = $('#connection-result'); result.hidden = false; result.className = ''; result.textContent = '正在连接设备，请稍候…';
   try {
     const body = Object.fromEntries(new FormData(form));
+    const started = Date.now();
     const response = await client.connect(body, save);
+    response.health = enrichHealthTiming(response.health, started, Date.now());
     if (save) {
       form.elements.token.value = ''; $('#connect-dialog').close(); await loadDeviceList(); await selectDevice(response.device.id); toast('设备已连接。');
     } else {
@@ -606,7 +630,9 @@ function updateClock() {
     $('#last-refresh').textContent = state.deviceFetchedAt ? `最新状态刷新 ${dateTime(state.deviceFetchedAt)} · 每 60 秒更新${state.view === 'query' ? '；历史明细按查询范围展示' : ''}` : '等待设备状态刷新';
     return;
   }
-  $('#last-refresh').textContent = state.fetchedAt ? `最近刷新 ${dateTime(state.fetchedAt)} · 每 60 秒自动更新` : '等待首次刷新';
+  const retry = autoRefreshFailStreak > 0 && nextAutoRefreshAt ? ` · 下次重试 ${dateTime(nextAutoRefreshAt)}` : '';
+  const intervalHint = autoRefreshFailStreak > 0 ? '' : ' · 自动更新已对齐采集节奏';
+  $('#last-refresh').textContent = state.fetchedAt ? `最近刷新 ${dateTime(state.fetchedAt)}${intervalHint}${retry}` : '等待首次刷新';
 }
 
 // Apply topbar visibility before restoring browser connections, including direct page links.
@@ -617,24 +643,52 @@ try {
   await loadDeviceList(); resetQuery();
   const view = location.hash.slice(1); if (['overview', 'analysis', 'records', 'devices', 'query', 'alerts'].includes(view)) setView(view, { load: false });
   await loadData();
+  scheduleAutoRefresh(nextAutoRefreshDelayMs({ health: state.health.get(state.selected), failStreak: 0 }));
 } catch (error) { $('#alerts').innerHTML = `<div class="alert error">${escape(error.message)}</div>`; }
-function autoRefresh() {
+let autoRefreshTimer = null, autoRefreshFailStreak = 0, nextAutoRefreshAt = null;
+function resetAutoRefreshBackoff() { autoRefreshFailStreak = 0; }
+function scheduleAutoRefresh(delayMs) {
+  if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+  nextAutoRefreshAt = new Date(Date.now() + delayMs);
+  autoRefreshTimer = setTimeout(() => { autoRefreshTimer = null; runAutoRefreshCycle(); }, delayMs);
+  updateClock();
+}
+async function runAutoRefreshCycle() {
+  await autoRefresh();
+  if (document.hidden) return;
+  const health = state.health.get(state.selected);
+  scheduleAutoRefresh(nextAutoRefreshDelayMs({ health, failStreak: autoRefreshFailStreak }));
+}
+async function autoRefresh() {
   updateClock();
   if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open || $('#control-confirm-dialog').open || $('#remove-dialog').open) return;
-  if (state.view === 'alerts') { alertUI.refresh(); return; }
+  if (state.view === 'alerts') { await alertUI.refresh(); return; }
   deviceUI.refresh();
   if (state.view === 'query') return;
-  if (state.view === 'overview' || state.view === 'devices') {
-    checkDevices(); refreshSummary();
-    if (state.view === 'overview') homeRevenue.refresh();
+  if (state.view === 'overview') {
+    let failed = false;
+    try { await checkCurrentDevice(); } catch { failed = true; }
+    await refreshSummary();
+    if (state.summaryErrors.length) failed = true;
+    if (state.health.get(state.selected)?.error) failed = true;
+    autoRefreshFailStreak = failed ? autoRefreshFailStreak + 1 : 0;
+    homeRevenue.refresh();
+    return;
+  }
+  if (state.view === 'devices') {
+    await checkDevices(); await refreshSummary();
     return;
   }
   if (state.view === 'analysis' || state.page === 0) {
     state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData();
-  } else { checkDevices(); refreshSummary(); }
+    return;
+  }
+  await checkCurrentDevice(); await refreshSummary();
 }
-setInterval(autoRefresh, 60_000);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) autoRefresh();
+  if (document.hidden) { if (autoRefreshTimer) clearTimeout(autoRefreshTimer); autoRefreshTimer = null; return; }
+  if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
+  autoRefreshTimer = null;
+  runAutoRefreshCycle();
 });
 new ResizeObserver(() => renderTrend()).observe($('#trend-chart'));

@@ -1,4 +1,5 @@
 import { randomID } from './identifiers.js';
+import { isPermanentControlError, isTransientControlError, nextControlPollDelayMs, shouldControlAutoPoll } from './control-poll.js';
 
 const actions = { start: '开启 Darkbloom', stop: '关闭 Darkbloom', restart: '重启 Darkbloom', switch: '切换模型', download: '下载模型' };
 const statuses = { running: '执行中', succeeded: '已完成', failed: '执行失败', unconfirmed: '结果未确认' };
@@ -12,15 +13,50 @@ const reasons = {
 export function createControlUI({ submitControl, query, selectedDevice, currentView, escape, dateTime, refreshState }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, status = null, models = null, loading = false, submitting = false, pending = null, confirmation = null, error = '', requestGeneration = 0;
+  let lastFailure = null, autoPollStopped = false, networkFailStreak = 0, runningSinceMs = null, pendingSinceMs = null, pollTimer = null;
   const dialog = $('#control-confirm-dialog');
   function remember(value) {
     pending = value;
     try { if (value) localStorage.setItem(`bloomer.control.${deviceID}`, JSON.stringify(value)); else localStorage.removeItem(`bloomer.control.${deviceID}`); } catch { /* API deduplication also protects live retries. */ }
   }
+  function syncRunningSince() {
+    const running = status?.jobs?.find(job => job.status === 'running');
+    if (running) {
+      const created = Date.parse(running.created_at);
+      runningSinceMs = Number.isFinite(created) ? created : runningSinceMs ?? Date.now();
+    } else runningSinceMs = null;
+  }
+  function clearPollTimer() { if (pollTimer) { clearTimeout(pollTimer); pollTimer = null; } }
+  function schedulePoll(delayMs) {
+    clearPollTimer();
+    pollTimer = setTimeout(() => { pollTimer = null; tickPoll(); }, delayMs);
+  }
+  function resetPollState() { autoPollStopped = false; networkFailStreak = 0; lastFailure = null; }
+  function pollDelayMs() {
+    if (pending && !pendingSinceMs) pendingSinceMs = Date.now();
+    if (!pending) pendingSinceMs = null;
+    const activeSince = runningSinceMs ?? pendingSinceMs;
+    return nextControlPollDelayMs({ runningSinceMs: activeSince, pending: Boolean(pending), networkFailStreak, nowMs: Date.now() });
+  }
+  function maybeSchedulePoll() {
+    clearPollTimer();
+    if (currentView() !== 'devices' || document.hidden || dialog.open || deviceID === 'demo') return;
+    const running = status?.jobs?.some(job => job.status === 'running');
+    if (!shouldControlAutoPoll({ autoPollStopped, pending: Boolean(pending), running, awaitingStatus: !status && !autoPollStopped, transientError: !status && lastFailure && isTransientControlError(lastFailure) })) return;
+    schedulePoll(pollDelayMs());
+  }
+  async function tickPoll() {
+    if (currentView() !== 'devices' || document.hidden || dialog.open) return;
+    const wasRunning = status?.jobs?.some(job => job.status === 'running');
+    await refresh();
+    if (wasRunning && status && !status.jobs?.some(job => job.status === 'running')) { await refresh(true); refreshState(); }
+    maybeSchedulePoll();
+  }
   function render() {
     const device = selectedDevice();
     if (device?.id !== deviceID) {
       deviceID = device?.id; status = null; models = null; loading = false; submitting = false; error = ''; confirmation = null; requestGeneration++;
+      resetPollState(); runningSinceMs = null; pendingSinceMs = null; clearPollTimer();
       if (dialog.open) dialog.close();
       try { pending = JSON.parse(localStorage.getItem(`bloomer.control.${deviceID}`) || 'null'); } catch { pending = null; }
       $('#control-local-models').innerHTML = '';
@@ -52,6 +88,8 @@ export function createControlUI({ submitControl, query, selectedDevice, currentV
       const response = await query('control', null, id);
       if (id !== deviceID || generation !== requestGeneration) return;
       status = response;
+      lastFailure = null; networkFailStreak = 0; autoPollStopped = false;
+      syncRunningSince();
       if (pending && status.jobs?.some(job => job.request_id === pending.request_id)) remember(null);
       if (withModels && status.available) {
         const result = await query('control-models', null, id);
@@ -62,8 +100,16 @@ export function createControlUI({ submitControl, query, selectedDevice, currentV
         const download = $('#control-download-model').value;
         $('#control-download-model').innerHTML = '<option value="">选择要下载的模型</option>' + models.catalog.map(model => `<option value="${escape(model.id)}" ${download === model.id ? 'selected' : ''}>${escape(model.display_name || model.id)}${model.size_gb ? ` · ${escape(model.size_gb)} GB` : ''}</option>`).join('');
       }
-    } catch (failure) { if (id === deviceID && generation === requestGeneration) { error = failure.message; status = null; } }
-    finally { if (id === deviceID && generation === requestGeneration) { loading = false; render(); } }
+    } catch (failure) {
+      if (id === deviceID && generation === requestGeneration) {
+        error = failure.message;
+        lastFailure = failure;
+        if (isPermanentControlError(failure)) { autoPollStopped = true; status = status ?? { enabled: false, available: false, jobs: [] }; }
+        else if (isTransientControlError(failure)) { networkFailStreak++; status = null; }
+        else { status = null; }
+      }
+    }
+    finally { if (id === deviceID && generation === requestGeneration) { loading = false; render(); maybeSchedulePoll(); } }
   }
   async function submit(body, id) {
     if (id !== deviceID || submitting) return;
@@ -100,12 +146,7 @@ export function createControlUI({ submitControl, query, selectedDevice, currentV
   });
   $('#control-local-models').addEventListener('change', render);
   $('#control-download-model').addEventListener('change', render);
-  $('#control-refresh').addEventListener('click', () => refresh(true));
-  setInterval(() => { if (currentView() === 'devices' && !document.hidden && !dialog.open) {
-    const wasRunning = status?.jobs?.some(job => job.status === 'running');
-    if (wasRunning || pending || !status) refresh().then(() => {
-      if (wasRunning && status && !status.jobs?.some(job => job.status === 'running')) { refresh(true); refreshState(); }
-    });
-  } }, 3000);
+  $('#control-refresh').addEventListener('click', () => { resetPollState(); refresh(true); });
+  document.addEventListener('visibilitychange', () => { if (!document.hidden) maybeSchedulePoll(); else clearPollTimer(); });
   return { render, refresh };
 }

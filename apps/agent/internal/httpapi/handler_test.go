@@ -126,3 +126,44 @@ func TestHealthUsesCachedFreshnessCoverageAndPersistentThrottle(t *testing.T) {
 		t.Fatal("in-memory write failure not visible")
 	}
 }
+
+func TestHealthServerTimeAndNextCollection(t *testing.T) {
+	s, err := store.Open(context.Background(), filepath.Join(t.TempDir(), "agent.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	fixed := time.Date(2026, 10, 16, 8, 30, 0, 123456000, time.UTC)
+	next := fixed.Add(config.CollectionInterval)
+	runtime := health.New()
+	runtime.SetNextCollectionAt(next)
+	token := strings.Repeat("y", 64)
+	handler := New(s, token, "test", "acct", runtime)
+	handler.now = func() time.Time { return fixed }
+	req := httptest.NewRequest(http.MethodGet, "/v1/health", nil)
+	req.Header.Set("Authorization", "Bearer "+token)
+	w := httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if w.Code != 200 {
+		t.Fatalf("health: %d %s", w.Code, w.Body.String())
+	}
+	var body map[string]any
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["server_time"] != fixed.Format(time.RFC3339Nano) {
+		t.Fatalf("server_time: %v", body["server_time"])
+	}
+	if body["next_collection_at"] != next.Format(time.RFC3339Nano) {
+		t.Fatalf("next_collection_at: %v", body["next_collection_at"])
+	}
+	runtime.Collection("disabled", "", "")
+	w = httptest.NewRecorder()
+	handler.ServeHTTP(w, req)
+	if err := json.Unmarshal(w.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if body["next_collection_at"] != nil {
+		t.Fatalf("disabled collection: %v", body["next_collection_at"])
+	}
+}

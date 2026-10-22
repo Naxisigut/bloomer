@@ -40,7 +40,7 @@ https://home-mac.your-tailnet.ts.net:8443
 
 Agent 1.0.7 起允许任意网页来源，返回 `Access-Control-Allow-Origin: *`。无需在 Agent 中配置看板的域名或端口。
 
-合法 GET/POST 的 OPTIONS 预检不需要令牌；实际健康、收益、状态和控制请求均必须携带有效 Bloomer Bearer 令牌，缺失或错误仍返回 401。预检显式允许 Authorization、Content-Type 和 Accept，不启用跨域 Cookie 凭证。成功和错误响应都带 CORS 头；无 Origin 的 CLI 调用兼容。
+合法 GET/POST 的 OPTIONS 预检不需要令牌；实际健康、收益、状态和控制请求均必须携带有效 Bloomer Bearer 令牌，缺失或错误仍返回 401。预检显式允许 Authorization、Content-Type 和 Accept，合法预检响应缓存 2 小时（`Access-Control-Max-Age: 7200`），不启用跨域 Cookie 凭证。成功和错误响应都带 CORS 头；无 Origin 的 CLI 调用兼容。
 
 通过安装器升级会启动新版 Agent，家中终端可确认运行状态：
 

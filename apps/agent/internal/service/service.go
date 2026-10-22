@@ -105,7 +105,7 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 	jobsDone := make(chan struct{})
 	go func() {
 		defer close(jobsDone)
-		Scheduler{Collector: collect, Cleaner: cleaner, Clock: clock}.Run(jobsCtx)
+		Scheduler{Collector: collect, Cleaner: cleaner, Clock: clock, Runtime: runtime}.Run(jobsCtx)
 	}()
 	deviceDone := make(chan struct{})
 	go func() {

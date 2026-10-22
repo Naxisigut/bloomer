@@ -889,13 +889,22 @@ components:
           $ref: '#/components/schemas/Coverage'
     Health:
       type: object
-      required: [version, phase, schema_version, collection_state, last_successful_sync_at, data_stale, last_error, retention_start, coverage, cleanup]
+      required: [version, phase, schema_version, collection_state, server_time, last_successful_sync_at, data_stale, last_error, retention_start, coverage, cleanup]
       properties:
         version:
           type: string
         phase:
           type: string
           example: P6
+        server_time:
+          type: string
+          format: date-time
+          description: Agent current UTC time for browser clock skew correction.
+        next_collection_at:
+          type: string
+          format: date-time
+          nullable: true
+          description: Planned start of the next earnings collection round; null when collection is disabled or not yet scheduled.
         schema_version:
           type: integer
           minimum: 1

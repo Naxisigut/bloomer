@@ -41,7 +41,12 @@ for (const port of [18190, 18191]) {
     try {
       if (!routes[url.pathname] || req.method !== 'GET') { send(404, { code: 'not_found' }); return; }
       const body = demoQuery(routes[url.pathname], url.searchParams);
-      if (url.pathname === '/v1/health') body.version = `mock-${port}`;
+      if (url.pathname === '/v1/health') {
+        const now = new Date();
+        body.version = `mock-${port}`;
+        body.server_time = now.toISOString();
+        body.next_collection_at = new Date(+now + 45_000).toISOString();
+      }
       send(200, body);
     } catch (error) { send(error.status || 500, { code: error.code || 'internal_error' }); }
   });

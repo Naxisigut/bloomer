@@ -62,7 +62,7 @@ export function smoothLinePath(points) {
   return path;
 }
 
-export function createHomeRevenueChart({ query, selectedDevice, currentView, escape }) {
+export function createHomeRevenueChart({ query, selectedDevice, currentView, escape, correctedNow = () => new Date() }) {
   const $ = selector => document.querySelector(selector);
   const chart = $('#home-revenue-chart'), choices = $('#home-revenue-models');
   const hourLabel = new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
@@ -170,7 +170,7 @@ export function createHomeRevenueChart({ query, selectedDevice, currentView, esc
     if (state.device !== device) { state.selected.clear(); state.showTotal = true; state.models = []; }
     state.device = device;
     state.controller?.abort(); state.controller = new AbortController();
-    const generation = ++state.generation, now = new Date();
+    const generation = ++state.generation, now = correctedNow();
     state.day = dateKey(now, DASHBOARD_TIMEZONE);
     state.range = timeRange('1', DASHBOARD_TIMEZONE, now);
     state.all = null; state.series.clear(); state.pending.clear(); state.seriesErrors.clear(); state.errors = []; state.loading = true;

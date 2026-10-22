@@ -146,8 +146,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		cleanupState = "failed"
 	}
 	stale := state.LastSuccess.IsZero() || state.LastSuccess.After(now) || now.Sub(state.LastSuccess) > config.StaleAfter
+	var nextCollectionAt *string
+	if collectionState != "disabled" {
+		nextCollectionAt = formatTime(runtime.NextCollectionAt)
+	}
 	writeJSON(w, 200, map[string]any{
 		"version": h.version, "phase": "P6", "collection_state": collectionState, "schema_version": schema,
+		"server_time": now.Format(time.RFC3339Nano), "next_collection_at": nextCollectionAt,
 		"last_successful_sync_at": formatTime(state.LastSuccess), "data_stale": stale, "last_error": optionalString(code),
 		"last_attempt_at": formatTime(state.LastAttempt), "last_clean_shutdown_at": formatTime(state.LastShutdown),
 		"sync_mode": optionalString(state.LastMode), "recovery_reason": optionalString(reason), "retry_not_before": formatTime(state.RetryNotBefore),

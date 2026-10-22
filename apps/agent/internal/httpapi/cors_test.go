@@ -70,8 +70,13 @@ func TestCORSAuthenticationAndErrors(t *testing.T) {
 			if w.Header().Get("Access-Control-Allow-Origin") != "*" || w.Header().Get("Access-Control-Allow-Credentials") != "" {
 				t.Fatal("incorrect CORS headers", w.Header())
 			}
-			if tc.status == 204 && (w.Header().Get("Access-Control-Allow-Methods") != "GET, POST" || !strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "Authorization")) {
-				t.Fatal("missing preflight headers")
+			if tc.status == 204 {
+				if w.Header().Get("Access-Control-Allow-Methods") != "GET, POST" || !strings.Contains(w.Header().Get("Access-Control-Allow-Headers"), "Authorization") {
+					t.Fatal("missing preflight headers")
+				}
+				if w.Header().Get("Access-Control-Max-Age") != "7200" {
+					t.Fatalf("preflight cache: %q", w.Header().Get("Access-Control-Max-Age"))
+				}
 			}
 		})
 	}

@@ -6,6 +6,7 @@ import (
 
 	"bloomer/agent/internal/collector"
 	"bloomer/agent/internal/config"
+	"bloomer/agent/internal/health"
 	"bloomer/agent/internal/retention"
 )
 
@@ -38,6 +39,13 @@ type Scheduler struct {
 	Collector roundWorker
 	Cleaner   cleanupWorker
 	Clock     Clock
+	Runtime   *health.Runtime
+}
+
+func (s Scheduler) scheduleNextCollection(at time.Time) {
+	if s.Runtime != nil {
+		s.Runtime.SetNextCollectionAt(at)
+	}
 }
 
 // Run owns both jobs. At most one task is active; every batch yields to a due
@@ -45,12 +53,14 @@ type Scheduler struct {
 // on systems whose monotonic timers stop during suspend. Missed ticks never queue.
 func (s Scheduler) Run(ctx context.Context) {
 	nextRound := s.Clock.Now().UTC()
+	s.scheduleNextCollection(nextRound)
 	nextCleanup := nextRound
 	observed := nextRound
 	for ctx.Err() == nil {
 		now := s.Clock.Now().UTC()
 		if now.Before(observed) {
 			nextRound = now
+			s.scheduleNextCollection(nextRound)
 			nextCleanup = now
 		}
 		observed = now
@@ -67,6 +77,7 @@ func (s Scheduler) Run(ctx context.Context) {
 			if result.RetryUntil.After(nextRound) {
 				nextRound = result.RetryUntil
 			}
+			s.scheduleNextCollection(nextRound)
 			continue
 		}
 		if !now.Before(nextCleanup) {

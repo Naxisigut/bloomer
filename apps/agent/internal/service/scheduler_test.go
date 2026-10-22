@@ -8,6 +8,7 @@ import (
 
 	"bloomer/agent/internal/collector"
 	"bloomer/agent/internal/config"
+	"bloomer/agent/internal/health"
 	"bloomer/agent/internal/retention"
 )
 
@@ -121,5 +122,51 @@ func TestSchedulerClockRollbackReevaluatesRound(t *testing.T) {
 	scheduler.Run(ctx)
 	if len(starts) != 2 || !starts[1].Before(starts[0]) {
 		t.Fatalf("clock rollback waited for obsolete deadline: %v", starts)
+	}
+}
+
+func TestSchedulerPublishesNextCollectionAt(t *testing.T) {
+	base := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
+	clock := &fakeClock{now: base}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	runtime := health.New()
+	retryUntil := base.Add(125 * time.Second)
+	var rounds int
+	scheduler := Scheduler{Clock: clock, Runtime: runtime}
+	scheduler.Collector = fakeCollector(func(context.Context) (collector.Result, error) {
+		rounds++
+		if rounds == 1 {
+			if !runtime.Snapshot().NextCollectionAt.Equal(base) {
+				t.Fatalf("initial next collection: %v", runtime.Snapshot().NextCollectionAt)
+			}
+			return collector.Result{RetryUntil: retryUntil}, nil
+		}
+		cancel()
+		return collector.Result{}, nil
+	})
+	scheduler.Cleaner = fakeCleaner(func(context.Context) (retention.Result, error) {
+		return retention.Result{NextAt: clock.now.Add(config.CleanupInterval)}, nil
+	})
+	done := make(chan struct{})
+	go func() {
+		scheduler.Run(ctx)
+		close(done)
+	}()
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		if runtime.Snapshot().NextCollectionAt.Equal(retryUntil) {
+			cancel()
+			break
+		}
+		time.Sleep(time.Millisecond)
+	}
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("scheduler did not stop")
+	}
+	if !runtime.Snapshot().NextCollectionAt.Equal(retryUntil) {
+		t.Fatalf("throttled next collection: got %v want %v", runtime.Snapshot().NextCollectionAt, retryUntil)
 	}
 }

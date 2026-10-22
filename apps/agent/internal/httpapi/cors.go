@@ -30,6 +30,7 @@ func cors(w http.ResponseWriter, r *http.Request, id string) bool {
 	}
 	w.Header().Set("Access-Control-Allow-Methods", "GET, POST")
 	w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type, Accept")
+	w.Header().Set("Access-Control-Max-Age", "7200")
 	w.WriteHeader(http.StatusNoContent)
 	return false // Preflight carries no access token and never executes a query/job.
 }

@@ -1,14 +1,18 @@
 // Package health keeps transient activity and write-failure status available to queries.
 package health
 
-import "sync"
+import (
+	"sync"
+	"time"
+)
 
 type Status struct {
-	CollectionState string
-	LastError       string
-	RecoveryReason  string
-	CleanupState    string
-	CleanupError    string
+	CollectionState  string
+	LastError        string
+	RecoveryReason   string
+	CleanupState     string
+	CleanupError     string
+	NextCollectionAt time.Time
 }
 type Runtime struct {
 	mu     sync.RWMutex
@@ -33,6 +37,20 @@ func (r *Runtime) Collection(state, code, reason string) {
 	r.status.CollectionState = state
 	r.status.LastError = code
 	r.status.RecoveryReason = reason
+	if state == "disabled" {
+		r.status.NextCollectionAt = time.Time{}
+	}
+}
+func (r *Runtime) SetNextCollectionAt(t time.Time) {
+	if r == nil || t.IsZero() {
+		return
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.status.CollectionState == "disabled" {
+		return
+	}
+	r.status.NextCollectionAt = t.UTC()
 }
 func (r *Runtime) Cleanup(state, code string) {
 	if r == nil {
