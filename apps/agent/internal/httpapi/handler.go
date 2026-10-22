@@ -17,12 +17,14 @@ import (
 	"bloomer/agent/internal/config"
 	"bloomer/agent/internal/control"
 	"bloomer/agent/internal/health"
+	"bloomer/agent/internal/netrates"
 	"bloomer/agent/internal/store"
 )
 
 type Handler struct {
 	alerts             *alert.Manager
 	control            *control.Manager
+	networkRates       *netrates.Runner
 	store              *store.Store
 	tokenHash          [32]byte
 	version, accountID string
@@ -73,6 +75,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.HasPrefix(r.URL.Path, "/v1/device/control") {
 		h.deviceControl(w, r, requestID)
+		return
+	}
+	if strings.HasPrefix(r.URL.Path, "/v1/device/network-rates") {
+		h.deviceNetworkRates(w, r, requestID)
 		return
 	}
 	if r.URL.Path == "/v1/alerts" || r.URL.Path == "/v1/alerts/test" {

@@ -13,7 +13,7 @@ Agent 每 5 分钟拉取公开 `GET https://api.darkbloom.dev/v1/stats`，只把
 | 开关持久化 | 配置里的 `auto_switch` 只是初始默认值；看板开关写入数据目录私有文件 `network-rates.json`（0600，原子写），立即生效，重启沿用 |
 | 加载模型集合 | 只加载单个目标模型；兜底时只加载 Gemma。「当前模型」= 本机最新设备状态的 `current_model` |
 | 收益口径 | 只按输出 token × 官方输出单价估算，所有模型口径一致，界面标「估算」 |
-| 接近 0 | 所有候选估算都 < $0.01 / 台·小时（`near_zero_micro_usd_per_hour`，默认 10000） |
+| 接近 0 | 所有候选估算都 < $0.001 / 台·小时（`near_zero_micro_usd_per_hour`，默认 1000；线上实测各模型约 $0.004～0.017/h） |
 | 保留 | 差值汇总保留 7 天；切换记录保留最近 200 条 |
 
 ## 数据源
@@ -70,7 +70,7 @@ Agent 每 5 分钟拉取公开 `GET https://api.darkbloom.dev/v1/stats`，只把
     "chip_families": ["M4", "M5", "M6"],
     "memory_gb": 64,
     "min_providers": 3,
-    "near_zero_micro_usd_per_hour": 10000
+    "near_zero_micro_usd_per_hour": 1000
   }
 }
 ```

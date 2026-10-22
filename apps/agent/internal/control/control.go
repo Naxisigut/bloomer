@@ -117,11 +117,54 @@ func (m *Manager) Status() Status {
 	return Status{m.enabled, m.enabled && !m.closed && m.ctx.Err() == nil && !m.unhealthy && m.available(), jobs}
 }
 
+func (m *Manager) LastModelChange() time.Time {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var latest time.Time
+	for _, j := range m.jobs {
+		if j.Action != "switch" && j.Action != "start" {
+			continue
+		}
+		if j.CreatedAt.After(latest) {
+			latest = j.CreatedAt
+		}
+	}
+	return latest
+}
+
+func (m *Manager) Job(id string) (Job, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, j := range m.jobs {
+		if j.ID != id {
+			continue
+		}
+		cp := j
+		cp.Models = append([]string(nil), cp.Models...)
+		return cp, true
+	}
+	return Job{}, false
+}
+
+func (m *Manager) Busy() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for _, j := range m.jobs {
+		if j.Status == "running" {
+			return true
+		}
+	}
+	return false
+}
+
 var modelID = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._/-]{0,199}$`)
 var traversal = regexp.MustCompile(`(^|/)\.\.?(/|$)`)
 var requestID = regexp.MustCompile(`^[A-Za-z0-9_-]{16,80}$`)
 
-func validModel(id string) bool {
+func validModel(id string) bool { return ValidModelID(id) }
+
+// ValidModelID reports whether id satisfies the control allowlist for model identifiers.
+func ValidModelID(id string) bool {
 	return modelID.MatchString(id) && !traversal.MatchString(id)
 }
 func arguments(r Request) ([]string, error) {

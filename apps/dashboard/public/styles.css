@@ -1633,6 +1633,21 @@ dialog input::placeholder {
 #control-confirm-message { line-height:1.8; white-space:pre-line; overflow-wrap:anywhere }
 @media(max-width:700px) { .control-model-grid { grid-template-columns:1fr } .control-content { padding:0 15px 15px } .control-panel .panel-heading { flex-wrap:wrap; gap:12px } }
 
+.network-rates-panel { margin-top:22px }
+.network-rates-content { padding:0 22px 22px }
+.network-rates-toggle { display:flex; align-items:center; gap:10px; font-size:13px; font-weight:600; margin:8px 0 12px }
+.network-rates-toggle input { width:16px; height:16px }
+.network-rates-table-wrap { margin:12px 0 }
+.network-rates-muted td { color:#9aa596 }
+.network-rates-footnote { margin-top:8px }
+.network-rates-switch { border-bottom:1px solid #edf0e8; padding:10px 0; font-size:12px }
+.network-rates-switch summary { cursor:pointer; list-style:none }
+.network-rates-switch summary::-webkit-details-marker { display:none }
+.network-rates-switch-head { display:flex; flex-wrap:wrap; gap:8px 14px; align-items:center }
+.network-rates-summary { margin:10px 0 0; padding-left:18px; color:#7c8b79; line-height:1.7 }
+#network-rates-confirm-message { line-height:1.8; white-space:pre-line; overflow-wrap:anywhere }
+@media(max-width:700px) { .network-rates-content { padding:0 15px 15px } .network-rates-panel .panel-heading { flex-wrap:wrap; gap:12px } }
+
 .alerts-only { padding: 24px; }
 .alert-record > span:first-child { flex: 1; min-width: 220px; }
 .alert-record .alert-body { white-space: pre-line; line-height: 1.7; }

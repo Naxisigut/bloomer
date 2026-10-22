@@ -169,7 +169,7 @@ func TestSchemaTwoUpgradeKeepsEarningsAndBacksUp(t *testing.T) {
 	if len(backups) != 1 {
 		t.Fatal("schema 2 upgrade backup missing")
 	}
-	if v, err := s.SchemaVersion(ctx); err != nil || v != 7 {
+	if v, err := s.SchemaVersion(ctx); err != nil || v != 8 {
 		t.Fatal("schema did not advance", v, err)
 	}
 }

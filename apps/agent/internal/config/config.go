@@ -32,8 +32,9 @@ const (
 func Windows() []int { return []int{50, 100, 300, 1000} }
 
 type Config struct {
-	Alert                  Alert  `json:"alert"`
-	RemoteControlEnabled   bool   `json:"remote_control_enabled"`
+	Alert                  Alert        `json:"alert"`
+	NetworkRates           NetworkRates `json:"network_rates"`
+	RemoteControlEnabled   bool         `json:"remote_control_enabled"`
 	DarkbloomBinary        string `json:"darkbloom_binary"`
 	CollectionEnabled      bool   `json:"collection_enabled"`
 	DeviceStateEnabled     bool   `json:"device_state_enabled"`
@@ -55,6 +56,7 @@ func Defaults() (Config, error) {
 	data := filepath.Join(home, "Library", "Application Support", "Bloomer", "agent")
 	return Config{
 		Alert:                DefaultAlert(filepath.Join(data, "bark.key")),
+		NetworkRates:         DefaultNetworkRates(),
 		RemoteControlEnabled: true,
 		DarkbloomBinary:      filepath.Join(home, ".darkbloom", "bin", "darkbloom"),
 		CollectionEnabled:    true,
@@ -146,6 +148,9 @@ func resolve(p, base string) (string, error) {
 
 func (c Config) Validate() error {
 	if err := c.Alert.Validate(); err != nil {
+		return err
+	}
+	if err := c.NetworkRates.Validate(); err != nil {
 		return err
 	}
 	if c.Alert.Enabled {

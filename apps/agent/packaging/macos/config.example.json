@@ -10,6 +10,19 @@
   "upstream_url": "https://api.darkbloom.dev/v1/provider/account-earnings",
   "upstream_credential_file": "~/.darkbloom/auth_token",
   "access_token_file": "~/Library/Application Support/Bloomer/agent/access.token",
+  "network_rates": {
+    "enabled": true,
+    "interval_minutes": 5,
+    "window_samples": 6,
+    "auto_switch": false,
+    "switch_min_interval_minutes": 30,
+    "switch_advantage_ratio": 0.2,
+    "fallback_model": "gemma-4-26b-qat-4bit",
+    "chip_families": ["M4", "M5", "M6"],
+    "memory_gb": 64,
+    "min_providers": 3,
+    "near_zero_micro_usd_per_hour": 1000
+  },
   "alert": {
     "enabled": false,
     "bark_key_file": "~/Library/Application Support/Bloomer/agent/bark.key",

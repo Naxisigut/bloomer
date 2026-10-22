@@ -4,6 +4,7 @@ import { CursorPager } from './pagination.js';
 import { createDeviceUI } from './device-ui.js';
 import { createAlertUI } from './alert-ui.js';
 import { createControlUI } from './control-ui.js';
+import { createNetworkRatesUI, formatRecommendationTopbar } from './network-rates.js';
 import { DeviceStore } from './connections.js';
 import { createAgentClient } from './agent-client.js';
 import { createHomeRevenueChart } from './home-revenue.js';
@@ -37,6 +38,7 @@ const state = {
   custom: {}, model: '', view: 'overview', data: {}, health: new Map(), page: 0,
   pageSize: Number(preference('pageSize') || 10), pager: null, pageController: null, pendingPage: null,
   generation: 0, busy: false, exporting: false, exportController: null, fetchedAt: null, errors: [], summaryErrors: [], filterErrors: [], range: null, recordsLoaded: false,
+  networkRates: { data: null, error: null, unsupported: false },
 };
 if (!Number.isInteger(state.pageSize) || state.pageSize < 1 || state.pageSize > 500) state.pageSize = 10;
 $('#page-size').value = state.pageSize;
@@ -82,6 +84,7 @@ const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDe
 
 const alertUI = createAlertUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, escape, dateTime });
 const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
+const networkRatesUI = createNetworkRatesUI({ query, submitSettings: (id, auto_switch) => client.submitNetworkRatesSettings(id, auto_switch), selectedDevice, currentView: () => state.view, escape, dateTime });
 
 function resetQuery({ clearModel = false, preserveSummary = false } = {}) {
   state.exportController?.abort();
@@ -136,6 +139,7 @@ function renderDevices() {
   renderHealth();
   deviceUI.render();
   controlUI.render();
+  networkRatesUI.render();
   alertUI.render();
 }
 
@@ -178,6 +182,8 @@ function renderMetrics() {
   $('#last-day-amount').textContent = money(lastDay ? sumMoney(lastDay.items) : null, 4);
   $('#available-balance').textContent = money(overview?.official?.available_balance_micro_usd);
   $$('.summary-amount').forEach(element => { element.title = element.textContent; });
+  $('#network-rates-recommendation').textContent = formatRecommendationTopbar({ rates: state.networkRates.data, unsupported: state.networkRates.unsupported, error: state.networkRates.error });
+  $('#network-rates-recommendation').title = $('#network-rates-recommendation').textContent;
   const start = state.range?.from;
   $('#range-label').textContent = start ? `${dateTime(start, true)} — ${dateTime(new Date(Date.parse(state.range.to) - 1), true)}` : '选择日期';
   syncRecordsPeriodUi();
@@ -222,7 +228,20 @@ function summaryJobs(device = state.selected) {
     ['overview', query('overview', null, device)],
     ['lastHour', query('stats', { ...rollingRange(1, now), ...params }, device)],
     ['lastDay', query('stats', { ...rollingRange(24, now), ...params }, device)],
+    ['networkRates', query('network-rates', null, device)],
   ];
+}
+
+function applyNetworkRatesResult(result) {
+  if (result.status === 'fulfilled') state.networkRates = { data: result.value, error: null, unsupported: false };
+  else {
+    const reason = result.reason;
+    state.networkRates = {
+      data: null,
+      error: reason?.code === 'network_rates_unsupported' ? null : reason?.message || '读取失败',
+      unsupported: reason?.code === 'network_rates_unsupported',
+    };
+  }
 }
 
 async function refreshSummary() {
@@ -232,7 +251,8 @@ async function refreshSummary() {
   state.summaryErrors = [];
   results.forEach((result, index) => {
     const key = jobs[index][0];
-    if (result.status === 'fulfilled') state.data[key] = result.value;
+    if (key === 'networkRates') applyNetworkRatesResult(result);
+    else if (result.status === 'fulfilled') state.data[key] = result.value;
     else { delete state.data[key]; state.summaryErrors.push(result.reason.message); }
   });
   state.errors = [...new Set([...state.summaryErrors, ...state.filterErrors])];
@@ -247,7 +267,8 @@ async function loadSummary({ device = state.selected } = {}) {
   state.summaryErrors = [];
   results.forEach((result, index) => {
     const key = jobs[index][0];
-    if (result.status === 'fulfilled') {
+    if (key === 'networkRates') applyNetworkRatesResult(result);
+    else if (result.status === 'fulfilled') {
       if (key === 'health') state.health.set(device, result.value);
       else state.data[key] = result.value;
     } else {
@@ -335,7 +356,7 @@ function setView(view, { load = true } = {}) {
   const titles = { overview: '首页', analysis: '收益分析', records: '收益明细', devices: '我的设备', alerts: '告警记录' };
   document.title = `Bloomer · ${titles[view]}`;
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); }
+  if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); networkRatesUI.refresh(); }
   if (view === 'alerts') alertUI.refresh();
   if (view === 'overview' && load) homeRevenue.refresh();
   if (view === 'analysis') {
@@ -369,7 +390,7 @@ $('#refresh').addEventListener('click', async () => {
     return;
   }
   if (state.view === 'devices') {
-    deviceUI.refresh(); resetAutoRefreshBackoff(); await checkDevices(); await refreshSummary(); controlUI.refresh(true);
+    deviceUI.refresh(); resetAutoRefreshBackoff(); await checkDevices(); await refreshSummary(); controlUI.refresh(true); networkRatesUI.refresh();
     return;
   }
   if (state.view === 'records') { state.range = timeRange(state.period, DASHBOARD_TIMEZONE, correctedNow(), state.custom); loadRecordsData(); return; }
@@ -560,7 +581,7 @@ async function runAutoRefreshCycle() {
 }
 async function autoRefresh() {
   updateClock();
-  if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open || $('#control-confirm-dialog').open || $('#remove-dialog').open) return;
+  if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open || $('#control-confirm-dialog').open || $('#network-rates-confirm-dialog').open || $('#remove-dialog').open) return;
   if (state.view === 'alerts') { await alertUI.refresh(); return; }
   deviceUI.refresh();
   if (state.view === 'overview') {
@@ -574,7 +595,7 @@ async function autoRefresh() {
     return;
   }
   if (state.view === 'devices') {
-    await checkDevices(); await refreshSummary();
+    await checkDevices(); await refreshSummary(); networkRatesUI.refresh();
     return;
   }
   if (state.view === 'records' && state.page === 0) {

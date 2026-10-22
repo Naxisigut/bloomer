@@ -24,6 +24,10 @@ python3 -m http.server 18080 --bind 127.0.0.1 --directory apps/dashboard/public
 
 在看板“我的设备”页选择真实设备，可远程切换模型、下载模型，以及开启、关闭和重启 Darkbloom。操作以后台任务执行，显示执行结果并保存最近 50 条记录。需要升级设备端 Agent；完整配置、恢复规则与接口见[远程操作说明](docs/remote-control.md)。
 
+## 全网模型收益（估算）
+
+Agent 可估算对照组模型每台每小时收益并给出推荐；可选按规则自动切换模型。看板展示推荐、开关与切换记录。配置与接口见 [全网模型收益说明](docs/network-rates.md)。
+
 ## Bark 设备告警
 
 可在断线、频繁重连、进程停止、模型未就绪或长时间无收益时推送到 iPhone；支持状态未知与恢复通知、网卡绑定、持久化去重和重试。默认关闭，配置和测试见 [Bark 告警说明](docs/alert.md)。看板“告警记录”提供最近 50 条记录和测试推送。
@@ -131,6 +135,7 @@ python3 scripts/smoke-agent.py
 - [DMG 安装与服务管理](docs/install.md)
 - [macOS 下 Tailscale DNS 与 FlClash TUN 共存及撤销](docs/tailscale-dns-with-flclash.md)
 - [Darkbloom 远程操作](docs/remote-control.md)
+- [全网模型收益估算与自动切换](docs/network-rates.md)
 - [共享 OpenAPI 契约](contracts/openapi.yaml)
 
 真实凭证、私有配置、数据库、WAL、备份、日志和构建产物不进入 Git。Agent 的运行目录应位于仓库之外。

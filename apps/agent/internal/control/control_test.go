@@ -203,3 +203,29 @@ func TestModelDiscoveryPreservesLocalWhenCatalogFailsAndStripsPaths(t *testing.T
 		t.Fatal(models, err)
 	}
 }
+
+func TestManagerReadonlyQueries(t *testing.T) {
+	m := manager(t)
+	t0 := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
+	t1 := t0.Add(time.Minute)
+	m.mu.Lock()
+	m.jobs = []Job{
+		{Request: Request{Action: "download"}, ID: "a", Status: "succeeded", CreatedAt: t0},
+		{Request: Request{Action: "switch"}, ID: "b", Status: "running", CreatedAt: t1},
+		{Request: Request{Action: "start"}, ID: "c", Status: "failed", CreatedAt: t0.Add(2 * time.Minute)},
+	}
+	m.mu.Unlock()
+	if !m.Busy() {
+		t.Fatal("expected busy")
+	}
+	if got := m.LastModelChange(); !got.Equal(t0.Add(2 * time.Minute)) {
+		t.Fatal(got)
+	}
+	job, ok := m.Job("b")
+	if !ok || job.ID != "b" || job.Action != "switch" {
+		t.Fatal(job, ok)
+	}
+	if _, ok = m.Job("missing"); ok {
+		t.Fatal("missing job")
+	}
+}

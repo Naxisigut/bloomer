@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"net/url"
 	"time"
 
 	"bloomer/agent/internal/alert"
@@ -18,6 +19,7 @@ import (
 	"bloomer/agent/internal/httpapi"
 	"bloomer/agent/internal/localfs"
 	"bloomer/agent/internal/logging"
+	"bloomer/agent/internal/netrates"
 	"bloomer/agent/internal/retention"
 	"bloomer/agent/internal/store"
 	"bloomer/agent/internal/telemetry"
@@ -94,7 +96,31 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 		defer controls.Close()
 	}
 	alerts := alert.New(db, c.Alert, logger)
-	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls).WithAlerts(alerts)
+	var ratesRunner *netrates.Runner
+	if c.NetworkRates.Enabled {
+		upstream, err := url.Parse(c.UpstreamURL)
+		if err != nil {
+			return fmt.Errorf("upstream url: %w", err)
+		}
+		ratesClient, err := netrates.NewClient("https://"+upstream.Hostname(), nil)
+		if err != nil {
+			return fmt.Errorf("network rates client: %w", err)
+		}
+		ratesSettings := netrates.NewSettings(c.DataDir, c.NetworkRates.AutoSwitch, logger)
+		ratesSettings.Load(clock.Now())
+		currentModel := func(ctx context.Context) (string, bool) {
+			sample, err := db.LatestDeviceSample(ctx)
+			if err != nil || sample == nil || sample.CurrentModel == nil || *sample.CurrentModel == "" {
+				return "", false
+			}
+			if clock.Now().Sub(sample.CollectedAt) > 10*time.Minute {
+				return "", false
+			}
+			return *sample.CurrentModel, true
+		}
+		ratesRunner = netrates.NewRunner(c.NetworkRates, ratesSettings, db, ratesClient, controls, currentModel, clock.Now, logger)
+	}
+	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls).WithAlerts(alerts).WithNetworkRates(ratesRunner)
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError)}
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.Serve(listener) }()
@@ -116,7 +142,17 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 			runDeviceCollection(jobsCtx, sampler, db, clock, logger, alerts.Evaluate)
 		}
 	}()
-	logger.Info("agent started", "version", version, "phase", "P6", "listen", c.Listen, "collection_enabled", c.CollectionEnabled, "device_state_enabled", c.DeviceStateEnabled)
+	networkRatesDone := make(chan struct{})
+	if ratesRunner != nil {
+		logger.Info("network rates collection started", "interval_minutes", c.NetworkRates.IntervalMinutes)
+		go func() {
+			defer close(networkRatesDone)
+			ratesRunner.Run(jobsCtx)
+		}()
+	} else {
+		close(networkRatesDone)
+	}
+	logger.Info("agent started", "version", version, "phase", "P6", "listen", c.Listen, "collection_enabled", c.CollectionEnabled, "device_state_enabled", c.DeviceStateEnabled, "network_rates_enabled", c.NetworkRates.Enabled)
 	select {
 	case <-ctx.Done():
 	case err = <-serverErrors:
@@ -129,6 +165,7 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 	cancelJobs()
 	<-jobsDone
 	<-deviceDone
+	<-networkRatesDone
 	<-alertsDone
 	shutdownCtx, stop := context.WithTimeout(context.Background(), 10*time.Second)
 	defer stop()

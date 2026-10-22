@@ -33,6 +33,7 @@ def main():
             "listen": f"127.0.0.1:{port}",
             "upstream_credential_file": str(root / "nonexistent-official-token"),
             "provider_state_file": str(root / "nonexistent-daemon-state.json"),
+            "network_rates": {"enabled": False},
         }))
         command = [str(binary), "-config", str(config)]
         processes = []
@@ -70,7 +71,7 @@ def main():
             assert health["collection_state"] in {"idle", "collecting", "degraded", "rate_limited"}
             assert health["data_stale"] is True
             assert health["last_successful_sync_at"] is None
-            assert health["schema_version"] == 6
+            assert health["schema_version"] == 8
             return process, token
 
         def timestamp():
@@ -151,11 +152,12 @@ def main():
                 for field in ("cpu_percent", "memory_total_bytes", "memory_available_bytes", "memory_pressure", "swap_used_bytes", "thermal_state", "disk_available_bytes"):
                     assert sample["quality"][field] == "ok", f"host metric unavailable: {field}"
                     assert sample[field] is not None
-            with request(token, "/v1/device/state/history?limit=1") as response:
-                history = json.load(response)
-            assert len(history["items"]) == 1
-            assert history["items"][0]["id"] == sample["id"]
-            assert history["meta"]["sample_interval_seconds"] == 60
+            try:
+                request(token, "/v1/device/state/history?limit=1").close()
+                raise AssertionError("device state history must stay removed")
+            except urllib.error.HTTPError as error:
+                assert error.code == 404
+                error.close()
             duplicate = subprocess.run(command, capture_output=True, timeout=5)
             assert duplicate.returncode != 0 and b"lock" in duplicate.stderr
             stop(first)

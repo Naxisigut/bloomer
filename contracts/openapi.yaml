@@ -212,6 +212,74 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '503':
           $ref: '#/components/responses/Unavailable'
+  /v1/device/network-rates:
+    get:
+      operationId: getNetworkRates
+      summary: Network-wide model earnings estimate and auto-switch gate
+      description: |
+        enabled reflects network_rates.enabled. When disabled, returns enabled false with empty candidates.
+        No query parameters. Bearer authentication required.
+      responses:
+        '200':
+          description: Latest estimate snapshot
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkRatesStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          description: Method not allowed
+  /v1/device/network-rates/settings:
+    post:
+      operationId: setNetworkRatesSettings
+      summary: Enable or disable automatic model switching
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [auto_switch]
+              additionalProperties: false
+              properties:
+                auto_switch:
+                  type: boolean
+      responses:
+        '200':
+          description: Updated status (same shape as GET network-rates)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkRatesStatus'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          description: network_rates_unavailable when feature disabled
+  /v1/device/network-rates/switches:
+    get:
+      operationId: getNetworkRateSwitches
+      summary: Recent automatic model switch records
+      responses:
+        '200':
+          description: Newest first, up to 50 records
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [switches]
+                properties:
+                  switches:
+                    type: array
+                    maxItems: 50
+                    items:
+                      $ref: '#/components/schemas/NetworkRateSwitch'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          description: Method not allowed
   /v1/device/state:
     get:
       operationId: getDeviceState
@@ -1187,6 +1255,132 @@ components:
           type: string
           format: date-time
           description: UTC instant with microsecond precision
+    NetworkRatesStatus:
+      type: object
+      required: [enabled, auto_switch, window_samples, samples, switch, candidates]
+      properties:
+        enabled:
+          type: boolean
+        auto_switch:
+          type: boolean
+        auto_switch_since:
+          type: string
+          format: date-time
+          nullable: true
+        window_samples:
+          type: integer
+        samples:
+          type: integer
+        updated_at:
+          type: string
+          format: date-time
+          nullable: true
+        snapshot_at:
+          type: string
+          format: date-time
+          nullable: true
+        current_model:
+          type: string
+          nullable: true
+        recommendation:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/NetworkRatesRecommendation'
+        candidates:
+          type: array
+          items:
+            $ref: '#/components/schemas/NetworkRatesCandidate'
+        switch:
+          $ref: '#/components/schemas/NetworkRatesSwitchGate'
+        last_error:
+          type: string
+          nullable: true
+          enum: [stats_unavailable, pricing_unavailable, models_unavailable]
+    NetworkRatesRecommendation:
+      type: object
+      required: [model, usd_per_hour_micro, fallback]
+      properties:
+        model:
+          type: string
+        usd_per_hour_micro:
+          type: string
+          pattern: '^-?\d+$'
+        fallback:
+          type: boolean
+    NetworkRatesCandidate:
+      type: object
+      required: [model, downloaded, avg_providers, requests_per_hour, tokens_per_hour, usd_per_hour_micro, price_source, insufficient]
+      properties:
+        model:
+          type: string
+        downloaded:
+          type: boolean
+        avg_providers:
+          type: number
+        requests_per_hour:
+          type: number
+        tokens_per_hour:
+          type: number
+        usd_per_hour_micro:
+          type: string
+          pattern: '^-?\d+$'
+        price_source:
+          type: string
+          enum: [official, fallback]
+        insufficient:
+          type: boolean
+    NetworkRatesSwitchGate:
+      type: object
+      required: [next_eligible_at, blocked_reason, backoff_until]
+      properties:
+        next_eligible_at:
+          type: string
+          format: date-time
+          nullable: true
+        blocked_reason:
+          type: string
+          nullable: true
+        backoff_until:
+          type: string
+          format: date-time
+          nullable: true
+    NetworkRateSwitch:
+      type: object
+      required: [id, at, from_model, to_model, reason, status, error, job_id, summary]
+      properties:
+        id:
+          type: integer
+        at:
+          type: string
+          format: date-time
+        from_model:
+          type: string
+        to_model:
+          type: string
+        reason:
+          type: string
+          enum: [better_model, fallback]
+        status:
+          type: string
+          enum: [running, succeeded, failed, unconfirmed]
+        error:
+          type: string
+          nullable: true
+        job_id:
+          type: string
+        summary:
+          type: array
+          items:
+            type: object
+            required: [model, usd_per_hour_micro, avg_providers]
+            properties:
+              model:
+                type: string
+              usd_per_hour_micro:
+                type: string
+                pattern: '^-?\d+$'
+              avg_providers:
+                type: number
   responses:
     InvalidRequest:
       description: Invalid time range, filter, time zone or cursor

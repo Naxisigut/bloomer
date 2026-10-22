@@ -47,6 +47,7 @@
         <div class="summary-metric"><span class="summary-label">近 1 小时收益</span><strong id="last-hour-amount" class="summary-amount">—</strong></div>
         <div class="summary-metric"><span class="summary-label">近 24 小时收益</span><strong id="last-day-amount" class="summary-amount">—</strong></div>
         <div class="summary-metric"><span class="summary-label">可用余额</span><strong id="available-balance" class="summary-amount">—</strong></div>
+        <div class="summary-metric"><span class="summary-label">推荐模型（估算）</span><strong id="network-rates-recommendation" class="summary-amount">—</strong></div>
       </div>
     </header>
     <main id="main" tabindex="-1" data-view="overview">
@@ -159,6 +160,18 @@
             <button id="control-retry" type="button" class="button button-white" hidden>核对结果并重试提交</button>
           </div>
         </div>
+        <div class="panel network-rates-panel" id="network-rates-panel">
+          <div class="panel-heading"><div><h2>全网模型收益（估算）</h2><p id="network-rates-device-label">当前设备</p></div><button id="network-rates-refresh" type="button" class="button button-white">刷新</button></div>
+          <div class="network-rates-content">
+            <p id="network-rates-message" class="state-message" role="status" hidden></p>
+            <label class="network-rates-toggle"><input id="network-rates-auto-switch" type="checkbox"> 自动切换最优模型</label>
+            <p id="network-rates-status" class="control-note" role="status"></p>
+            <div id="network-rates-candidates"></div>
+            <p class="control-note network-rates-footnote">估算来自同配置机器（M4/M5/M6，64GB）的公开统计差值，仅按输出 token × 官方输出单价计算，不代表本机实际收益。</p>
+            <h3>最近切换</h3>
+            <div id="network-rates-switches" aria-live="polite"></div>
+          </div>
+        </div>
         <div class="panel health-panel"><div class="panel-heading"><div><h2>采集健康</h2><p id="health-device-label">当前选择的设备</p></div><span class="subtle-tag">只读监测</span></div><div id="health-details" class="health-details"></div></div>
       </section>
 
@@ -166,6 +179,9 @@
     </main>
   </div>
 
+  <dialog id="network-rates-confirm-dialog">
+    <form method="dialog"><div class="dialog-header"><h2>确认自动切换设置</h2><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><p id="network-rates-confirm-message"></p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-dark" value="confirm">确认</button></div></form>
+  </dialog>
   <dialog id="control-confirm-dialog">
     <form method="dialog"><div class="dialog-header"><h2>确认远程操作</h2><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><p id="control-confirm-message"></p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-dark" value="confirm" id="control-confirm-submit">确认执行</button></div></form>
   </dialog>
