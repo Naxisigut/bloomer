@@ -1,4 +1,5 @@
-import { DASHBOARD_TIMEZONE, money, sumMoney, sumCount, timeRange, rollingRange, dateKey, shiftDate, zonedMidnight, trendGroups, csvRows } from './data.js';
+import { DASHBOARD_TIMEZONE, money, sumMoney, sumCount, timeRange, rollingRange, dateKey, csvRows } from './data.js';
+import { createAnalysisPage } from './analysis-page.js';
 import { CursorPager } from './pagination.js';
 import { createDeviceUI } from './device-ui.js';
 import { createAlertUI } from './alert-ui.js';
@@ -34,51 +35,17 @@ const connections = new DeviceStore();
 const client = createAgentClient(connections);
 const state = {
   devices: [], selected: null, period: '1',
-  custom: {}, model: '', trendGroup: 'day', view: 'overview', data: {}, health: new Map(), page: 0,
+  custom: {}, model: '', view: 'overview', data: {}, health: new Map(), page: 0,
   pageSize: Number(preference('pageSize') || 10), pager: null, pageController: null, pendingPage: null,
-  generation: 0, busy: false, exporting: false, exportController: null, fetchedAt: null, errors: [], summaryErrors: [], filterErrors: [], range: null,
+  generation: 0, busy: false, exporting: false, exportController: null, fetchedAt: null, errors: [], summaryErrors: [], filterErrors: [], range: null, recordsLoaded: false,
 };
-const earningsViews = new Map();
-let earningsView = 'analysis';
-const earningsFilterKeys = ['period', 'custom', 'model', 'trendGroup', 'range', 'page', 'pager', 'fetchedAt', 'filterErrors'];
-
-function activateEarningsView(view) {
-  if (view === earningsView) return false;
-  const { trend, models, earnings, overview, lastHour, lastDay } = state.data;
-  earningsViews.set(earningsView, {
-    filters: Object.fromEntries(earningsFilterKeys.map(key => [key, state[key]])),
-    data: { trend, models, earnings }, device: state.selected, needsLoad: state.busy || !earnings,
-  });
-  // In-flight responses for the previous menu must never replace this menu's data.
-  state.generation++;
-  state.pageController?.abort(); state.exportController?.abort();
-  state.pageController = null; state.pendingPage = null; state.busy = false;
-  $('#trend-chart').setAttribute('aria-busy', 'false');
-  const saved = earningsViews.get(view);
-  Object.assign(state, saved?.filters || {
-    period: '1', custom: {}, model: '', trendGroup: 'day', range: null,
-    page: 0, pager: null, fetchedAt: null, filterErrors: [],
-  });
-  const sameDevice = saved?.device === state.selected;
-  if (!sameDevice) { state.model = ''; state.page = 0; state.pager = null; state.filterErrors = []; }
-  state.range ||= timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom);
-  state.data = { overview, lastHour, lastDay, ...(sameDevice ? saved.data : {}) };
-  state.errors = [...new Set([...state.summaryErrors, ...state.filterErrors])];
-  earningsView = view;
-  $('#period-select').value = state.period;
-  $$('[data-period]').forEach(button => {
-    const selected = button.dataset.period === state.period;
-    button.classList.toggle('selected', selected); button.setAttribute('aria-pressed', String(selected));
-  });
-  $('#date-form').hidden = true; $('#date-error').textContent = ''; $('#export-status').hidden = true;
-  return !sameDevice || saved.needsLoad;
-}
 if (!Number.isInteger(state.pageSize) || state.pageSize < 1 || state.pageSize > 500) state.pageSize = 10;
 $('#page-size').value = state.pageSize;
 const demoDevice = { id: 'demo', name: '演示设备', url: '演示数据', source: 'demo' };
 const selectedDevice = () => state.selected === 'demo' ? demoDevice : state.devices.find(device => device.id === state.selected);
 const deviceChoices = () => [...state.devices, demoDevice];
 let toastTimer;
+let autoRefreshTimer = null, autoRefreshFailStreak = 0, nextAutoRefreshAt = null;
 function toast(message) { $('#toast').textContent = message; $('#toast').hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('#toast').hidden = true; }, 4200); }
 function dateTime(value, short = false) {
   if (!value) return '尚无记录';
@@ -103,6 +70,15 @@ async function fetchHealth(id) {
   return enrichHealthTiming(value, started, Date.now());
 }
 const homeRevenue = createHomeRevenueChart({ query, selectedDevice, currentView: () => state.view, escape, correctedNow: () => correctedNow() });
+function syncSelectedDevice(id) {
+  try { connections.select(id); } catch (error) { toast(error.message); return; }
+  state.selected = id;
+  analysisPage.onGlobalDeviceChange(id);
+  renderDevices();
+}
+const analysisPage = createAnalysisPage({
+  query, deviceChoices, syncDevice: syncSelectedDevice, escape, correctedNow, currentView: () => state.view,
+});
 const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, dateTime, escape, preference, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
 
 const alertUI = createAlertUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, escape, dateTime });
@@ -126,16 +102,11 @@ function renderModelFilters() {
   $$('[data-model-filter]').forEach(select => { select.innerHTML = options; select.disabled = state.busy; });
 }
 
-function syncTrendGrouping() {
-  const groups = trendGroups(state.range, DASHBOARD_TIMEZONE);
-  if (!groups.includes(state.trendGroup)) state.trendGroup = groups[0];
-  $('#trend-grouping').hidden = groups.length === 1;
-  $('#chart-grain').textContent = ({ hour: '按小时', day: '按天', month: '按月' })[state.trendGroup];
-  $$('[data-group]').forEach(button => {
-    const selected = button.dataset.group === state.trendGroup;
+function syncRecordsPeriodUi() {
+  $$('#records-period [data-period]').forEach(button => {
+    const selected = button.dataset.period === state.period;
     button.classList.toggle('selected', selected);
     button.setAttribute('aria-pressed', String(selected));
-    button.disabled = state.busy;
   });
 }
 
@@ -203,97 +174,14 @@ function renderAlerts() {
 }
 
 function renderMetrics() {
-  const { trend, lastHour, lastDay, overview } = state.data;
-  const amount = trend ? sumMoney(trend.items) : null;
+  const { lastHour, lastDay, overview } = state.data;
   $('#last-hour-amount').textContent = money(lastHour ? sumMoney(lastHour.items) : null, 4);
   $('#last-day-amount').textContent = money(lastDay ? sumMoney(lastDay.items) : null, 4);
   $('#available-balance').textContent = money(overview?.official?.available_balance_micro_usd);
   $$('.summary-amount').forEach(element => { element.title = element.textContent; });
-  $('#chart-total').textContent = money(amount);
-  syncTrendGrouping();
   const start = state.range?.from;
   $('#range-label').textContent = start ? `${dateTime(start, true)} — ${dateTime(new Date(Date.parse(state.range.to) - 1), true)}` : '选择日期';
-}
-
-function renderTrend() {
-  if (state.view !== 'analysis') return;
-  const items = state.data.trend?.items;
-  if (!items?.length) { $('#trend-chart').innerHTML = `<div class="empty-state">${items ? '暂无收益记录' : state.busy ? '正在读取收益趋势…' : '趋势数据不可用'}</div>`; return; }
-  const hourFormatter = new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
-  const pointLabel = item => state.trendGroup === 'hour' ? hourFormatter.format(new Date(item.from)) : item.key;
-  const width = $('#trend-chart').clientWidth || 720, height = $('#trend-chart').clientHeight || 220;
-  const left = 47, right = 8, top = 10, bottom = 27;
-  const plotWidth = width - left - right, plotHeight = height - top - bottom;
-  // Exact integer sums are kept above. Conversion is only used for SVG geometry.
-  const values = items.map(item => Number(BigInt(item.amount_micro_usd)) / 1e6);
-  const min = Math.min(0, ...values), max = Math.max(0, ...values);
-  const low = min < 0 ? min * 1.15 : 0, high = max > 0 ? max * 1.15 : 1;
-  const y = value => top + (high - value) / (high - low) * plotHeight;
-  const from = Date.parse(state.range.from), to = Date.parse(state.range.to);
-  let svg = '';
-  for (let step = 0; step <= 4; step++) {
-    const value = low + (high - low) * step / 4;
-    const label = `$${Math.abs(value) >= 1000 ? (value / 1000).toFixed(1) + 'k' : value.toFixed(Math.abs(value) < 1 ? 2 : 0)}`;
-    svg += `<line class="chart-grid" x1="${left}" x2="${width - right}" y1="${y(value)}" y2="${y(value)}"/><text class="chart-label" x="${left - 10}" y="${y(value) + 3}" text-anchor="end">${escape(label)}</text>`;
-  }
-  svg += `<defs><clipPath id="chart-clip"><rect x="${left}" y="0" width="${plotWidth}" height="${height - bottom}"/></clipPath></defs><g clip-path="url(#chart-clip)">`;
-  items.forEach((item, index) => {
-    const start = Math.max(from, Date.parse(item.from)), end = Math.min(to, Date.parse(item.to));
-    const timestamp = (start + end) / 2;
-    const barWidth = Math.min(28, Math.max(1, (end - start) / (to - from) * plotWidth * 0.65));
-    const x = left + (timestamp - from) / (to - from) * plotWidth - barWidth / 2;
-    const value = values[index];
-    const title = `${pointLabel(item)} · ${money(item.amount_micro_usd, 4)}`;
-    svg += `<rect class="chart-bar" data-point="${index}" tabindex="0" role="img" aria-label="${escape(title)}" x="${x}" y="${Math.min(y(value), y(0))}" width="${barWidth}" height="${Math.max(1, Math.abs(y(value) - y(0)))}" rx="2"></rect>`;
-  });
-  svg += '</g>';
-  const ticks = trendTicks(from, to, Math.max(2, Math.floor(plotWidth / (state.trendGroup === 'month' ? 80 : 48))));
-  ticks.forEach((tick, index) => {
-    const x = left + (tick.instant - from) / (to - from) * plotWidth;
-    svg += `<text class="chart-label" x="${x}" y="${height - 5}" text-anchor="${index === 0 ? 'start' : index === ticks.length - 1 ? 'end' : 'middle'}">${escape(tick.label)}</text>`;
-  });
-  $('#trend-chart').innerHTML = `<svg viewBox="0 0 ${width} ${height}" role="group" aria-label="收益趋势，空白区间没有已保存记录">${svg}</svg><div class="chart-tooltip" hidden></div>`;
-  const showTooltip = event => {
-    const bar = event.target.closest('[data-point]');
-    if (!bar) return;
-    const item = items[Number(bar.dataset.point)];
-    const tooltip = $('#trend-chart .chart-tooltip');
-    tooltip.innerHTML = `${escape(pointLabel(item))}<strong>${escape(money(item.amount_micro_usd, 4))}</strong>`;
-    tooltip.hidden = false;
-    const chart = $('#trend-chart'), bounds = chart.getBoundingClientRect(), barBounds = bar.getBoundingClientRect();
-    const gap = 8, tooltipWidth = tooltip.offsetWidth, tooltipHeight = tooltip.offsetHeight;
-    let x = barBounds.left - bounds.left + barBounds.width / 2 - tooltipWidth / 2;
-    let y = barBounds.top - bounds.top - tooltipHeight - gap;
-    // Tall bars leave no room above; place the label beside the bar instead.
-    if (y < gap) {
-      x = barBounds.right - bounds.left + gap;
-      if (x + tooltipWidth > chart.clientWidth - gap) x = barBounds.left - bounds.left - tooltipWidth - gap;
-      y = barBounds.top - bounds.top;
-    }
-    tooltip.style.left = `${Math.max(gap, Math.min(x, chart.clientWidth - tooltipWidth - gap))}px`;
-    tooltip.style.top = `${Math.max(gap, Math.min(y, chart.clientHeight - tooltipHeight - gap))}px`;
-  };
-  $('#trend-chart').onpointerover = showTooltip;
-  const hideTooltip = () => { const tooltip = $('#trend-chart .chart-tooltip'); if (tooltip) tooltip.hidden = true; };
-  $('#trend-chart').onpointerleave = hideTooltip;
-  $('#trend-chart').onpointerout = event => { if (event.target.closest('[data-point]')) hideTooltip(); };
-  $$('#trend-chart [data-point]').forEach(bar => { bar.onfocus = showTooltip; bar.onblur = hideTooltip; });
-}
-
-function trendTicks(from, to, maxTicks) {
-  const group = state.trendGroup, ticks = [];
-  let start = group === 'month' ? +zonedMidnight(dateKey(from, DASHBOARD_TIMEZONE).slice(0, 7) + '-01', DASHBOARD_TIMEZONE) : from;
-  const formatter = new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, ...(group === 'hour' ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' } : group === 'month' ? { year: 'numeric', month: '2-digit' } : { month: '2-digit', day: '2-digit' }) });
-  while (start < to) {
-    const date = dateKey(start, DASHBOARD_TIMEZONE);
-    const nextMonth = new Date(`${date.slice(0, 7)}-01T12:00:00Z`);
-    nextMonth.setUTCMonth(nextMonth.getUTCMonth() + 1);
-    const end = group === 'hour' ? start + 3_600_000 : +zonedMidnight(group === 'month' ? nextMonth.toISOString().slice(0, 10) : shiftDate(date, 1), DASHBOARD_TIMEZONE);
-    ticks.push({ instant: (Math.max(from, start) + Math.min(to, end)) / 2, label: formatter.format(new Date(start)) });
-    start = end;
-  }
-  const count = Math.min(6, maxTicks, ticks.length);
-  return Array.from({ length: count }, (_, index) => ticks[count === 1 ? 0 : Math.round(index * (ticks.length - 1) / (count - 1))]);
+  syncRecordsPeriodUi();
 }
 
 function renderRecords() {
@@ -327,7 +215,7 @@ function renderRecords() {
   $('#export-csv').disabled = state.busy || state.exporting || !page?.items.length;
 }
 
-function renderAll() { renderDevices(); renderMetrics(); renderTrend(); renderRecords(); renderAlerts(); homeRevenue.render(); }
+function renderAll() { renderDevices(); renderMetrics(); renderRecords(); renderAlerts(); homeRevenue.render(); }
 
 function summaryJobs(device = state.selected) {
   const now = correctedNow(device), params = { group_by: 'day', timezone: DASHBOARD_TIMEZONE };
@@ -352,54 +240,70 @@ async function refreshSummary() {
   renderMetrics(); renderAlerts();
 }
 
-async function loadData({ reset = false, clearModel = false, filtersOnly = false } = {}) {
-  if (!filtersOnly) deviceUI.refresh();
-  if (!filtersOnly && state.view === 'overview') homeRevenue.refresh();
+async function loadSummary({ device = state.selected } = {}) {
+  const generation = state.generation;
+  const jobs = [['health', fetchHealth(device)], ...summaryJobs(device)];
+  const results = await Promise.allSettled(jobs.map(([, promise]) => promise));
+  if (generation !== state.generation || device !== state.selected) return;
+  state.summaryErrors = [];
+  results.forEach((result, index) => {
+    const key = jobs[index][0];
+    if (result.status === 'fulfilled') {
+      if (key === 'health') state.health.set(device, result.value);
+      else state.data[key] = result.value;
+    } else {
+      if (key === 'health') state.health.set(device, { error: result.reason.message });
+      else { delete state.data[key]; state.summaryErrors.push(result.reason.message); }
+    }
+  });
+  state.errors = [...new Set([...state.summaryErrors, ...state.filterErrors])];
+  renderMetrics(); renderAlerts();
+}
+
+async function loadRecordsData({ reset = false, clearModel = false } = {}) {
+  deviceUI.refresh();
   state.pageController?.abort();
   state.pageController = null; state.pendingPage = null;
   const generation = ++state.generation;
-  // An early filter change must still finish the device's first summary load.
-  filtersOnly = filtersOnly && ['overview', 'lastHour', 'lastDay'].some(key => state.data[key]);
   state.busy = true;
-  if (reset) { resetQuery({ clearModel, preserveSummary: filtersOnly }); renderAll(); }
+  if (reset) {
+    resetQuery({ clearModel, preserveSummary: true });
+    renderAll();
+  }
   state.page = 0;
   renderRecords();
-  syncTrendGrouping();
-  $('#trend-chart').setAttribute('aria-busy', 'true');
   const params = { ...state.range, ...(state.model ? { model: state.model } : {}) };
   const device = state.selected;
   const pager = new CursorPager(({ limit, cursor, signal }) => query('earnings', { ...params, limit, ...(cursor ? { cursor } : {}) }, device, signal));
   state.pager = pager;
   const jobs = [
-    ...(!filtersOnly ? [
-      ['health', fetchHealth(device)], ...summaryJobs(device),
-    ] : []),
-    ['trend', query('stats', { ...params, group_by: state.trendGroup, timezone: DASHBOARD_TIMEZONE })],
+    ['trend', query('stats', { ...params, group_by: 'day', timezone: DASHBOARD_TIMEZONE })],
     ['models', query('stats', { ...state.range, group_by: 'model', timezone: DASHBOARD_TIMEZONE })],
     ['earnings', pager.page(0, state.pageSize)],
   ];
   const results = await Promise.allSettled(jobs.map(([, promise]) => promise));
   if (generation !== state.generation) return;
   const errors = [];
-  if (!filtersOnly) state.summaryErrors = [];
   results.forEach((result, index) => {
     const key = jobs[index][0];
-    if (result.status === 'fulfilled') {
-      if (key === 'health') state.health.set(state.selected, result.value);
-      else state.data[key] = result.value;
-    } else {
-      if (key === 'health') state.health.set(state.selected, { error: result.reason.message });
-      else {
-        delete state.data[key];
-        (['overview', 'lastHour', 'lastDay'].includes(key) ? state.summaryErrors : errors).push(result.reason.message);
-      }
-    }
+    if (result.status === 'fulfilled') state.data[key] = result.value;
+    else { delete state.data[key]; errors.push(result.reason.message); }
   });
   state.filterErrors = errors;
   state.errors = [...new Set([...state.summaryErrors, ...state.filterErrors])];
   state.busy = false;
-  $('#trend-chart').setAttribute('aria-busy', 'false');
+  state.recordsLoaded = true;
   if (results.some(result => result.status === 'fulfilled')) state.fetchedAt = new Date();
+  renderRecords(); renderAlerts(); updateClock();
+}
+
+async function loadData({ reset = false, clearModel = false } = {}) {
+  if (state.view === 'analysis') return;
+  deviceUI.refresh();
+  if (state.view === 'overview') homeRevenue.refresh();
+  await loadSummary();
+  if (state.view === 'records') await loadRecordsData({ reset, clearModel });
+  else if (reset) resetQuery({ clearModel, preserveSummary: true });
   renderAll(); updateClock();
 }
 
@@ -429,21 +333,21 @@ function setView(view, { load = true } = {}) {
   const changed = state.view !== view;
   if (state.view === 'query' && view !== 'query') deviceUI.leaveQuery();
   state.view = view; $('#main').dataset.view = view;
-  const needsLoad = ['analysis', 'records'].includes(view) && activateEarningsView(view);
   $('#overview-topbar').hidden = view !== 'overview';
   const titles = { overview: '首页', analysis: '收益分析', records: '收益明细', devices: '我的设备', query: '数据查询', alerts: '告警记录' };
-  const slot = $(view === 'records' ? '#records-filters-slot' : '#trend-filters-slot');
-  if ($('#earnings-filters').parentElement !== slot) slot.append($('#earnings-filters'));
   document.title = `Bloomer · ${titles[view]}`;
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); }
   if (view === 'alerts') alertUI.refresh();
   if (view === 'query') deviceUI.enterQuery();
   if (view === 'overview' && load) homeRevenue.refresh();
-  if (view === 'analysis' || view === 'records') {
+  if (view === 'analysis') {
+    analysisPage.onEnter(state.selected);
+    renderAlerts();
+  } else if (view === 'records') {
     renderAll();
-    if (needsLoad && load) loadData({ reset: true, filtersOnly: true });
-  }
+    if (load && (!state.recordsLoaded || changed)) loadRecordsData({ reset: !state.recordsLoaded });
+  } else renderAll();
   renderAlerts(); updateClock();
   history.replaceState(null, '', `#${view}`);
   if (changed) window.scrollTo({ top: 0, behavior: 'auto' });
@@ -451,7 +355,12 @@ function setView(view, { load = true } = {}) {
 
 async function selectDevice(id) {
   try { connections.select(id); } catch (error) { toast(error.message); }
-  state.selected = id; await loadData({ reset: true, clearModel: true }); await alertUI.refreshIfVisible();
+  state.selected = id;
+  state.recordsLoaded = false;
+  analysisPage.onGlobalDeviceChange(id);
+  if (state.view === 'analysis') { renderDevices(); await alertUI.refreshIfVisible(); return; }
+  await loadData({ reset: true, clearModel: true });
+  await alertUI.refreshIfVisible();
 }
 $$('.nav-item').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
 $('#device-select').addEventListener('change', event => selectDevice(event.target.value));
@@ -467,23 +376,16 @@ $('#refresh').addEventListener('click', async () => {
     deviceUI.refresh(); resetAutoRefreshBackoff(); await checkDevices(); await refreshSummary(); controlUI.refresh(true);
     return;
   }
-  state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData();
+  if (state.view === 'records') { state.range = timeRange(state.period, DASHBOARD_TIMEZONE, correctedNow(), state.custom); loadRecordsData(); return; }
+  loadData();
 });
 function selectPeriod(period) {
   state.period = period;
-  $('#period-select').value = period;
-  $$('[data-period]').forEach(button => { const selected = button.dataset.period === period; button.classList.toggle('selected', selected); button.setAttribute('aria-pressed', String(selected)); });
-  $('#date-form').hidden = true; loadData({ reset: true, filtersOnly: true });
+  syncRecordsPeriodUi();
+  $('#date-form').hidden = true;
+  loadRecordsData({ reset: true });
 }
-$('#period-select').addEventListener('change', event => selectPeriod(event.target.value));
-$$('[data-period]').forEach(button => button.addEventListener('click', () => selectPeriod(button.dataset.period)));
-$$('[data-group]').forEach(button => button.addEventListener('click', () => {
-  const group = button.dataset.group;
-  if (state.busy || state.trendGroup === group || !trendGroups(state.range, DASHBOARD_TIMEZONE).includes(group)) return;
-  state.trendGroup = group;
-  delete state.data.trend;
-  loadData({ filtersOnly: true }); renderMetrics(); renderTrend();
-}));
+$$('#records-period [data-period]').forEach(button => button.addEventListener('click', () => selectPeriod(button.dataset.period)));
 $('#custom-range').addEventListener('click', () => {
   const form = $('#date-form'); form.hidden = !form.hidden;
   form.elements.from.value = state.custom.from || dateKey(state.range.from, DASHBOARD_TIMEZONE);
@@ -499,12 +401,12 @@ $('#date-form').addEventListener('submit', event => {
   state.period = 'custom'; state.custom = custom;
   $('#period-select').value = 'custom';
   $$('[data-period]').forEach(button => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); });
-  form.hidden = true; loadData({ reset: true, filtersOnly: true });
+  form.hidden = true; loadRecordsData({ reset: true });
 });
 $$('[data-model-filter]').forEach(select => select.addEventListener('change', event => {
   state.exportController?.abort(); state.model = event.target.value;
   for (const key of ['earnings', 'trend']) delete state.data[key];
-  loadData({ filtersOnly: true }); renderMetrics(); renderTrend();
+  loadRecordsData({ reset: true });
 }));
 
 async function pageTo(index) {
@@ -541,7 +443,7 @@ $('#page-size-form').addEventListener('submit', event => {
   if (size === state.pageSize) return;
   state.exportController?.abort();
   state.pageSize = size; preference('pageSize', size);
-  state.data.earnings = null; loadData();
+  state.data.earnings = null; loadRecordsData({ reset: true });
 });
 $('#cancel-page').addEventListener('click', () => state.pageController?.abort());
 
@@ -645,7 +547,6 @@ try {
   await loadData();
   scheduleAutoRefresh(nextAutoRefreshDelayMs({ health: state.health.get(state.selected), failStreak: 0 }));
 } catch (error) { $('#alerts').innerHTML = `<div class="alert error">${escape(error.message)}</div>`; }
-let autoRefreshTimer = null, autoRefreshFailStreak = 0, nextAutoRefreshAt = null;
 function resetAutoRefreshBackoff() { autoRefreshFailStreak = 0; }
 function scheduleAutoRefresh(delayMs) {
   if (autoRefreshTimer) clearTimeout(autoRefreshTimer);
@@ -679,10 +580,12 @@ async function autoRefresh() {
     await checkDevices(); await refreshSummary();
     return;
   }
-  if (state.view === 'analysis' || state.page === 0) {
-    state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData();
+  if (state.view === 'records' && state.page === 0) {
+    state.range = timeRange(state.period, DASHBOARD_TIMEZONE, correctedNow(), state.custom);
+    loadRecordsData();
     return;
   }
+  if (state.view === 'analysis') return;
   await checkCurrentDevice(); await refreshSummary();
 }
 document.addEventListener('visibilitychange', () => {
@@ -691,4 +594,3 @@ document.addEventListener('visibilitychange', () => {
   autoRefreshTimer = null;
   runAutoRefreshCycle();
 });
-new ResizeObserver(() => renderTrend()).observe($('#trend-chart'));

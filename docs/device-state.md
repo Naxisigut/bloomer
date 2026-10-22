@@ -89,6 +89,19 @@ ORDER BY collected_at_us, id;
 
 历史翻页使用返回的 `next_before_id`，同时沿用首个响应 meta.effective_from / effective_to 作为 from / to。null 表示末页。缺失的时间段保持空白，不自动补零；较早范围以 range_truncated 标注。
 
+### 收益分析（本机口径）
+
+`GET /v1/earnings/analysis` 供看板「收益分析」页一次查询返回趋势、模型占比、时段与星期×小时等聚合。只统计 `device_provider_ids` 中已确认属于本机的 Provider ID 对应的收益行，不包含账户内其他设备的记录；尚未写入任何已确认 Provider ID 时返回 **409**、`device_identity_unavailable`，不回退为账户全体收益。
+
+| 参数 | 说明 |
+| --- | --- |
+| `from` / `to` | RFC3339 UTC 半开区间，**必填**；跨度 ≤ 366 天，并受 365 天保留期截取（`meta.range_truncated`） |
+| `timezone` | IANA 时区，**必填** |
+| `granularity` | `hour` / `day` / `month`，默认 `day`；`hour` 时跨度 ≤ 31 天 |
+| `model` | 可重复 0～8 次、不可重复；省略表示全部模型 |
+
+响应含 `timezone`、`granularity`、有效 `from`/`to`（UTC RFC3339Nano）、`totals`、`models`、`series`、`hour_of_day`、`weekday_hour` 与与其他查询接口相同的 `meta`。`models` 列出范围内本机全部模型（**不受** `model` 筛选影响），按金额降序，含 `active_buckets`（该模型在所选粒度下有收益的分桶数）。`totals`、`series`、`hour_of_day`、`weekday_hour` 受 `model` 筛选影响；`weekday_hour` 为所选模型合计，`weekday` 1=周一 … 7=周日（按请求时区）。`series` 仅含有数据的分桶，空数组为 `[]`。金额均为微美元整数字符串；分组过多返回 422，其余错误映射与 `/v1/earnings/stats` 一致。
+
 ## 已核验来源与验证
 
 官方 [DaemonStateFile.swift](https://github.com/Layr-Labs/d-inference/blob/master/provider-swift/Sources/ProviderCore/Service/DaemonStateFile.swift)定义 snake_case 状态文件字段与 PID 身份；本机已只读核验 schema 1 字段结构。实际设备版本缺少字段时保留未知。

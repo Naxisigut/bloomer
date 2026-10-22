@@ -2,8 +2,10 @@ import { AppError } from './errors.js';
 import { validateDevice, parseConnections } from './connections.js';
 import { demoQuery } from './demo.js';
 
-const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', 'device-state': '/v1/device/state', 'device-history': '/v1/device/state/history', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs' };
+const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', 'device-history': '/v1/device/state/history', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs' };
 const messages = {
+  analysis_unsupported: '该设备 Agent 尚不支持收益分析，请升级 Agent。',
+  device_identity_unavailable: '设备身份尚未识别，暂时无法统计本机收益。',
   alerts_disabled: '该设备尚未开启 Bark 告警，请先在设备端配置并重启 Agent。',
   alerts_unsupported: '该设备 Agent 尚不支持告警记录，请升级 Agent。',
   control_disabled: '该设备已关闭远程操作，请在设备端配置中开启。',
@@ -34,6 +36,17 @@ function validateResponse(route, body, operation) {
   if (route === 'overview' && !(body.official === null || object(body.official))) throw invalidResponse();
   if (route === 'earnings' && (!items() || body.items.length > 500 || !(body.next_cursor == null || typeof body.next_cursor === 'string') || body.items.some(item => typeof item.record_id !== 'string' || typeof item.model !== 'string' || (typeof item.amount_micro_usd !== 'string' || !/^-?\d+$/.test(item.amount_micro_usd)) || !Number.isFinite(Date.parse(item.created_at))))) throw invalidResponse();
   if (route === 'stats' && (!items() || body.items.some(item => typeof item.key !== 'string' || (typeof item.amount_micro_usd !== 'string' || !/^-?\d+$/.test(item.amount_micro_usd)) || !Number.isSafeInteger(item.record_count) || item.record_count < 0))) throw invalidResponse();
+  if (route === 'analysis') {
+    if (!['hour', 'day', 'month'].includes(body.granularity) || typeof body.timezone !== 'string' || !Number.isFinite(Date.parse(body.from)) || !Number.isFinite(Date.parse(body.to))) throw invalidResponse();
+    const amount = value => typeof value === 'string' && /^-?\d+$/.test(value);
+    const row = item => object(item) && typeof item.model === 'string' && amount(item.amount_micro_usd) && Number.isSafeInteger(item.record_count) && item.record_count >= 0;
+    if (!amount(body.totals?.amount_micro_usd) || !Number.isSafeInteger(body.totals?.record_count) || body.totals.record_count < 0) throw invalidResponse();
+    if (!Array.isArray(body.models) || body.models.some(item => !row(item) || !Number.isSafeInteger(item.active_buckets) || item.active_buckets < 0)) throw invalidResponse();
+    if (!Array.isArray(body.series) || body.series.some(bucket => !object(bucket) || !Number.isFinite(Date.parse(bucket.from)) || !Number.isFinite(Date.parse(bucket.to)) || !Array.isArray(bucket.items) || bucket.items.some(item => !row(item)))) throw invalidResponse();
+    if (!Array.isArray(body.hour_of_day) || body.hour_of_day.some(item => !row(item) || !Number.isInteger(item.hour) || item.hour < 0 || item.hour > 23)) throw invalidResponse();
+    const weekdayRow = item => object(item) && amount(item.amount_micro_usd) && Number.isSafeInteger(item.record_count) && item.record_count >= 0 && Number.isInteger(item.weekday) && item.weekday >= 1 && item.weekday <= 7 && Number.isInteger(item.hour) && item.hour >= 0 && item.hour <= 23;
+    if (!Array.isArray(body.weekday_hour) || body.weekday_hour.some(item => !weekdayRow(item))) throw invalidResponse();
+  }
   if (route === 'device-state' && !(body.sample === null || object(body.sample))) throw invalidResponse();
   if (route === 'device-history' && (!items() || body.items.length > 500)) throw invalidResponse();
   if (route === 'control' && (typeof body.available !== 'boolean' || typeof body.enabled !== 'boolean' || !Array.isArray(body.jobs))) throw invalidResponse();
@@ -45,10 +58,14 @@ function validateResponse(route, body, operation) {
 export async function queryAgent(device, route, params = new URLSearchParams(), { fetcher = fetch, signal, timeoutMs = 12_000 } = {}, operation = null) {
   if (!Object.hasOwn(routes, route)) throw new AppError(404, 'not_found', '接口不存在。');
   const url = new URL(routes[route], device.url);
-  const allowed = route === 'earnings' ? ['from', 'to', 'model', 'limit', 'cursor'] : route === 'stats' ? ['from', 'to', 'model', 'group_by', 'timezone'] : route === 'device-history' ? ['from', 'to', 'limit', 'before_id'] : [];
-  for (const [key, value] of params) {
-    if (!allowed.includes(key) || params.getAll(key).length !== 1) throw new AppError(400, 'invalid_request', '查询参数无效。');
-    url.searchParams.set(key, value);
+  const allowed = route === 'earnings' ? ['from', 'to', 'model', 'limit', 'cursor'] : route === 'stats' ? ['from', 'to', 'model', 'group_by', 'timezone'] : route === 'analysis' ? ['from', 'to', 'timezone', 'granularity', 'model'] : route === 'device-history' ? ['from', 'to', 'limit', 'before_id'] : [];
+  const search = params instanceof URLSearchParams ? params : new URLSearchParams(params || undefined);
+  for (const key of new Set(search.keys())) {
+    if (!allowed.includes(key)) throw new AppError(400, 'invalid_request', '查询参数无效。');
+    const values = search.getAll(key);
+    if (key !== 'model' && values.length !== 1) throw new AppError(400, 'invalid_request', '查询参数无效。');
+    if (key === 'model' && values.length > 8) throw new AppError(400, 'invalid_request', '查询参数无效。');
+    for (const value of values) url.searchParams.append(key, value);
   }
   const controller = new AbortController();
   const abort = () => controller.abort();
@@ -66,6 +83,7 @@ export async function queryAgent(device, route, params = new URLSearchParams(), 
     if (['alerts', 'alert-test'].includes(route) && [404, 405, 501].includes(response.status)) throw new AppError(404, 'alerts_unsupported', messages.alerts_unsupported);
     if (route.startsWith('control') && [404, 405, 501].includes(response.status)) throw new AppError(404, 'control_unsupported', messages.control_unsupported);
     if (['device-state', 'device-history'].includes(route) && [404, 405, 501].includes(response.status)) throw new AppError(404, 'device_state_unsupported', messages.device_state_unsupported);
+    if (route === 'analysis' && [404, 405, 501].includes(response.status)) throw new AppError(404, 'analysis_unsupported', messages.analysis_unsupported);
     if (Number(response.headers.get('content-length')) > 8_000_000) throw invalidResponse();
     if (!response.body) throw invalidResponse();
     reader = response.body.getReader();
@@ -82,7 +100,8 @@ export async function queryAgent(device, route, params = new URLSearchParams(), 
     let body;
     try { body = JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(bytes)); } catch { throw invalidResponse(); }
     if (!response.ok) {
-      const code = response.status === 401 ? 'unauthorized' : object(body) && Object.hasOwn(messages, body.code) ? body.code : 'agent_error';
+      let code = response.status === 401 ? 'unauthorized' : object(body) && typeof body.code === 'string' ? body.code : 'agent_error';
+      if (!Object.hasOwn(messages, code)) code = 'agent_error';
       throw new AppError(response.status, code, messages[code] || '设备暂时无法完成请求，请稍后重试。');
     }
     return validateResponse(route, body, operation);
@@ -115,9 +134,11 @@ export function createAgentClient(store, options = {}) {
       if (id === 'demo') {
         if (route.startsWith('control') || route === 'alert-test') return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));
         signal?.throwIfAborted();
-        return Promise.resolve(demoQuery(route, new URLSearchParams(params || {})));
+        return Promise.resolve(demoQuery(route, params instanceof URLSearchParams ? params : new URLSearchParams(params || {})));
       }
-      return queryAgent(store.get(id), route, new URLSearchParams(params || {}), { ...options, signal });
+      const search = params instanceof URLSearchParams ? params : new URLSearchParams(params || undefined);
+      const timeoutMs = route === 'analysis' ? 10_000 : options.timeoutMs;
+      return queryAgent(store.get(id), route, search, { ...options, signal, timeoutMs });
     },
     submit(id, body) {
       if (id === 'demo') return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));

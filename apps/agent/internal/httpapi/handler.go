@@ -79,7 +79,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.alertEndpoints(w, r, requestID)
 		return
 	}
-	if r.URL.Path != "/v1/health" && r.URL.Path != "/v1/account/overview" && r.URL.Path != "/v1/earnings" && r.URL.Path != "/v1/earnings/stats" && r.URL.Path != "/v1/device/state" && r.URL.Path != "/v1/device/state/history" {
+	if r.URL.Path != "/v1/health" && r.URL.Path != "/v1/account/overview" && r.URL.Path != "/v1/earnings" && r.URL.Path != "/v1/earnings/stats" && r.URL.Path != "/v1/earnings/analysis" && r.URL.Path != "/v1/device/state" && r.URL.Path != "/v1/device/state/history" {
 		failure(w, 404, "not_found", "Endpoint is unavailable in this build", requestID)
 		return
 	}
@@ -107,6 +107,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/v1/earnings/stats":
 		h.stats(ctx, w, r, requestID, now)
+		return
+	case "/v1/earnings/analysis":
+		h.earningsAnalysis(ctx, w, r, requestID, now)
 		return
 	}
 	schema, err := h.store.SchemaVersion(ctx)

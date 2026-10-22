@@ -62,13 +62,87 @@ function demoState(route, params, clock) {
   return { device: demoHardware, items, next_before_id: items.length && items.at(-1).id > lowest ? items.at(-1).id : null, meta };
 }
 
+function demoAnalysis(params, clock) {
+  const allowed = ['from', 'to', 'timezone', 'granularity', 'model'];
+  for (const key of params.keys()) if (!allowed.includes(key) || (key !== 'model' && params.getAll(key).length !== 1) || (key === 'model' && params.getAll(key).length > 8)) throw new AppError(400, 'invalid_request', '演示分析参数无效。');
+  const timezone = params.get('timezone') || 'Asia/Shanghai';
+  const from = params.get('from'), to = params.get('to'), granularity = params.get('granularity');
+  if (!from || !to || !granularity || !['hour', 'day', 'month'].includes(granularity)) throw new AppError(400, 'invalid_request', '演示分析条件无效。');
+  const modelsFilter = params.getAll('model');
+  const inRange = records.filter(item => item.created_at >= from && item.created_at < to);
+  const modelStats = new Map();
+  for (const record of inRange) {
+    const current = modelStats.get(record.model) || { model: record.model, amount_micro_usd: 0n, record_count: 0, buckets: new Set() };
+    current.amount_micro_usd += BigInt(record.amount_micro_usd);
+    current.record_count++;
+    modelStats.set(record.model, current);
+  }
+  let filtered = inRange;
+  if (modelsFilter.length) filtered = inRange.filter(item => modelsFilter.includes(item.model));
+  const bucketKey = record => {
+    if (granularity === 'hour') return new Date(Math.floor(Date.parse(record.created_at) / 3_600_000) * 3_600_000).toISOString();
+    if (granularity === 'day') return zonedMidnight(dateKey(record.created_at, timezone), timezone).toISOString();
+    const month = dateKey(record.created_at, timezone).slice(0, 7);
+    return zonedMidnight(`${month}-01`, timezone).toISOString();
+  };
+  const bucketEnd = startIso => {
+    const start = Date.parse(startIso);
+    if (granularity === 'hour') return new Date(start + 3_600_000).toISOString();
+    if (granularity === 'day') return zonedMidnight(shiftDate(dateKey(start, timezone), 1), timezone).toISOString();
+    const month = dateKey(start, timezone).slice(0, 7);
+    const next = new Date(`${month}-01T12:00:00Z`);
+    next.setUTCMonth(next.getUTCMonth() + 1);
+    return zonedMidnight(next.toISOString().slice(0, 10), timezone).toISOString();
+  };
+  for (const record of inRange) modelStats.get(record.model).buckets.add(bucketKey(record));
+  const models = [...modelStats.values()].map(item => ({ model: item.model, amount_micro_usd: item.amount_micro_usd.toString(), record_count: item.record_count, active_buckets: item.buckets.size })).sort((a, b) => BigInt(b.amount_micro_usd) > BigInt(a.amount_micro_usd) ? 1 : -1);
+  const seriesMap = new Map();
+  for (const record of filtered) {
+    const key = bucketKey(record);
+    if (!seriesMap.has(key)) seriesMap.set(key, { from: key, to: bucketEnd(key), items: new Map() });
+    const bucket = seriesMap.get(key);
+    const row = bucket.items.get(record.model) || { model: record.model, amount_micro_usd: 0n, record_count: 0 };
+    row.amount_micro_usd += BigInt(record.amount_micro_usd);
+    row.record_count++;
+    bucket.items.set(record.model, row);
+  }
+  const series = [...seriesMap.values()].sort((a, b) => a.from.localeCompare(b.from)).map(bucket => ({ from: bucket.from, to: bucket.to, items: [...bucket.items.values()].map(item => ({ ...item, amount_micro_usd: item.amount_micro_usd.toString() })) }));
+  const hourMap = new Map(), weekdayMap = new Map();
+  const weekdayFormatter = new Intl.DateTimeFormat('en-US', { timeZone: timezone, weekday: 'short' });
+  for (const record of filtered) {
+    const hour = Number(new Intl.DateTimeFormat('en-GB', { timeZone: timezone, hour: '2-digit', hourCycle: 'h23' }).format(new Date(record.created_at)));
+    const weekday = ({ Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6, Sun: 7 })[weekdayFormatter.format(new Date(record.created_at))];
+    const hourKey = `${hour}\0${record.model}`, weekKey = `${weekday}\0${hour}`;
+    const hourRow = hourMap.get(hourKey) || { hour, model: record.model, amount_micro_usd: 0n, record_count: 0 };
+    hourRow.amount_micro_usd += BigInt(record.amount_micro_usd);
+    hourRow.record_count++;
+    hourMap.set(hourKey, hourRow);
+    const weekRow = weekdayMap.get(weekKey) || { weekday, hour, amount_micro_usd: 0n, record_count: 0 };
+    weekRow.amount_micro_usd += BigInt(record.amount_micro_usd);
+    weekRow.record_count++;
+    weekdayMap.set(weekKey, weekRow);
+  }
+  const totalsAmount = filtered.reduce((sum, item) => sum + BigInt(item.amount_micro_usd), 0n);
+  const meta = { last_successful_sync_at: new Date(+clock - 18_000).toISOString(), data_stale: false, retention_start: new Date(+clock - 365 * 86_400_000).toISOString(), effective_from: from, effective_to: to, range_truncated: false, coverage: { status: 'partial', start: records.at(-1)?.created_at, gap_count: 0, gaps: [], gaps_truncated: false } };
+  return {
+    timezone, granularity, from, to,
+    totals: { amount_micro_usd: totalsAmount.toString(), record_count: filtered.length },
+    models,
+    series,
+    hour_of_day: [...hourMap.values()].map(item => ({ ...item, amount_micro_usd: item.amount_micro_usd.toString() })),
+    weekday_hour: [...weekdayMap.values()].map(item => ({ ...item, amount_micro_usd: item.amount_micro_usd.toString() })),
+    meta,
+  };
+}
+
 export function demoQuery(route, params = new URLSearchParams(), clock = new Date()) {
   if (route === 'alert-test') throw new AppError(403, 'demo_read_only', '演示设备不发送测试推送。');
   if (route === 'alerts') return { items: [{ id: 1, type: 'coordinator_disconnected', event: 'recovered', level: 'active', device_name: '演示 Mac', title: '演示 Mac · 协调器连接已恢复', body: '设备：演示 Mac\n告警：协调器连接中断\n已恢复，持续 4 小时 21 分钟。', created_at: clock.toISOString(), first_triggered_at: new Date(+clock - 261 * 60_000).toISOString(), last_push_at: clock.toISOString(), recovered: true, duration_seconds: 261 * 60, delivery_status: 'sent', attempts: 1, last_attempt_at: clock.toISOString(), next_attempt_at: null }] };
 
   if (route.startsWith('control')) throw new AppError(403, 'demo_read_only', '演示设备不执行远程操作。');
-  if (!['health', 'overview', 'earnings', 'stats', 'device-state', 'device-history'].includes(route)) throw new AppError(404, 'not_found', '接口不存在。');
+  if (!['health', 'overview', 'earnings', 'stats', 'analysis', 'device-state', 'device-history'].includes(route)) throw new AppError(404, 'not_found', '接口不存在。');
   if (route === 'device-state' || route === 'device-history') return demoState(route, params, clock);
+  if (route === 'analysis') return demoAnalysis(params, clock);
   const timezone = params.get('timezone') || 'Asia/Shanghai';
   const from = params.get('from') || new Date(+clock - 365 * 86_400_000).toISOString();
   const to = params.get('to') || clock.toISOString();

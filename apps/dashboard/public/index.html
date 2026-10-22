@@ -68,31 +68,62 @@
         <div class="chart-footer"><span>无收益小时显示 0，未来时段留空 · 当前小时截至最近刷新</span><span>北京时间 UTC+8</span></div>
       </section>
 
-      <div id="trend-filters-slot" class="panel analysis-filter-panel analysis-only">
-          <section id="earnings-filters" class="earnings-filters" aria-label="收益筛选">
-            <div class="filter-bar" id="filter-bar">
+      <section id="analysis" class="analysis-only" aria-label="收益分析">
+        <div class="panel analysis-filter-panel">
+          <div class="earnings-filters analysis-filters" aria-label="分析筛选">
+            <div class="filter-bar">
+              <label class="analysis-field">设备<select id="analysis-device" class="model-filter" aria-label="分析设备"></select></label>
               <div class="range-controls">
-                <select id="period-select" class="period-select analysis-only" aria-label="时间范围"><option value="1" selected>近 1 天</option><option value="7">近 7 天</option><option value="30">近 30 天</option><option value="365">近一年</option><option value="custom" disabled hidden>自选日期</option></select>
-                <div class="period-tabs records-only" role="group" aria-label="时间范围"><button class="selected" data-period="1" aria-pressed="true">近 1 天</button><button data-period="7">近 7 天</button><button data-period="30">近 30 天</button><button data-period="365">近一年</button></div>
-                <button class="button date-button" id="custom-range"><span id="range-label">选择日期</span></button>
+                <div class="period-tabs" id="analysis-period" role="group" aria-label="时间范围">
+                  <button data-period="today">今天</button><button data-period="yesterday">昨天</button><button class="selected" data-period="7" aria-pressed="true">近 7 天</button><button data-period="30">近 30 天</button><button data-period="90">近 90 天</button><button data-period="365">近一年</button>
+                </div>
+                <button type="button" class="button date-button" id="analysis-custom-range"><span id="analysis-range-label">自选日期</span></button>
               </div>
-              <div class="analysis-controls analysis-only">
-                <div class="analysis-model-filter"><label for="trend-model-filter">模型</label><select id="trend-model-filter" class="model-filter" data-model-filter aria-label="分析模型"><option value="">全部模型</option></select></div>
-                <div class="chart-toggle" id="trend-grouping" role="group" aria-label="趋势粒度" hidden><button class="selected" data-group="day" aria-pressed="true">按天</button><button data-group="month" aria-pressed="false">按月</button></div>
+              <div class="chart-toggle" id="analysis-granularity" role="group" aria-label="分析粒度">
+                <button data-granularity="hour">按小时</button><button class="selected" data-granularity="day" aria-pressed="true">按天</button><button data-granularity="month">按月</button>
+              </div>
+              <div class="analysis-actions">
+                <button type="button" id="analysis-query" class="button button-dark">查询</button>
+                <button type="button" id="analysis-cancel" class="button button-white" hidden>取消</button>
               </div>
             </div>
-            <form id="date-form" class="date-form" hidden><label>开始日期<input type="date" name="from" required></label><span>至</span><label>结束日期<input type="date" name="to" required></label><button class="button button-dark" type="submit">应用日期</button><button class="button button-white" type="button" id="cancel-range">取消</button><span id="date-error" role="alert"></span></form>
-          </section>
-      </div>
-
-      <section class="panel chart-panel analysis-only">
-        <div class="panel-heading"><h2>收益趋势<span class="subtle-tag" id="chart-grain">按小时</span></h2></div>
-        <div class="chart-summary"><span class="chart-total-label">所选时段收益</span><strong id="chart-total">—</strong><div class="chart-legend"><i></i> <span>收益 (USD)</span></div></div><div id="trend-chart" class="trend-chart" aria-label="收益趋势图"><div class="empty-state">正在读取收益趋势…</div></div><div class="chart-footer"><span>空白时段无已保存记录</span><span id="chart-timezone">中国标准时间 UTC+8</span></div>
+            <form id="analysis-date-form" class="date-form" hidden><label>开始日期<input type="date" name="from" required></label><span>至</span><label>结束日期<input type="date" name="to" required></label><button class="button button-dark" type="submit">应用日期</button><span id="analysis-date-error" role="alert"></span></form>
+            <fieldset class="analysis-models" aria-label="模型筛选"><div id="analysis-model-tags" class="model-tag-list"></div></fieldset>
+            <p id="analysis-status" class="state-message" role="status" hidden></p>
+            <p id="analysis-truncated" class="state-message warning" role="status" hidden>部分查询时间超出明细保留范围，已按滚动 365 天截取。</p>
+          </div>
+        </div>
+        <div class="analysis-metrics" aria-label="分析指标">
+          <article class="analysis-metric"><span>总收益</span><strong id="analysis-metric-total">—</strong></article>
+          <article class="analysis-metric"><span>任务数</span><strong id="analysis-metric-count">—</strong></article>
+          <article class="analysis-metric"><span>单笔平均</span><strong id="analysis-metric-avg">—</strong></article>
+          <article class="analysis-metric"><span>日均收益</span><strong id="analysis-metric-daily">—</strong></article>
+          <article class="analysis-metric"><span>最高收益时段</span><strong id="analysis-metric-peak">—</strong></article>
+        </div>
+        <div class="analysis-grid">
+          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>收益趋势</h2><div class="chart-toggle" role="group" aria-label="趋势样式"><button class="selected" data-trend-mode="bar" aria-pressed="true">柱状</button><button data-trend-mode="line">折线</button></div></div><div id="analysis-chart-trend" class="analysis-chart"></div></section>
+          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>累计收益</h2></div><div id="analysis-chart-cumulative" class="analysis-chart"></div></section>
+          <section class="panel chart-panel"><div class="panel-heading"><h2>模型收益占比</h2></div><div id="analysis-chart-share" class="analysis-chart"></div><div class="table-scroll"><table><thead><tr><th>模型</th><th>金额</th><th>占比</th><th>任务数</th><th>单笔均值</th></tr></thead><tbody id="analysis-share-body"><tr><td colspan="5"><div class="empty-state">等待查询</div></td></tr></tbody></table></div></section>
+          <section class="panel chart-panel"><div class="panel-heading"><h2>任务数与单笔均值</h2></div><div id="analysis-chart-task-avg" class="analysis-chart"></div></section>
+          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>24 小时时段分布</h2><p>各小时日均收益 · 北京时间</p></div><div id="analysis-chart-hour" class="analysis-chart"></div></section>
+          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>星期 × 小时热力图</h2></div><div id="analysis-chart-weekday" class="analysis-chart"></div></section>
+          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>模型 × 小时热力图</h2></div><div id="analysis-chart-model-hour" class="analysis-chart"></div></section>
+          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>模型平均收益对比</h2></div><div id="analysis-chart-model-compare" class="analysis-chart"></div></section>
+        </div>
+        <section class="data-note"><p>收益分析只统计所选设备本机产生的收益；点击「查询」后更新，页面不会自动刷新。金额单位为 USD，时区为中国标准时间（UTC+8）。</p><span id="coverage-tag" class="subtle-tag">等待历史信息</span></section>
       </section>
 
       <section class="panel records-panel records-only" id="records-panel">
         <div class="panel-heading"><h2>收益记录<span id="records-count" class="count-badge">0</span></h2><div class="table-actions"><label class="sr-only" for="model-filter">筛选模型</label><select id="model-filter" class="model-filter" data-model-filter><option value="">全部模型</option></select><button id="export-csv" class="button button-white">导出 CSV</button></div></div>
-        <div id="records-filters-slot"></div>
+        <div class="earnings-filters records-filters" aria-label="明细筛选">
+          <div class="filter-bar">
+            <div class="range-controls">
+              <div class="period-tabs" id="records-period" role="group" aria-label="时间范围"><button class="selected" data-period="1" aria-pressed="true">近 1 天</button><button data-period="7">近 7 天</button><button data-period="30">近 30 天</button><button data-period="365">近一年</button></div>
+              <button type="button" class="button date-button" id="custom-range"><span id="range-label">选择日期</span></button>
+            </div>
+          </div>
+          <form id="date-form" class="date-form" hidden><label>开始日期<input type="date" name="from" required></label><span>至</span><label>结束日期<input type="date" name="to" required></label><button class="button button-dark" type="submit">应用日期</button><button class="button button-white" type="button" id="cancel-range">取消</button><span id="date-error" role="alert"></span></form>
+        </div>
         <div class="table-scroll"><table><thead><tr><th>模型 / 任务</th><th>收益 <span>USD</span></th><th>输入 Token</th><th>输出 Token</th><th>发生时间 <span id="table-timezone">UTC+8</span></th></tr></thead><tbody id="records-body"><tr><td colspan="5"><div class="empty-state">正在读取收益记录…</div></td></tr></tbody></table></div>
         <div class="table-footer">
           <span id="page-info">等待记录</span>
@@ -152,7 +183,6 @@
         </div>
       </section>
 
-      <section class="data-note analysis-only"><p>收益来自本地明细，保留 365 天；首页顶栏为当前设备全部模型的滚动收益，不受分析筛选影响。余额来自官方快照，金额单位为 USD。</p><span id="coverage-tag" class="subtle-tag">等待历史信息</span></section>
       <footer class="page-footer"><span id="last-refresh">等待首次刷新</span></footer>
     </main>
   </div>

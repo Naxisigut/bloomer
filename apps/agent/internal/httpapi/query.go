@@ -178,6 +178,8 @@ func queryFailure(w http.ResponseWriter, err error, id string) {
 		failure(w, 503, "data_unavailable", "No successful account snapshot is available yet", id)
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
 		failure(w, 504, "query_timeout", "Query cancelled or exceeded its time budget", id)
+	case errors.Is(err, store.ErrDeviceIdentityUnavailable):
+		failure(w, 409, "device_identity_unavailable", "Device identity is not recognized yet; local earnings cannot be scoped", id)
 	case errors.Is(err, store.ErrGroupLimit):
 		failure(w, 422, "group_limit_exceeded", "Too many groups; use a narrower range or model filter", id)
 	case errors.Is(err, store.ErrAmountOverflow):

@@ -486,6 +486,188 @@ paths:
           $ref: '#/components/responses/Unavailable'
         '504':
           $ref: '#/components/responses/Timeout'
+  /v1/earnings/analysis:
+    get:
+      operationId: getEarningsAnalysis
+      summary: Multi-dimensional local-device earnings analysis
+      description: |
+        Read-only snapshot aggregating retained earnings for Provider IDs previously
+        verified on this installation via `device_provider_ids`. Account-wide rows
+        from other devices are excluded. `models` always lists every local model in
+        the range (ignores `model` filters); `totals`, `series`, `hour_of_day`, and
+        `weekday_hour` honor filters. Series omits empty buckets; bucket boundaries
+        follow the same IANA calendar rules as `/v1/earnings/stats`. Amounts are
+        exact integer micro-USD strings. At most eight distinct `model` values.
+        Hour granularity requires span ≤ 31 days; overall span ≤ 366 days.
+      parameters:
+        - name: from
+          in: query
+          required: true
+          description: Inclusive RFC3339 instant (UTC), clamped to 365-day retention
+          schema:
+            type: string
+            format: date-time
+        - name: to
+          in: query
+          required: true
+          description: Exclusive RFC3339 instant (UTC)
+          schema:
+            type: string
+            format: date-time
+        - name: timezone
+          in: query
+          required: true
+          description: IANA time zone name, such as Asia/Shanghai
+          schema:
+            type: string
+            example: Asia/Shanghai
+        - name: granularity
+          in: query
+          schema:
+            type: string
+            enum: [hour, day, month]
+            default: day
+        - name: model
+          in: query
+          description: Repeat up to eight times; omit for all models
+          schema:
+            type: array
+            maxItems: 8
+            items:
+              type: string
+          style: form
+          explode: true
+      responses:
+        '200':
+          description: Local-device aggregates with coverage metadata
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [timezone, granularity, from, to, totals, models, series, hour_of_day, weekday_hour, meta]
+                properties:
+                  timezone:
+                    type: string
+                  granularity:
+                    type: string
+                    enum: [hour, day, month]
+                  from:
+                    type: string
+                    format: date-time
+                  to:
+                    type: string
+                    format: date-time
+                  totals:
+                    type: object
+                    required: [amount_micro_usd, record_count]
+                    properties:
+                      amount_micro_usd:
+                        $ref: '#/components/schemas/Money'
+                      record_count:
+                        type: integer
+                        format: int64
+                  models:
+                    type: array
+                    items:
+                      type: object
+                      required: [model, amount_micro_usd, record_count, active_buckets]
+                      properties:
+                        model:
+                          type: string
+                        amount_micro_usd:
+                          $ref: '#/components/schemas/Money'
+                        record_count:
+                          type: integer
+                          format: int64
+                        active_buckets:
+                          type: integer
+                          format: int64
+                          description: Buckets with earnings at the chosen granularity
+                  series:
+                    type: array
+                    maxItems: 10000
+                    items:
+                      type: object
+                      required: [from, to, items]
+                      properties:
+                        from:
+                          type: string
+                          format: date-time
+                        to:
+                          type: string
+                          format: date-time
+                        items:
+                          type: array
+                          items:
+                            type: object
+                            required: [model, amount_micro_usd, record_count]
+                            properties:
+                              model:
+                                type: string
+                              amount_micro_usd:
+                                $ref: '#/components/schemas/Money'
+                              record_count:
+                                type: integer
+                                format: int64
+                  hour_of_day:
+                    type: array
+                    items:
+                      type: object
+                      required: [hour, model, amount_micro_usd, record_count]
+                      properties:
+                        hour:
+                          type: integer
+                          minimum: 0
+                          maximum: 23
+                        model:
+                          type: string
+                        amount_micro_usd:
+                          $ref: '#/components/schemas/Money'
+                        record_count:
+                          type: integer
+                          format: int64
+                  weekday_hour:
+                    type: array
+                    items:
+                      type: object
+                      required: [weekday, hour, amount_micro_usd, record_count]
+                      properties:
+                        weekday:
+                          type: integer
+                          minimum: 1
+                          maximum: 7
+                          description: Monday=1 … Sunday=7 in the request time zone
+                        hour:
+                          type: integer
+                          minimum: 0
+                          maximum: 23
+                        amount_micro_usd:
+                          $ref: '#/components/schemas/Money'
+                        record_count:
+                          type: integer
+                          format: int64
+                  meta:
+                    $ref: '#/components/schemas/DataMetadata'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          description: No verified local Provider IDs yet (device_identity_unavailable)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '422':
+          description: Too many groups; narrow the time range or model filter
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
 components:
   securitySchemes:
     bearerAuth:
