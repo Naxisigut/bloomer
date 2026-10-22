@@ -17,7 +17,6 @@
       <a class="brand" href="./" aria-label="Bloomer 首页">Bloomer</a>
       <div class="sidebar-actions" role="group" aria-label="全局操作">
         <button type="button" class="sidebar-action" id="refresh" aria-label="刷新数据" title="刷新数据"><span data-icon="refresh"></span></button>
-        <button type="button" class="sidebar-action" data-action="connect" aria-label="连接设备" title="连接设备"><span data-icon="connect"></span></button>
       </div>
     </div>
     <nav class="navigation" aria-label="主导航">
@@ -144,8 +143,8 @@
       </section>
 
       <section id="devices-view" class="devices-only">
-        <div class="section-heading"><h2>数据来源设备</h2><button type="button" id="import-connections" class="button button-white">导入连接</button><input type="file" id="connection-file" accept="application/json,.json" hidden></div><div id="device-cards" class="device-cards"></div>
-        <div class="panel device-state-panel"><div class="panel-heading"><div><h2>设备状态</h2><p id="state-device-label">当前设备</p></div><div class="state-panel-actions"><label class="sr-only" for="detail-device-select">选择详情设备</label><select id="detail-device-select" class="model-filter"></select><span id="device-state-time" class="state-timestamp">每 60 秒更新</span></div></div><p id="device-state-message" class="state-message" role="status">正在读取设备状态…</p><div id="device-state-details" class="health-details"></div><p class="state-footnote">显示设备端保存的最新读数，每 60 秒刷新。未支持或读取失败会单独标注；空闲表示本机没有正在处理或排队的任务，且该设备最新收益距采集时超过 5 分钟；热压力与内存压力直接从 macOS 本地采集。</p></div>
+        <div class="device-cards-wrap"><div id="device-cards" class="device-cards"></div><button type="button" class="device-add-button" data-action="connect" aria-label="添加设备" title="添加设备"><span data-icon="add"></span></button></div>
+        <div class="panel device-state-panel"><div class="panel-heading"><div><h2>运行状态</h2></div><div class="state-panel-actions"><label class="sr-only" for="detail-device-select">选择设备</label><select id="detail-device-select" class="model-filter"></select><span id="device-state-time" class="state-timestamp"></span></div></div><p id="device-state-message" class="state-message" role="status" hidden>正在读取设备状态…</p><div id="device-state-details" class="health-details"></div></div>
         <div class="panel control-panel" id="control-panel">
           <div class="panel-heading"><div><h2>远程操作</h2><p id="control-device-label">当前设备</p></div><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
           <p id="control-message" class="state-message" role="status">正在检查远程操作能力…</p>
@@ -167,12 +166,11 @@
             <label class="network-rates-toggle"><input id="network-rates-auto-switch" type="checkbox"> 自动切换最优模型</label>
             <p id="network-rates-status" class="control-note" role="status"></p>
             <div id="network-rates-candidates"></div>
-            <p class="control-note network-rates-footnote">估算来自同配置机器（M4/M5/M6，64GB）的公开统计差值，仅按输出 token × 官方输出单价计算，不代表本机实际收益。</p>
+            <p class="control-note network-rates-footnote">仅供参考，不代表本机实际收益。</p>
             <h3>最近切换</h3>
             <div id="network-rates-switches" aria-live="polite"></div>
           </div>
         </div>
-        <div class="panel health-panel"><div class="panel-heading"><div><h2>采集健康</h2><p id="health-device-label">当前选择的设备</p></div><span class="subtle-tag">只读监测</span></div><div id="health-details" class="health-details"></div></div>
       </section>
 
       <footer class="page-footer"><span id="last-refresh">等待首次刷新</span></footer>
@@ -185,7 +183,7 @@
   <dialog id="control-confirm-dialog">
     <form method="dialog"><div class="dialog-header"><h2>确认远程操作</h2><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><p id="control-confirm-message"></p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-dark" value="confirm" id="control-confirm-submit">确认执行</button></div></form>
   </dialog>
-  <dialog id="connect-dialog"><form id="connect-form"><div class="dialog-header"><button type="button" id="close-dialog" class="icon-button" aria-label="关闭连接窗口">×</button></div><h2>连接设备</h2><label>设备名称<input name="name" autocomplete="off" placeholder="例如：书房 Mac mini" maxlength="60" required></label><label>Agent 地址<input name="url" type="url" autocomplete="off" placeholder="https://your-device.your-tailnet.ts.net:8443" required><span class="field-hint">填写 Tailscale HTTPS 域名及端口（通常 :8443），不附加 /v1。本机测试可用回环 HTTP。</span></label><label>独立访问令牌<div class="password-field"><input name="token" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴 Agent 的 access.token" maxlength="4096" required><button type="button" id="toggle-token" aria-label="显示令牌" aria-pressed="false">显示</button></div></label><div class="connection-note">使用 Bloomer access.token，不使用 Darkbloom 官方凭证；测试通过后，名称、地址和令牌保存在当前浏览器的此网站本地存储中。Agent 允许任意网页来源，实际查询和操作仍须使用有效令牌。</div><div id="connection-result" role="status" hidden></div><div class="dialog-actions"><button type="button" id="test-connection" class="button button-white">测试连接</button><button type="submit" id="save-device" class="button button-dark">连接并保存</button></div></form></dialog>
+  <dialog id="connect-dialog"><form id="connect-form"><div class="dialog-header"><button type="button" id="close-dialog" class="icon-button" aria-label="关闭连接窗口">×</button></div><h2>添加设备</h2><label>名称<input name="name" autocomplete="off" placeholder="例如：书房 Mac mini" maxlength="60" required></label><label>地址<input name="url" type="url" autocomplete="off" placeholder="https://your-device.your-tailnet.ts.net:8443" required><span class="field-hint">Tailscale HTTPS 地址与端口，无需加 /v1。</span></label><label>访问令牌<div class="password-field"><input name="token" type="password" autocomplete="off" spellcheck="false" placeholder="Agent 配置中的 access.token" maxlength="4096" required><button type="button" id="toggle-token" aria-label="显示令牌" aria-pressed="false">显示</button></div></label><div class="connection-note">连接信息仅保存在本浏览器，不会上传到服务器。</div><div id="connection-result" role="status" hidden></div><div class="dialog-actions"><button type="button" id="test-connection" class="button button-white">测试连接</button><button type="submit" id="save-device" class="button button-dark">保存</button></div></form></dialog>
   <dialog id="remove-dialog"><form method="dialog"><h2>移除设备？</h2><p>仅移除连接，设备上的 Agent 和历史数据不变。</p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-danger" value="confirm">移除设备</button></div></form></dialog>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>

@@ -22,7 +22,7 @@ const icons = {
   records: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   devices: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M7 13h4"/>',
   refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6.1a8 8 0 0 1 13.2 3L20 12M4 12l.7 2.9a8 8 0 0 0 13.2 3"/>',
-  connect: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M9 10.5h6M12 7.5v6"/>',
+  add: '<path d="M12 5v14M5 12h14"/>',
 };
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 $$('[data-icon]').forEach(element => { element.innerHTML = icon(element.dataset.icon); });
@@ -134,29 +134,12 @@ function renderDevices() {
   $('#device-cards').innerHTML = deviceChoices().map(device => {
     const health = state.health.get(device.id);
     const status = healthStatus(health);
-    return `<article class="device-card ${device.id === active ? 'selected' : ''}"><div class="device-card-header"><h3>${escape(device.name)}</h3><span class="status-tag ${status.className}">${status.label}</span></div><p class="device-url">${escape(device.url)}</p><div class="device-stat"><span>最近成功采集</span><strong>${escape(relative(health?.last_successful_sync_at))}</strong></div><div class="device-stat"><span>Agent 版本</span><strong>${escape(health?.version || '—')}${device.id === 'demo' ? ' · 演示' : ''}</strong></div>${health?.error ? `<p class="device-url">${escape(health.error)}</p>` : ''}<div class="device-card-actions"><button class="button ${device.id === active ? 'button-dark' : 'button-white'}" data-select-device="${escape(device.id)}">${device.id === active ? '当前数据来源' : '查看收益'}</button>${device.id !== 'demo' ? `<button class="button remove-device" data-remove-device="${escape(device.id)}">移除</button>` : ''}</div></article>`;
+    return `<article class="device-card ${device.id === active ? 'selected' : ''}"><div class="device-card-header"><h3>${escape(device.name)}${device.id === 'demo' ? ' · 演示' : ''}</h3><span class="status-tag ${status.className}">${status.label}</span></div><p class="device-url">${escape(device.url)}</p><div class="device-stat"><span>Agent 版本</span><strong>${escape(health?.version || '—')}</strong></div>${health?.error ? `<p class="device-card-note">${escape(health.error)}</p>` : ''}<div class="device-card-actions"><button class="button ${device.id === active ? 'button-dark' : 'button-white'}" data-select-device="${escape(device.id)}">${device.id === active ? '当前设备' : '切换到此设备'}</button>${device.id !== 'demo' ? `<button class="button remove-device" data-remove-device="${escape(device.id)}">移除</button>` : ''}</div></article>`;
   }).join('');
-  renderHealth();
   deviceUI.render();
   controlUI.render();
   networkRatesUI.render();
   alertUI.render();
-}
-
-function renderHealth() {
-  const health = state.health.get(state.selected);
-  $('#health-device-label').textContent = selectedDevice()?.name || '当前设备';
-  if (!health || health.error) { $('#health-details').innerHTML = `<div class="empty-state">${escape(health?.error || '正在检查采集状态…')}</div>`; return; }
-  const states = { idle: '等待下轮采集', collecting: '采集中', disabled: '已关闭', degraded: '降级运行', rate_limited: '限流等待' };
-  const coverage = health.coverage;
-  const items = [
-    ['采集状态', states[health.collection_state] || health.collection_state], ['最近成功采集', dateTime(health.last_successful_sync_at)],
-    ['最近尝试', dateTime(health.last_attempt_at)], ['同步方式', ({ initial: '首次导入', normal: '常规采集', recovery: '恢复同步' })[health.sync_mode] || '—'],
-    ['限流等待至', health.retry_not_before ? dateTime(health.retry_not_before) : '无限流等待'], ['最近错误', health.last_error || '无'],
-    ['历史覆盖起点', dateTime(coverage?.start)], ['疑似历史缺口', `${coverage?.gap_count || 0} 段`], ['最近清理成功', dateTime(health.cleanup?.last_success_at)],
-    ['清理状态', ({ idle: '正常待命', running: '清理中', failed: '清理失败' })[health.cleanup?.state] || '—'], ['恢复原因', health.recovery_reason || '无'], ['保留期起点', dateTime(health.retention_start)],
-  ];
-  $('#health-details').innerHTML = items.map(([label, value]) => `<div class="health-item"><span>${escape(label)}</span><strong>${escape(value)}</strong></div>`).join('') + (coverage?.gaps?.length ? `<div class="health-item wide"><span>疑似缺口区间${coverage.gaps_truncated ? '（仅展示最近 100 段）' : ''}</span><div class="health-gaps">${coverage.gaps.map(gap => `${escape(dateTime(gap.from))} — ${escape(dateTime(gap.to))} · ${escape(gap.reason)}`).join('<br>')}</div></div>` : '');
 }
 
 function renderAlerts() {
@@ -169,7 +152,7 @@ function renderAlerts() {
   if ((health?.data_stale || metaList.some(item => item.data_stale)) && !health?.error) alerts.push(['', `数据尚未更新。最近成功采集：${health?.last_successful_sync_at || meta?.last_successful_sync_at ? relative(health?.last_successful_sync_at || meta?.last_successful_sync_at) : '尚无'}；当前显示设备保存的最近数据。`]);
   if (health?.collection_state === 'disabled') alerts.push(['', '设备的自动采集已关闭；现有数据仍可查看。']);
   if (health?.collection_state === 'rate_limited') alerts.push(['', `设备正在等待上游限流解除${health.retry_not_before ? `，最早重试时间 ${dateTime(health.retry_not_before)}` : ''}。`]);
-  if (meta?.coverage?.gap_count || health?.coverage?.gap_count) alerts.push(['', `已检测到 ${meta?.coverage?.gap_count || health.coverage.gap_count} 段疑似历史缺口，本地收益可能不完整。可在“我的设备”查看区间。`]);
+  if (meta?.coverage?.gap_count || health?.coverage?.gap_count) alerts.push(['', '部分历史收益可能尚未同步完整。']);
   if (metaList.some(item => item.range_truncated)) alerts.push(['info', '部分查询时间超出明细保留范围，已按滚动 365 天截取。']);
   if (health?.cleanup?.state === 'failed') alerts.push(['', '最近一次过期数据清理失败，设备将继续重试。']);
   $('#alerts').innerHTML = alerts.map(([type, message]) => `<div class="alert ${type}">${escape(message)}</div>`).join('');
@@ -528,25 +511,9 @@ $('#device-cards').addEventListener('click', async event => {
   }, { once: true });
 });
 
-$('#import-connections').addEventListener('click', () => $('#connection-file').click());
-$('#connection-file').addEventListener('change', async event => {
-  const file = event.target.files[0]; event.target.value = '';
-  if (!file) return;
-  $('#import-connections').disabled = true;
-  try {
-    if (file.size > 256_000) throw new Error('连接文件过大，最多支持 30 台设备。');
-    let input;
-    try { input = JSON.parse(await file.text()); } catch { throw new Error('请使用有效的设备连接 JSON 文件。'); }
-    toast('正在逐台测试连接，全部通过后保存…');
-    await client.importConnections(input);
-    await loadDeviceList(); await loadData({ reset: true, clearModel: true }); toast('设备连接已导入此浏览器。');
-  } catch (error) { toast(error.message); }
-  finally { $('#import-connections').disabled = false; }
-});
-
 function updateClock() {
   if (state.view === 'devices') {
-    $('#last-refresh').textContent = state.deviceFetchedAt ? `最新状态刷新 ${dateTime(state.deviceFetchedAt)} · 每 60 秒更新` : '等待设备状态刷新';
+    $('#last-refresh').textContent = state.deviceFetchedAt ? `状态更新于 ${dateTime(state.deviceFetchedAt)}` : '';
     return;
   }
   const retry = autoRefreshFailStreak > 0 && nextAutoRefreshAt ? ` · 下次重试 ${dateTime(nextAutoRefreshAt)}` : '';

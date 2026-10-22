@@ -1,5 +1,5 @@
 import { AppError } from './errors.js';
-import { validateDevice, parseConnections } from './connections.js';
+import { validateDevice } from './connections.js';
 import { demoQuery } from './demo.js';
 import { validateNetworkRatesResponse, validateNetworkRatesSettings, validateNetworkRatesSwitchesResponse } from './network-rates.js';
 
@@ -163,11 +163,6 @@ export function createAgentClient(store, options = {}) {
       const device = validateDevice(input);
       const health = await queryAgent(device, 'health', undefined, options);
       return { health, ...(save ? { device: store.add(device) } : {}) };
-    },
-    async importConnections(input) {
-      const devices = parseConnections(input);
-      for (const device of devices) await queryAgent(device, 'health', undefined, options);
-      return store.addMany(devices);
     },
   };
 }

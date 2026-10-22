@@ -39,7 +39,7 @@ python3 -m http.server 18080 --bind 127.0.0.1 --directory apps/dashboard/public
 
 ## 连接设备与存储
 
-点击“连接设备”，填写名称、Agent 地址和 **Bloomer access.token**，测试成功后保存。地址例如 `https://device.your-tailnet.ts.net:8443`，包含实际 HTTPS 端口，不附加 `/v1`；本机测试可用 `http://127.0.0.1:17890`。远程地址只接受 Tailscale `.ts.net` HTTPS。测试与保存都直接请求 Agent `/v1/health`。
+在「我的设备」页点击列表末尾 **+**，填写名称、Agent 地址和 **Bloomer access.token**，测试成功后保存。地址例如 `https://device.your-tailnet.ts.net:8443`，包含实际 HTTPS 端口，不附加 `/v1`；本机测试可用 `http://127.0.0.1:17890`。远程地址只接受 Tailscale `.ts.net` HTTPS。测试与保存都直接请求 Agent `/v1/health`。
 
 必须在**运行 Agent 的设备端终端**，使用安装和运行 Agent 的**同一 macOS 用户**获取令牌：
 
@@ -49,9 +49,7 @@ cat "$HOME/Library/Application Support/Bloomer/agent/access.token"
 
 自定义 `access_token_file` 时使用实际路径。它不是 `~/.darkbloom/auth_token`；只填写到自己的看板，不提交仓库或粘贴到聊天。
 
-浏览器 localStorage 持久保存名称、地址、令牌和所选设备。切换浏览器、主机名、协议或端口，或清除网站数据后需重新添加或导入。移除只删除浏览器连接和待核对请求记录，设备数据不变。令牌更换后移除旧连接重新添加。
-
-“我的设备 → 导入连接”兼容旧版 `devices.json`（`version: 1`、`devices` 列表及 `name/url/token`）；所有设备健康测试通过后原子保存，重复地址拒绝覆盖。旧私有文件不会自动读取或修改；保管在仓库之外。看板取消了依赖本机 Agent 文件的自动发现。
+浏览器 localStorage 持久保存名称、地址、令牌和所选设备。切换浏览器、主机名、协议或端口，或清除网站数据后需重新添加。在「我的设备」页列表末尾 **+** 添加设备。移除只删除浏览器连接和待核对请求记录，设备数据不变。令牌更换后移除旧连接重新添加。
 
 ## 数据与访问边界
 

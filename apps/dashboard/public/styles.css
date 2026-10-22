@@ -918,6 +918,36 @@ main[data-view="records"] .records-panel {
   color:#8c9a80;
   margin-top:6px
 }
+.device-cards-wrap {
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:15px;
+  margin-bottom:24px
+}
+.device-cards-wrap>.device-cards {
+  display:contents
+}
+.device-add-button {
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  min-height:120px;
+  border:1px dashed var(--line);
+  border-radius:12px;
+  background:#fafbf9;
+  color:#6b7d66;
+  cursor:pointer;
+  padding:20px
+}
+.device-add-button:hover {
+  border-color:#8fa67c;
+  color:#4a6344;
+  background:#f4f7f2
+}
+.device-add-button svg {
+  width:28px;
+  height:28px
+}
 .device-cards {
   display:grid;
   grid-template-columns:repeat(3,minmax(0,1fr));
@@ -952,6 +982,12 @@ main[data-view="records"] .records-panel {
   color:#99a58b;
   overflow-wrap:anywhere;
   margin:15px 0
+}
+.device-card-note {
+  font-size:10px;
+  color:#ac776c;
+  overflow-wrap:anywhere;
+  margin:12px 0 0
 }
 .device-card .device-stat {
   display:flex;
@@ -1264,7 +1300,7 @@ dialog input::placeholder {
     padding-left:18px;
     padding-right:18px
   }
-  .device-cards {
+  .device-cards-wrap {
     grid-template-columns:repeat(2,minmax(0,1fr))
   }
   .toast {
@@ -1362,7 +1398,7 @@ dialog input::placeholder {
   .chart-toggle button {
     padding:4px 6px
   }
-  .device-cards {
+  .device-cards-wrap {
     gap:12px
   }
 }
@@ -1540,7 +1576,7 @@ dialog input::placeholder {
     gap:6px;
     flex-wrap:wrap
   }
-  .device-cards {
+  .device-cards-wrap {
     grid-template-columns:1fr
   }
   .health-details {

@@ -40,14 +40,11 @@ test('failed connection and malformed health never persist a token', async () =>
   }
 });
 
-test('legacy devices.json imports test all devices and persist atomically', async () => {
-  const storage = memoryStorage(), store = new DeviceStore({ storage }); store.load(); let fail = true;
-  const client = createAgentClient(store, { fetcher: async url => url.port === '8444' && fail ? Response.json({ code: 'unauthorized' }, { status: 401 }) : healthy() });
-  const file = { version: 1, devices: [{ ...input, id: 'legacy-id' }, { ...input, name: '第二台', url: input.url.replace('8443', '8444') }] };
-  await assert.rejects(client.importConnections(file), { code: 'unauthorized' }); assert.deepEqual(store.list(), []);
-  fail = false; const added = await client.importConnections(file); assert.equal(added.length, 2); assert.notEqual(added[0].id, 'legacy-id');
-  store.select(added[1].id); const reloaded = new DeviceStore({ storage }); reloaded.load(); assert.equal(reloaded.selected, added[1].id);
-  await assert.rejects(client.importConnections(file), { code: 'device_exists' }); assert.equal(store.list().length, 2);
+test('addMany rejects duplicate device URLs', () => {
+  const storage = memoryStorage(), store = new DeviceStore({ storage }); store.load();
+  store.add(input);
+  assert.throws(() => store.add({ ...input, name: '第二台' }), { code: 'device_exists' });
+  assert.equal(store.list().length, 1);
 });
 
 test('storage errors do not claim a save or overwrite corrupted records', () => {
