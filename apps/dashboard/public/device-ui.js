@@ -4,7 +4,7 @@ import { deviceFields, reading, activityStatus, activityReason, pressureStatus, 
 export function createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, currentView, dateTime, escape, preference, onRefresh }) {
   const $ = selector => document.querySelector(selector);
   const latest = new Map(), pending = new Map();
-  let selected, pager = null, page = null, pageIndex = 0, busy = false, error = '', controller = null, generation = 0;
+  let selected, renderedDevice, pager = null, page = null, pageIndex = 0, busy = false, error = '', controller = null, generation = 0;
   const savedSize = Number(preference('statePageSize') || 50);
   $('#state-query-limit').value = [25, 50, 100, 200, 500].includes(savedSize) ? savedSize : 50;
   const historyTime = value => new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' }).format(new Date(value));
@@ -15,7 +15,10 @@ export function createDeviceUI({ query, selectedDevice, deviceChoices, selectDev
   const details = sample => deviceFields.map(([key, label]) => `<div class="health-item"><span>${label}</span><strong>${cell(sample, key)}</strong></div>`).join('');
 
   function renderLatest() {
-    const response = latest.get(selectedDevice()?.id);
+    const device = selectedDevice()?.id, response = latest.get(device);
+    // Wait for the replacement sample instead of briefly marking cached data stale.
+    if (response && device === renderedDevice && pending.has(device)) return;
+    renderedDevice = device;
     const status = activityStatus(response);
     const statusElement = $('#activity-status');
     statusElement.textContent = status.label; statusElement.className = `status-tag ${status.className}`; statusElement.title = status.detail;

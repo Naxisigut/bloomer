@@ -618,8 +618,8 @@ try {
   const view = location.hash.slice(1); if (['overview', 'analysis', 'records', 'devices', 'query', 'alerts'].includes(view)) setView(view, { load: false });
   await loadData();
 } catch (error) { $('#alerts').innerHTML = `<div class="alert error">${escape(error.message)}</div>`; }
-setInterval(() => {
-  updateClock(); renderDevices();
+function autoRefresh() {
+  updateClock();
   if (document.hidden || state.busy || state.exporting || $('#connect-dialog').open || $('#control-confirm-dialog').open || $('#remove-dialog').open) return;
   if (state.view === 'alerts') { alertUI.refresh(); return; }
   deviceUI.refresh();
@@ -632,8 +632,9 @@ setInterval(() => {
   if (state.view === 'analysis' || state.page === 0) {
     state.range = timeRange(state.period, DASHBOARD_TIMEZONE, new Date(), state.custom); loadData();
   } else { checkDevices(); refreshSummary(); }
-}, 60_000);
+}
+setInterval(autoRefresh, 60_000);
 document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) { updateClock(); if (state.view === 'overview') homeRevenue.refresh(); }
+  if (!document.hidden) autoRefresh();
 });
 new ResizeObserver(() => renderTrend()).observe($('#trend-chart'));
