@@ -109,9 +109,23 @@ type Runner struct {
 	now          func() time.Time
 	log          *slog.Logger
 	interval     time.Duration
-	prices          map[string]int64
-	lastSnapshotAt  time.Time
-	view            StatusView
+	minSwitch    time.Duration
+	wakeSwitch   chan struct{}
+	prices         map[string]int64
+	lastSnapshotAt time.Time
+	view           StatusView
+}
+
+type estimateState struct {
+	now                                                         time.Time
+	cands                                                       []Candidate
+	samples                                                     int
+	rec                                                         *Recommendation
+	current                                                     string
+	currentOK, modelsUnavailable, controlBusy                   bool
+	downloaded                                                  map[string]bool
+	autoSwitch                                                  bool
+	autoSince, lastSwitchAt, backoffUntil                       *time.Time
 }
 
 func NewRunner(cfg config.NetworkRates, settings *Settings, store netRateStore, client statsClient, ctl controlBridge, currentModel func(context.Context) (string, bool), now func() time.Time, log *slog.Logger) *Runner {
@@ -125,22 +139,102 @@ func NewRunner(cfg config.NetworkRates, settings *Settings, store netRateStore, 
 		cfg: cfg, settings: settings, store: store, client: client, control: ctl,
 		currentModel: currentModel, now: now, log: log,
 		interval: time.Duration(cfg.IntervalMinutes) * time.Minute,
+		minSwitch: time.Duration(cfg.SwitchMinIntervalMinutes) * time.Minute,
+		wakeSwitch: make(chan struct{}, 1),
 		view: StatusView{Enabled: true, WindowSamples: cfg.WindowSamples, Candidates: []CandidateView{}},
 	}
 }
 
 func (r *Runner) Run(ctx context.Context) {
+	var wg sync.WaitGroup
+	wg.Add(1)
+	go func() {
+		defer wg.Done()
+		r.collectLoop(ctx)
+	}()
+	r.switchLoop(ctx)
+	wg.Wait()
+}
+
+func (r *Runner) collectLoop(ctx context.Context) {
 	ticker := time.NewTicker(r.interval)
 	defer ticker.Stop()
-	r.runRound(ctx)
+	r.runCollect(ctx)
+	r.notifySwitch()
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			r.runRound(ctx)
+			r.runCollect(ctx)
+			r.notifySwitch()
 		}
 	}
+}
+
+func (r *Runner) switchLoop(ctx context.Context) {
+	for {
+		if ctx.Err() != nil {
+			return
+		}
+		delay, timed := r.timeUntilSwitchAttempt()
+		if !timed {
+			select {
+			case <-ctx.Done():
+				return
+			case <-r.wakeSwitch:
+			}
+			continue
+		}
+		if delay <= 0 {
+			r.runSwitch(ctx)
+			if nextDelay, nextTimed := r.timeUntilSwitchAttempt(); !nextTimed || nextDelay <= 0 {
+				select {
+				case <-ctx.Done():
+					return
+				case <-r.wakeSwitch:
+				}
+			}
+			continue
+		}
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+			r.runSwitch(ctx)
+		case <-r.wakeSwitch:
+			timer.Stop()
+		}
+	}
+}
+
+func (r *Runner) notifySwitch() {
+	if r.wakeSwitch == nil {
+		return
+	}
+	select {
+	case r.wakeSwitch <- struct{}{}:
+	default:
+	}
+}
+
+func (r *Runner) timeUntilSwitchAttempt() (time.Duration, bool) {
+	autoSwitch, autoSince, lastSwitchAt, backoffUntil, _ := r.settings.Snapshot()
+	if !autoSwitch {
+		return 0, false
+	}
+	now := r.now().UTC()
+	next := nextEligibleAt(autoSwitch, autoSince, r.lastModelChange(), lastSwitchAt, r.minSwitch, backoffUntil)
+	if next == nil {
+		return 0, true
+	}
+	d := next.Sub(now)
+	if d < 0 {
+		return 0, true
+	}
+	return d, true
 }
 
 func (r *Runner) Status() StatusView {
@@ -155,7 +249,6 @@ func (r *Runner) SetAutoSwitch(on bool) (StatusView, error) {
 		return StatusView{}, err
 	}
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	r.view.AutoSwitch = on
 	if on {
 		r.view.AutoSwitchSince = formatTime(now)
@@ -163,7 +256,10 @@ func (r *Runner) SetAutoSwitch(on bool) (StatusView, error) {
 		r.view.AutoSwitchSince = nil
 	}
 	r.refreshSwitchGateLocked(now)
-	return cloneStatus(r.view), nil
+	view := cloneStatus(r.view)
+	r.mu.Unlock()
+	r.notifySwitch()
+	return view, nil
 }
 
 func (r *Runner) Switches(ctx context.Context, limit int) ([]SwitchItemView, error) {
@@ -185,6 +281,11 @@ func (r *Runner) Switches(ctx context.Context, limit int) ([]SwitchItemView, err
 }
 
 func (r *Runner) runRound(parent context.Context) {
+	r.runCollect(parent)
+	r.runSwitch(parent)
+}
+
+func (r *Runner) runCollect(parent context.Context) {
 	ctx, cancel := context.WithTimeout(parent, roundTimeout)
 	defer cancel()
 	now := r.now().UTC().Truncate(time.Microsecond)
@@ -208,7 +309,9 @@ func (r *Runner) runRound(parent context.Context) {
 			lastErr = &code
 			r.log.Warn("network rates pricing unavailable")
 		} else {
+			r.mu.Lock()
 			r.prices = prices
+			r.mu.Unlock()
 		}
 		if err := r.persistSnapshot(ctx, statsSnap, now); err != nil {
 			r.log.Warn("network rates persist failed", "error", err)
@@ -217,40 +320,101 @@ func (r *Runner) runRound(parent context.Context) {
 		}
 	}
 
-	since := now.Add(-24 * time.Hour)
-	intervals, err := r.store.NetRateIntervals(ctx, since)
+	st, err := r.loadEstimateState(ctx, now)
+	if err != nil {
+		r.log.Warn("network rates intervals unavailable", "error", err)
+		r.mu.Lock()
+		r.view.LastError = lastErr
+		r.mu.Unlock()
+		return
+	}
+	r.publishCollectView(st, lastErr, statsErr)
+}
+
+func (r *Runner) runSwitch(parent context.Context) {
+	ctx, cancel := context.WithTimeout(parent, roundTimeout)
+	defer cancel()
+	now := r.now().UTC().Truncate(time.Microsecond)
+	r.reconcileSwitches(ctx, now)
+	st, err := r.loadEstimateState(ctx, now)
 	if err != nil {
 		r.log.Warn("network rates intervals unavailable", "error", err)
 		return
 	}
+	view := r.publishSwitchView(st)
+	r.maybeSwitch(ctx, now, view, st.cands, st.rec, st.current, st.currentOK, st.downloaded, st.modelsUnavailable, st.autoSwitch, st.autoSince, st.lastSwitchAt, st.backoffUntil, st.samples)
+	r.mu.Lock()
+	r.refreshSwitchGateLocked(now)
+	r.mu.Unlock()
+}
+
+func (r *Runner) loadEstimateState(ctx context.Context, now time.Time) (estimateState, error) {
+	intervals, err := r.store.NetRateIntervals(ctx, now.Add(-24*time.Hour))
+	if err != nil {
+		return estimateState{}, err
+	}
 	downloaded, modelsUnavailable := r.downloadedModels(ctx)
-	cands, samples := Estimate(intervals, r.cfg.WindowSamples, r.prices, r.cfg.FallbackModel, downloaded, r.cfg.MinProviders)
+	cands, samples := Estimate(intervals, r.cfg.WindowSamples, r.priceMap(), r.cfg.FallbackModel, downloaded, r.cfg.MinProviders)
 	rec := Recommend(cands, samples, r.cfg.WindowSamples, r.cfg.NearZeroMicroUSDPerHour, r.cfg.FallbackModel)
 	current, currentOK := r.readCurrentModel(ctx, now)
-
 	autoSwitch, autoSince, lastSwitchAt, backoffUntil, _ := r.settings.Snapshot()
-	view := StatusView{
-		Enabled: true, AutoSwitch: autoSwitch, AutoSwitchSince: formatTimePtr(autoSince),
-		WindowSamples: r.cfg.WindowSamples, Samples: samples, UpdatedAt: formatTime(now),
-		SnapshotAt: formatTimePtr(r.snapshotTime(statsErr)), CurrentModel: optionalString(current, currentOK),
-		Recommendation: recommendationView(rec), Candidates: candidateViews(cands), LastError: lastErr,
-	}
-	view.Switch = r.evaluateSwitchGate(switchInput{
-		now: now, autoSwitch: autoSwitch, autoSince: autoSince, lastSwitchAt: lastSwitchAt, backoffUntil: backoffUntil,
-		samples: samples, window: r.cfg.WindowSamples, minInterval: time.Duration(r.cfg.SwitchMinIntervalMinutes) * time.Minute,
-		controlBusy: r.control != nil && r.control.Busy(), modelsUnavailable: modelsUnavailable, currentModel: current, currentOK: currentOK,
+	return estimateState{
+		now: now, cands: cands, samples: samples, rec: rec, current: current, currentOK: currentOK,
+		downloaded: downloaded, modelsUnavailable: modelsUnavailable,
+		controlBusy: r.control != nil && r.control.Busy(),
+		autoSwitch: autoSwitch, autoSince: autoSince, lastSwitchAt: lastSwitchAt, backoffUntil: backoffUntil,
+	}, nil
+}
+
+func (st estimateState) gateInput(r *Runner) switchInput {
+	return switchInput{
+		now: st.now, autoSwitch: st.autoSwitch, autoSince: st.autoSince, lastSwitchAt: st.lastSwitchAt, backoffUntil: st.backoffUntil,
+		samples: st.samples, window: r.cfg.WindowSamples, minInterval: r.minSwitch,
+		controlBusy: st.controlBusy, modelsUnavailable: st.modelsUnavailable, currentModel: st.current, currentOK: st.currentOK,
 		lastModelChange: r.lastModelChange(), ratio: r.cfg.SwitchAdvantageRatio, nearZeroMicro: r.cfg.NearZeroMicroUSDPerHour,
-		fallbackModel: r.cfg.FallbackModel, recommendation: rec, candidates: cands, downloaded: downloaded,
-	})
-
-	r.mu.Lock()
-	r.view = view
-	r.mu.Unlock()
-
-	if statsErr != nil {
-		return
+		fallbackModel: r.cfg.FallbackModel, recommendation: st.rec, candidates: st.cands, downloaded: st.downloaded,
 	}
-	r.maybeSwitch(ctx, now, view, cands, rec, current, currentOK, downloaded, modelsUnavailable, autoSwitch, autoSince, lastSwitchAt, backoffUntil, samples)
+}
+
+func (r *Runner) applyEstimateViewLocked(st estimateState) {
+	r.view.Enabled = true
+	r.view.AutoSwitch = st.autoSwitch
+	r.view.AutoSwitchSince = formatTimePtr(st.autoSince)
+	r.view.WindowSamples = r.cfg.WindowSamples
+	r.view.Samples = st.samples
+	r.view.UpdatedAt = formatTime(st.now)
+	r.view.CurrentModel = optionalString(st.current, st.currentOK)
+	r.view.Recommendation = recommendationView(st.rec)
+	r.view.Candidates = candidateViews(st.cands)
+	r.view.Switch = r.evaluateSwitchGate(st.gateInput(r))
+}
+
+func (r *Runner) publishCollectView(st estimateState, lastErr *string, statsErr error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.applyEstimateViewLocked(st)
+	r.view.LastError = lastErr
+	r.view.SnapshotAt = formatTimePtr(r.snapshotTime(statsErr))
+}
+
+func (r *Runner) publishSwitchView(st estimateState) StatusView {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.applyEstimateViewLocked(st)
+	return cloneStatus(r.view)
+}
+
+func (r *Runner) priceMap() map[string]int64 {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if len(r.prices) == 0 {
+		return nil
+	}
+	out := make(map[string]int64, len(r.prices))
+	for k, v := range r.prices {
+		out[k] = v
+	}
+	return out
 }
 
 func (r *Runner) persistSnapshot(ctx context.Context, snap Snapshot, now time.Time) error {
@@ -438,7 +602,7 @@ func (r *Runner) refreshSwitchGateLocked(now time.Time) {
 	}
 	r.view.Switch = r.evaluateSwitchGate(switchInput{
 		now: now, autoSwitch: autoSwitch, autoSince: autoSince, lastSwitchAt: lastSwitchAt, backoffUntil: backoffUntil,
-		samples: r.view.Samples, window: r.cfg.WindowSamples, minInterval: time.Duration(r.cfg.SwitchMinIntervalMinutes) * time.Minute,
+		samples: r.view.Samples, window: r.cfg.WindowSamples, minInterval: r.minSwitch,
 		controlBusy: r.control != nil && r.control.Busy(), modelsUnavailable: false, currentModel: current, currentOK: currentOK,
 		lastModelChange: r.lastModelChange(), ratio: r.cfg.SwitchAdvantageRatio, nearZeroMicro: r.cfg.NearZeroMicroUSDPerHour,
 		fallbackModel: r.cfg.FallbackModel, recommendation: rec, candidates: cands, downloaded: downloaded,

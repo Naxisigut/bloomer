@@ -16,6 +16,8 @@ Agent 定期拉取公开统计与官方价格，按对照组差值估算各模�
 
 ## 自动切换规则
 
+采集与切换独立调度：采集仍按 `interval_minutes`（默认 5 分钟）拉取统计；切换不绑定采集轮次。冷却到期后立刻用最近 `window_samples`（默认 6）个有效间隔的当前推荐评估并提交。采集进行中或本轮统计失败，只要已有足够样本，仍可切换。
+
 以下条件**全部**满足才会提交切换：
 
 1. 看板开关 `auto_switch` 为开（持久化在数据目录 `network-rates.json`）。
@@ -25,7 +27,7 @@ Agent 定期拉取公开统计与官方价格，按对照组差值估算各模�
 5. 目标选择：全部已下载候选接近 0 或无可用候选时切到 `fallback_model`（需已下载）；否则切到推荐模型，且目标估算 ≥ 当前估算 × (1 + `switch_advantage_ratio`)。
 6. 不在失败退避期内（30 分钟起指数退避，上限 6 小时，写入 `network-rates.json`）。
 
-提交前写入 SQLite 切换记录（`running`）并更新检查点；按 job id 回填 `succeeded` / `failed` / `unconfirmed`。
+提交前写入 SQLite 切换记录（`running`）并更新检查点；按 job id 回填 `succeeded` / `failed` / `unconfirmed`。提交后立刻把 `next_eligible_at` 更新为本次切换时间 + 30 分钟。
 
 ## 配置
 

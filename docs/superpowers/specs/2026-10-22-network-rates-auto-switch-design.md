@@ -38,7 +38,7 @@ Agent 每 5 分钟拉取公开 `GET https://api.darkbloom.dev/v1/stats`，只把
 
 ## 自动切换（以下条件全部满足才切）
 
-每轮采集完成后评估一次：
+采集与切换独立调度。采集按 `interval_minutes` 进行；冷却到期后立刻用最近 6 个有效间隔的当前推荐评估并切换，不必等待本轮采集完成。
 
 1. `auto_switch` 为开。
 2. 开启时间 `auto_switch_since` 距今满 `switch_min_interval_minutes`（30 分钟），且已有 6 个有效间隔。

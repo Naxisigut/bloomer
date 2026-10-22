@@ -237,6 +237,18 @@ func (f *fakeControl) setJob(id, status, errCode string) {
 	f.jobs[id] = j
 }
 
+func (f *fakeControl) submitCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.submits)
+}
+
+func (s *seqStats) statsCalls() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.idx
+}
+
 func testCfg() config.NetworkRates {
 	c := config.DefaultNetworkRates()
 	c.AutoSwitch = false
@@ -630,6 +642,209 @@ func TestRunnerStatsAndPricingErrors(t *testing.T) {
 	if r.prices["model-alpha"] != 999 {
 		t.Fatalf("prices overwritten: %+v", r.prices)
 	}
+}
+
+func TestRunnerStatsErrorStillAutoSwitches(t *testing.T) {
+	base := time.Date(2026, 10, 22, 21, 0, 0, 0, time.UTC)
+	clk := &advClock{t: base}
+	store := &memStore{}
+	seedDualIntervals(store, base.Add(-time.Hour), 100_000, 800_000)
+	stats := &seqStats{statsErr: errors.New("down"), prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000}}
+	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
+	dir := t.TempDir()
+	writeSettingsFile(t, dir, true, base.Add(-2*time.Hour), nil)
+	r, _ := newTestRunner(t, dir, store, stats, ctl, clk, "model-alpha")
+	r.cfg.AutoSwitch = true
+	r.prices = map[string]int64{"model-alpha": 2200000, "model-beta": 2200000}
+	r.runRound(context.Background())
+	if ctl.submitCount() != 1 {
+		t.Fatalf("expected switch despite stats error, submits=%d", ctl.submitCount())
+	}
+	st := r.Status()
+	if st.LastError == nil || *st.LastError != "stats_unavailable" {
+		t.Fatalf("last_error=%v", st.LastError)
+	}
+}
+
+func TestRunnerSwitchRefreshesNextEligibleAt(t *testing.T) {
+	base := time.Date(2026, 10, 22, 11, 0, 0, 0, time.UTC)
+	clk := &advClock{t: base.Add(2 * time.Hour)}
+	store := &memStore{}
+	seedDualIntervals(store, base, 100_000, 800_000)
+	stats := &seqStats{
+		snaps:  []Snapshot{store.baselineSnap()},
+		prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000},
+	}
+	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
+	dir := t.TempDir()
+	writeSettingsFile(t, dir, true, base.Add(-2*time.Hour), nil)
+	r, _ := newTestRunner(t, dir, store, stats, ctl, clk, "model-alpha")
+	r.cfg.AutoSwitch = true
+	r.runRound(context.Background())
+	if ctl.submitCount() != 1 {
+		t.Fatalf("submits=%d", ctl.submitCount())
+	}
+	st := r.Status()
+	if st.Switch.NextEligibleAt == nil {
+		t.Fatal("missing next_eligible_at after switch")
+	}
+	got, err := time.Parse(time.RFC3339Nano, *st.Switch.NextEligibleAt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := clk.Now().UTC().Add(30 * time.Minute)
+	if !got.Equal(want) {
+		t.Fatalf("next_eligible_at=%s want %s", got.Format(time.RFC3339Nano), want.Format(time.RFC3339Nano))
+	}
+}
+
+func TestRunnerCollectDoesNotSubmitSwitch(t *testing.T) {
+	base := time.Date(2026, 10, 22, 9, 0, 0, 0, time.UTC)
+	clk := &advClock{t: base.Add(2 * time.Hour)}
+	store := &memStore{}
+	seedDualIntervals(store, base, 100_000, 800_000)
+	stats := &seqStats{
+		snaps:  []Snapshot{store.baselineSnap()},
+		prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000},
+	}
+	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
+	dir := t.TempDir()
+	writeSettingsFile(t, dir, true, base.Add(-2*time.Hour), nil)
+	r, _ := newTestRunner(t, dir, store, stats, ctl, clk, "model-alpha")
+	r.cfg.AutoSwitch = true
+	r.runCollect(context.Background())
+	if ctl.submitCount() != 0 {
+		t.Fatalf("collect submitted switch: %d", ctl.submitCount())
+	}
+	r.runSwitch(context.Background())
+	if ctl.submitCount() != 1 {
+		t.Fatalf("switch submits=%d", ctl.submitCount())
+	}
+}
+
+type blockStats struct {
+	mu        sync.Mutex
+	started   chan struct{}
+	release   chan struct{}
+	snap      Snapshot
+	prices    map[string]int64
+	statCalls int
+}
+
+func (s *blockStats) Stats(ctx context.Context, _ Cohort) (Snapshot, error) {
+	s.mu.Lock()
+	s.statCalls++
+	started := s.started
+	release := s.release
+	snap := s.snap
+	s.mu.Unlock()
+	select {
+	case started <- struct{}{}:
+	default:
+	}
+	select {
+	case <-ctx.Done():
+		return Snapshot{}, ctx.Err()
+	case <-release:
+		return snap, nil
+	}
+}
+
+func (s *blockStats) Pricing(context.Context) (map[string]int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.prices, nil
+}
+
+func waitSubmits(t *testing.T, ctl *fakeControl, want int, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if ctl.submitCount() == want {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("submits=%d want %d", ctl.submitCount(), want)
+}
+
+func TestRunSwitchesWhileCollectBlocked(t *testing.T) {
+	now := time.Now().UTC()
+	store := &memStore{}
+	seedDualIntervals(store, now.Add(-time.Hour), 100_000, 800_000)
+	stats := &blockStats{
+		started: make(chan struct{}, 1),
+		release: make(chan struct{}),
+		snap:    store.baselineSnap(),
+		prices:  map[string]int64{"model-alpha": 2200000, "model-beta": 2200000},
+	}
+	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
+	dir := t.TempDir()
+	writeSettingsFile(t, dir, true, now.Add(-2*time.Hour), nil)
+	settings := NewSettings(dir, false, nil)
+	settings.Load(now)
+	r := NewRunner(testCfg(), settings, store, stats, ctl, func(context.Context) (string, bool) {
+		return "model-alpha", true
+	}, time.Now, nil)
+	r.cfg.AutoSwitch = true
+	r.interval = time.Hour
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.Run(ctx)
+	}()
+
+	select {
+	case <-stats.started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("collect did not start")
+	}
+	waitSubmits(t, ctl, 1, 2*time.Second)
+	cancel()
+	<-done
+}
+
+func TestRunSwitchesWhenCooldownExpiresWithoutCollectTick(t *testing.T) {
+	now := time.Now().UTC()
+	store := &memStore{}
+	seedDualIntervals(store, now.Add(-time.Hour), 100_000, 800_000)
+	stats := &seqStats{snaps: []Snapshot{store.baselineSnap()}, prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000}}
+	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
+	dir := t.TempDir()
+	writeSettingsFile(t, dir, true, now.Add(-2*time.Hour), nil)
+	settings := NewSettings(dir, false, nil)
+	settings.Load(now)
+	r := NewRunner(testCfg(), settings, store, stats, ctl, func(context.Context) (string, bool) {
+		return "model-alpha", true
+	}, time.Now, nil)
+	r.cfg.AutoSwitch = true
+	r.interval = time.Hour
+	r.minSwitch = 300 * time.Millisecond
+	if err := settings.SetLastSwitchAt(time.Now().UTC()); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		r.Run(ctx)
+	}()
+
+	time.Sleep(80 * time.Millisecond)
+	if ctl.submitCount() != 0 {
+		t.Fatalf("switched before cooldown: %d", ctl.submitCount())
+	}
+	waitSubmits(t, ctl, 1, 2*time.Second)
+	if stats.statsCalls() > 1 {
+		t.Fatalf("extra collect ticks: %d", stats.statsCalls())
+	}
+	cancel()
+	<-done
 }
 
 func TestRunnerAutoSwitchOffNeverSubmits(t *testing.T) {
