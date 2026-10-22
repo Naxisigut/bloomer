@@ -23,7 +23,25 @@ const icons = {
   devices: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M7 13h4"/>',
   refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6.1a8 8 0 0 1 13.2 3L20 12M4 12l.7 2.9a8 8 0 0 0 13.2 3"/>',
   add: '<path d="M12 5v14M5 12h14"/>',
+  calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/>',
+  clock: '<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9.5 2.5h5"/>',
+  day: '<circle cx="12" cy="12" r="4"/><path d="M12 2.5v2M12 19.5v2M2.5 12h2M19.5 12h2M5.3 5.3l1.4 1.4M17.3 17.3l1.4 1.4M5.3 18.7l1.4-1.4M17.3 6.7l1.4-1.4"/>',
+  wallet: '<path d="M19 7V5.5A1.5 1.5 0 0 0 17.5 4h-12A2.5 2.5 0 0 0 3 6.5v11A2.5 2.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V15"/><path d="M3 6.5A2.5 2.5 0 0 0 5.5 9h13A1.5 1.5 0 0 1 20 10.5V15h-4a2 2 0 0 1 0-4h4"/>',
+  spark: '<path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/>',
+  activity: '<path d="M3 12h4l3-8 4 16 3-8h4"/>',
+  thermo: '<path d="M14 14.8V5a2 2 0 0 0-4 0v9.8a4 4 0 1 0 4 0z"/><path d="M12 9v8"/>',
+  memory: '<rect x="4" y="4" width="16" height="16" rx="2.5"/><rect x="8.5" y="8.5" width="7" height="7" rx="1"/><path d="M9 1.5V4M15 1.5V4M9 20v2.5M15 20v2.5M1.5 9H4M1.5 15H4M20 9h2.5M20 15h2.5"/>',
+  chevron: '<path d="m9 6 6 6-6 6"/>',
+  cube: '<path d="M12 2.8 20 7v10l-8 4.2L4 17V7z"/><path d="m4 7 8 4.2L20 7M12 11.2v10"/>',
 };
+const pageCopy = {
+  overview: ['今日概览', '实时查看设备状态与 Darkbloom 收益'],
+  analysis: ['收益分析', '按时间与模型多维度分析收益，点击「查询」后更新'],
+  records: ['收益明细', '逐笔收益记录，可按时间、模型筛选并导出 CSV'],
+  devices: ['我的设备', '管理连接、查看运行状态与远程操作 Darkbloom'],
+  alerts: ['告警记录', '设备告警与推送历史，可发送测试推送'],
+};
+const todayLabel = new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, month: 'long', day: 'numeric', weekday: 'short' });
 const icon = name => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]}</svg>`;
 $$('[data-icon]').forEach(element => { element.innerHTML = icon(element.dataset.icon); });
 
@@ -134,7 +152,7 @@ function renderDevices() {
   $('#device-cards').innerHTML = deviceChoices().map(device => {
     const health = state.health.get(device.id);
     const status = healthStatus(health);
-    return `<article class="device-card ${device.id === active ? 'selected' : ''}"><div class="device-card-header"><h3>${escape(device.name)}${device.id === 'demo' ? ' · 演示' : ''}</h3><span class="status-tag ${status.className}">${status.label}</span></div><p class="device-url">${escape(device.url)}</p><div class="device-stat"><span>Agent 版本</span><strong>${escape(health?.version || '—')}</strong></div>${health?.error ? `<p class="device-card-note">${escape(health.error)}</p>` : ''}<div class="device-card-actions"><button class="button ${device.id === active ? 'button-dark' : 'button-white'}" data-select-device="${escape(device.id)}">${device.id === active ? '当前设备' : '切换到此设备'}</button>${device.id !== 'demo' ? `<button class="button remove-device" data-remove-device="${escape(device.id)}">移除</button>` : ''}</div></article>`;
+    return `<article class="device-card ${device.id === active ? 'selected' : ''}"><div class="device-card-header"><span class="device-card-avatar" aria-hidden="true">${icon('devices')}</span><h3>${escape(device.name)}${device.id === 'demo' ? ' · 演示' : ''}</h3><span class="status-tag ${status.className}">${status.label}</span></div><p class="device-url">${escape(device.url)}</p><div class="device-stat"><span>Agent 版本</span><strong>${escape(health?.version || '—')}</strong></div>${health?.error ? `<p class="device-card-note">${escape(health.error)}</p>` : ''}<div class="device-card-actions"><button class="button ${device.id === active ? 'button-dark' : 'button-white'}" data-select-device="${escape(device.id)}">${device.id === active ? '当前设备' : '切换到此设备'}</button>${device.id !== 'demo' ? `<button class="button remove-device" data-remove-device="${escape(device.id)}">移除</button>` : ''}</div></article>`;
   }).join('');
   deviceUI.render();
   controlUI.render();
@@ -177,7 +195,7 @@ function renderRecords() {
   const page = state.data.earnings;
   const total = state.data.trend ? sumCount(state.data.trend.items) : null;
   const pages = total === null ? null : Math.max(1, Math.ceil(total / state.pageSize));
-  $('#records-body').innerHTML = page?.items.length ? page.items.map(item => `<tr><td><div class="model-text"><strong title="${escape(item.model)}">${escape(item.model)}</strong><small title="记录 ${escape(item.record_id)} · Provider ${escape(item.provider_id)}">${escape(item.job_id || item.record_id)}</small></div></td><td class="amount-cell">${escape(money(item.amount_micro_usd, 6))}</td><td>${number(item.prompt_tokens)}</td><td>${number(item.completion_tokens)}</td><td>${escape(dateTime(item.created_at))}</td></tr>`).join('') : `<tr><td colspan="5"><div class="empty-state">${page ? '当前筛选无记录' : state.busy ? '正在读取记录…' : '明细读取失败，请检查设备后刷新。'}</div></td></tr>`;
+  $('#records-body').innerHTML = page?.items.length ? page.items.map(item => `<tr><td><div class="model-cell"><span class="row-badge" aria-hidden="true">${icon('cube')}</span><div class="model-text"><strong title="${escape(item.model)}">${escape(item.model)}</strong><small title="记录 ${escape(item.record_id)} · Provider ${escape(item.provider_id)}">${escape(item.job_id || item.record_id)}</small></div></div></td><td class="amount-cell">${escape(money(item.amount_micro_usd, 6))}</td><td>${number(item.prompt_tokens)}</td><td>${number(item.completion_tokens)}</td><td>${escape(dateTime(item.created_at))}</td></tr>`).join('') : `<tr><td colspan="5"><div class="empty-state">${page ? '当前筛选无记录' : state.busy ? '正在读取记录…' : '明细读取失败，请检查设备后刷新。'}</div></td></tr>`;
   $('#records-body').setAttribute('aria-busy', String(state.busy));
   $('#records-count').textContent = total === null ? '—' : number(total);
   $('#page-number').textContent = `${state.page + 1} / ${pages === null ? '—' : number(pages)}`;
@@ -338,6 +356,7 @@ function setView(view, { load = true } = {}) {
   $('#overview-topbar').hidden = view !== 'overview';
   const titles = { overview: '首页', analysis: '收益分析', records: '收益明细', devices: '我的设备', alerts: '告警记录' };
   document.title = `Bloomer · ${titles[view]}`;
+  [$('#page-title').textContent, $('#page-subtitle').textContent] = pageCopy[view];
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); networkRatesUI.refresh(); }
   if (view === 'alerts') alertUI.refresh();
@@ -364,6 +383,7 @@ async function selectDevice(id) {
   await alertUI.refreshIfVisible();
 }
 $$('.nav-item').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
+$$('[data-goto]').forEach(button => button.addEventListener('click', () => setView(button.dataset.goto)));
 $('#device-select').addEventListener('change', event => selectDevice(event.target.value));
 $('#refresh').addEventListener('click', async () => {
   if (state.view === 'alerts') { alertUI.refresh(); return; }
@@ -399,8 +419,7 @@ $('#date-form').addEventListener('submit', event => {
   const custom = { from: form.elements.from.value, to: form.elements.to.value };
   try { timeRange('custom', DASHBOARD_TIMEZONE, new Date(), custom); } catch (error) { $('#date-error').textContent = error.message; return; }
   state.period = 'custom'; state.custom = custom;
-  $('#period-select').value = 'custom';
-  $$('[data-period]').forEach(button => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); });
+  $$('#records-period [data-period]').forEach(button => { button.classList.remove('selected'); button.setAttribute('aria-pressed', 'false'); });
   form.hidden = true; loadRecordsData({ reset: true });
 });
 $$('[data-model-filter]').forEach(select => select.addEventListener('change', event => {
@@ -512,6 +531,7 @@ $('#device-cards').addEventListener('click', async event => {
 });
 
 function updateClock() {
+  $('#today-label').textContent = todayLabel.format(correctedNow());
   if (state.view === 'devices') {
     $('#last-refresh').textContent = state.deviceFetchedAt ? `状态更新于 ${dateTime(state.deviceFetchedAt)}` : '';
     return;

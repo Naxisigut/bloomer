@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#183e35">
+  <meta name="theme-color" content="#ffffff">
   <title>Bloomer · 首页</title>
   <meta name="description" content="Darkbloom 收益与设备采集状态。">
   <link rel="icon" href="./favicon.svg" type="image/svg+xml">
@@ -12,169 +12,208 @@
 </head>
 <body>
   <a class="skip-link" href="#main">跳转到主要内容</a>
-  <aside class="sidebar">
-    <div class="sidebar-heading">
-      <a class="brand" href="./" aria-label="Bloomer 首页">Bloomer</a>
-      <div class="sidebar-actions" role="group" aria-label="全局操作">
-        <button type="button" class="sidebar-action" id="refresh" aria-label="刷新数据" title="刷新数据"><span data-icon="refresh"></span></button>
+  <div class="app-frame">
+    <aside class="sidebar">
+      <a class="brand" href="./" aria-label="Bloomer 首页">
+        <svg class="brand-mark" viewBox="0 0 48 48" aria-hidden="true"><g fill="currentColor"><ellipse cx="24" cy="14" rx="5.5" ry="10"/><ellipse cx="24" cy="14" rx="5.5" ry="10" transform="rotate(72 24 24)"/><ellipse cx="24" cy="14" rx="5.5" ry="10" transform="rotate(144 24 24)"/><ellipse cx="24" cy="14" rx="5.5" ry="10" transform="rotate(216 24 24)"/><ellipse cx="24" cy="14" rx="5.5" ry="10" transform="rotate(288 24 24)"/></g><circle cx="24" cy="24" r="4.5" fill="#fff"/></svg>
+        <span>Bloomer</span>
+      </a>
+      <nav class="navigation" aria-label="主导航">
+        <button class="nav-item active" data-view="overview" aria-current="page"><span data-icon="overview"></span><span class="nav-label">首页</span></button>
+        <button class="nav-item" data-view="analysis"><span data-icon="analysis"></span><span class="nav-label">收益分析</span></button>
+        <button class="nav-item" data-view="records"><span data-icon="records"></span><span class="nav-label">收益明细</span></button>
+        <button class="nav-item" data-view="devices"><span data-icon="devices"></span><span class="nav-label">我的设备</span><span id="nav-device-count" class="nav-count">0</span></button>
+        <button class="nav-item" data-view="alerts"><span data-icon="alerts"></span><span class="nav-label">告警记录</span></button>
+      </nav>
+      <div class="sidebar-card">
+        <strong>连接新设备</strong>
+        <p>添加家中的 Mac，实时查看收益与运行状态</p>
+        <button type="button" class="button button-soft" data-action="connect">添加设备</button>
       </div>
-    </div>
-    <nav class="navigation" aria-label="主导航">
-      <button class="nav-item active" data-view="overview" aria-current="page"><span data-icon="overview"></span>首页</button>
-      <button class="nav-item" data-view="analysis"><span data-icon="analysis"></span>收益分析</button>
-      <button class="nav-item" data-view="records"><span data-icon="records"></span>收益明细</button>
-      <button class="nav-item" data-view="devices"><span data-icon="devices"></span>我的设备<span id="nav-device-count" class="nav-count">0</span></button>
-      <button class="nav-item" data-view="alerts"><span data-icon="alerts"></span>告警记录</button>
-    </nav>
-  </aside>
+    </aside>
 
-  <div class="app-shell">
-    <header id="overview-topbar" class="topbar" aria-label="设备与收益概况">
-      <div class="topbar-device">
-        <div class="device-select-wrap">
-          <span id="device-status" class="collection-dot offline" role="img" aria-label="收益采集状态：检测中" title="收益采集状态：检测中"></span>
-          <label class="sr-only" for="device-select">选择数据来源设备</label>
-          <select id="device-select"><option value="demo">演示设备</option></select>
+    <div class="app-shell">
+      <header class="page-header">
+        <div class="page-heading">
+          <h1 id="page-title">今日概览</h1>
+          <p id="page-subtitle">实时查看设备状态与 Darkbloom 收益</p>
         </div>
-      </div>
-      <div class="device-overview" role="group" aria-label="设备状态" aria-live="polite">
-        <div><span>工作状态</span><strong id="activity-status" class="status-tag warning">读取状态中</strong></div>
-        <div><span>温度</span><strong id="thermal-status" class="status-tag warning">未知</strong></div>
-        <div><span>内存</span><strong id="memory-pressure-status" class="status-tag warning">未知</strong></div>
-      </div>
-      <div class="summary-metrics" aria-label="当前设备收益，不受下方筛选影响">
-        <div class="summary-metric"><span class="summary-label">近 1 小时收益</span><strong id="last-hour-amount" class="summary-amount">—</strong></div>
-        <div class="summary-metric"><span class="summary-label">近 24 小时收益</span><strong id="last-day-amount" class="summary-amount">—</strong></div>
-        <div class="summary-metric"><span class="summary-label">可用余额</span><strong id="available-balance" class="summary-amount">—</strong></div>
-        <div class="summary-metric"><span class="summary-label">推荐模型（估算）</span><strong id="network-rates-recommendation" class="summary-amount">—</strong></div>
-      </div>
-    </header>
-    <main id="main" tabindex="-1" data-view="overview">
-      <div id="demo-banner" class="demo-banner" hidden><span class="demo-label">演示</span><span>当前为演示数据</span></div>
-      <div id="alerts" aria-live="polite"></div>
-      <section class="panel alerts-only" aria-label="告警记录">
-        <div class="panel-heading"><div><h2>告警记录</h2><p>最近 50 条 · 北京时间 · 每 60 秒刷新</p></div></div>
-        <div class="alert-controls"><label for="alert-device">选择设备</label><select id="alert-device" aria-label="告警记录设备"></select><button id="alert-refresh" class="button button-white">刷新记录</button><button id="alert-test" class="button button-dark">发送测试推送</button></div>
-        <p id="alert-message" class="state-message" role="status" hidden></p>
-        <div id="alert-records" aria-live="polite"><p class="control-note">暂无告警记录</p></div>
-      </section>
+        <div class="page-actions">
+          <span class="date-chip"><span id="today-label">—</span><span class="icon-circle" data-icon="calendar"></span></span>
+          <button type="button" class="icon-circle icon-action" id="refresh" aria-label="刷新数据" title="刷新数据"><span data-icon="refresh"></span></button>
+        </div>
+      </header>
 
-      <section class="panel chart-panel home-only home-revenue-panel" aria-label="当天收益">
-        <div class="panel-heading home-revenue-heading"><h2>今日收益</h2><strong id="home-revenue-total">—</strong></div>
-        <fieldset class="home-models" aria-label="收益曲线模型选择"><div id="home-revenue-models" class="home-model-choices"></div></fieldset>
-        <p id="home-revenue-status" class="state-message warning" role="status" hidden></p>
-        <div id="home-revenue-chart" class="trend-chart home-revenue-chart" aria-label="当天按小时收益折线图"><div class="empty-state">正在读取当天收益…</div></div>
-        <div class="chart-footer"><span>无收益小时显示 0，未来时段留空 · 当前小时截至最近刷新</span><span>北京时间 UTC+8</span></div>
-      </section>
+      <main id="main" tabindex="-1" data-view="overview">
+        <div id="demo-banner" class="demo-banner" hidden><span class="demo-label">演示</span><span>当前为演示数据，不代表真实设备收益</span></div>
+        <div id="alerts" aria-live="polite"></div>
 
-      <section id="analysis" class="analysis-only" aria-label="收益分析">
-        <div class="panel analysis-filter-panel">
-          <div class="earnings-filters analysis-filters" aria-label="分析筛选">
-            <div class="filter-bar">
-              <label class="analysis-field">设备<select id="analysis-device" class="model-filter" aria-label="分析设备"></select></label>
-              <div class="range-controls">
-                <div class="period-tabs" id="analysis-period" role="group" aria-label="时间范围">
-                  <button data-period="today">今天</button><button data-period="yesterday">昨天</button><button class="selected" data-period="7" aria-pressed="true">近 7 天</button><button data-period="30">近 30 天</button><button data-period="90">近 90 天</button><button data-period="365">近一年</button>
+        <section class="panel alerts-only" aria-label="告警记录">
+          <div class="panel-heading"><div><h2>推送记录</h2><p>最近 50 条 · 北京时间 · 每 60 秒刷新</p></div></div>
+          <div class="alert-controls"><label for="alert-device">选择设备</label><select id="alert-device" aria-label="告警记录设备"></select><span class="toolbar-spacer"></span><button id="alert-refresh" class="button button-white">刷新记录</button><button id="alert-test" class="button button-dark">发送测试推送</button></div>
+          <p id="alert-message" class="state-message" role="status" hidden></p>
+          <div id="alert-records" aria-live="polite"><p class="control-note">暂无告警记录</p></div>
+        </section>
+
+        <div class="overview-layout home-only">
+          <div class="overview-main">
+            <section id="overview-topbar" class="stat-strip" aria-label="当前设备收益，不受下方筛选影响">
+              <div class="stat"><span class="stat-icon" data-icon="clock"></span><div class="stat-body"><span class="summary-label">近 1 小时收益</span><strong id="last-hour-amount" class="summary-amount">—</strong></div></div>
+              <div class="stat"><span class="stat-icon" data-icon="day"></span><div class="stat-body"><span class="summary-label">近 24 小时收益</span><strong id="last-day-amount" class="summary-amount">—</strong></div></div>
+              <div class="stat"><span class="stat-icon" data-icon="wallet"></span><div class="stat-body"><span class="summary-label">可用余额</span><strong id="available-balance" class="summary-amount">—</strong></div></div>
+              <div class="stat"><span class="stat-icon" data-icon="spark"></span><div class="stat-body"><span class="summary-label">推荐模型（估算）</span><strong id="network-rates-recommendation" class="summary-amount summary-text">—</strong></div></div>
+            </section>
+
+            <section class="panel chart-panel home-revenue-panel" aria-label="当天收益">
+              <div class="panel-heading home-revenue-heading">
+                <div><h2>今日收益</h2><p>按小时统计 · 北京时间 UTC+8</p></div>
+                <strong id="home-revenue-total">—</strong>
+              </div>
+              <fieldset class="home-models" aria-label="收益曲线模型选择"><div id="home-revenue-models" class="home-model-choices"></div></fieldset>
+              <p id="home-revenue-status" class="state-message warning" role="status" hidden></p>
+              <div id="home-revenue-chart" class="trend-chart home-revenue-chart" aria-label="当天按小时收益折线图"><div class="empty-state">正在读取当天收益…</div></div>
+              <div class="chart-footer"><span>无收益小时显示 0，未来时段留空 · 当前小时截至最近刷新</span></div>
+            </section>
+          </div>
+
+          <aside class="overview-aside" aria-label="当前设备">
+            <section class="device-spot">
+              <div class="device-avatar"><span data-icon="devices"></span><span id="device-status" class="collection-dot offline" role="img" aria-label="收益采集状态：检测中" title="收益采集状态：检测中"></span></div>
+              <div class="device-select-wrap">
+                <label class="sr-only" for="device-select">选择数据来源设备</label>
+                <select id="device-select"><option value="demo">演示设备</option></select>
+              </div>
+              <p class="device-spot-hint">数据来源设备 · 圆点表示采集状态</p>
+              <div class="device-overview" role="group" aria-label="设备状态" aria-live="polite">
+                <div class="device-reading"><span class="reading-icon" data-icon="activity"></span><span class="reading-label">工作状态</span><strong id="activity-status" class="status-tag warning">读取状态中</strong></div>
+                <div class="device-reading"><span class="reading-icon" data-icon="thermo"></span><span class="reading-label">温度</span><strong id="thermal-status" class="status-tag warning">未知</strong></div>
+                <div class="device-reading"><span class="reading-icon" data-icon="memory"></span><span class="reading-label">内存</span><strong id="memory-pressure-status" class="status-tag warning">未知</strong></div>
+              </div>
+            </section>
+
+            <section class="quick-links" aria-label="快捷入口">
+              <h2>快捷入口</h2>
+              <button type="button" class="quick-link" data-goto="analysis"><span class="quick-icon tone-blue" data-icon="analysis"></span><span><strong>收益分析</strong><small>趋势、占比与时段热力图</small></span><span class="quick-arrow" data-icon="chevron"></span></button>
+              <button type="button" class="quick-link" data-goto="records"><span class="quick-icon tone-orange" data-icon="records"></span><span><strong>收益明细</strong><small>逐笔记录与 CSV 导出</small></span><span class="quick-arrow" data-icon="chevron"></span></button>
+              <button type="button" class="quick-link" data-goto="devices"><span class="quick-icon tone-green" data-icon="devices"></span><span><strong>我的设备</strong><small>运行状态与远程操作</small></span><span class="quick-arrow" data-icon="chevron"></span></button>
+              <button type="button" class="quick-link" data-goto="alerts"><span class="quick-icon tone-gray" data-icon="alerts"></span><span><strong>告警记录</strong><small>推送历史与测试推送</small></span><span class="quick-arrow" data-icon="chevron"></span></button>
+            </section>
+          </aside>
+        </div>
+
+        <section id="analysis" class="analysis-only" aria-label="收益分析">
+          <div class="panel analysis-filter-panel">
+            <div class="earnings-filters analysis-filters" aria-label="分析筛选">
+              <div class="filter-bar">
+                <label class="analysis-field">设备<select id="analysis-device" class="model-filter" aria-label="分析设备"></select></label>
+                <div class="analysis-field"><span>时间范围</span>
+                  <div class="range-controls">
+                    <div class="period-tabs" id="analysis-period" role="group" aria-label="时间范围">
+                      <button data-period="today">今天</button><button data-period="yesterday">昨天</button><button class="selected" data-period="7" aria-pressed="true">近 7 天</button><button data-period="30">近 30 天</button><button data-period="90">近 90 天</button><button data-period="365">近一年</button>
+                    </div>
+                    <button type="button" class="button button-white date-button" id="analysis-custom-range"><span data-icon="calendar"></span><span id="analysis-range-label">自选日期</span></button>
+                  </div>
                 </div>
-                <button type="button" class="button date-button" id="analysis-custom-range"><span id="analysis-range-label">自选日期</span></button>
+                <div class="analysis-field"><span>粒度</span>
+                  <div class="chart-toggle" id="analysis-granularity" role="group" aria-label="分析粒度">
+                    <button data-granularity="hour">按小时</button><button class="selected" data-granularity="day" aria-pressed="true">按天</button><button data-granularity="month">按月</button>
+                  </div>
+                </div>
+                <div class="analysis-actions">
+                  <button type="button" id="analysis-cancel" class="button button-white" hidden>取消</button>
+                  <button type="button" id="analysis-query" class="button button-dark">查询</button>
+                </div>
               </div>
-              <div class="chart-toggle" id="analysis-granularity" role="group" aria-label="分析粒度">
-                <button data-granularity="hour">按小时</button><button class="selected" data-granularity="day" aria-pressed="true">按天</button><button data-granularity="month">按月</button>
-              </div>
-              <div class="analysis-actions">
-                <button type="button" id="analysis-query" class="button button-dark">查询</button>
-                <button type="button" id="analysis-cancel" class="button button-white" hidden>取消</button>
-              </div>
-            </div>
-            <form id="analysis-date-form" class="date-form" hidden><label>开始日期<input type="date" name="from" required></label><span>至</span><label>结束日期<input type="date" name="to" required></label><button class="button button-dark" type="submit">应用日期</button><span id="analysis-date-error" role="alert"></span></form>
-            <fieldset class="analysis-models" aria-label="模型筛选"><div id="analysis-model-tags" class="model-tag-list"></div></fieldset>
-            <p id="analysis-status" class="state-message" role="status" hidden></p>
-            <p id="analysis-truncated" class="state-message warning" role="status" hidden>部分查询时间超出明细保留范围，已按滚动 365 天截取。</p>
-          </div>
-        </div>
-        <div class="analysis-metrics" aria-label="分析指标">
-          <article class="analysis-metric"><span>总收益</span><strong id="analysis-metric-total">—</strong></article>
-          <article class="analysis-metric"><span>任务数</span><strong id="analysis-metric-count">—</strong></article>
-          <article class="analysis-metric"><span>单笔平均</span><strong id="analysis-metric-avg">—</strong></article>
-          <article class="analysis-metric"><span>日均收益</span><strong id="analysis-metric-daily">—</strong></article>
-          <article class="analysis-metric"><span>最高收益时段</span><strong id="analysis-metric-peak">—</strong></article>
-        </div>
-        <div class="analysis-grid">
-          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>收益趋势</h2><div class="chart-toggle" role="group" aria-label="趋势样式"><button class="selected" data-trend-mode="bar" aria-pressed="true">柱状</button><button data-trend-mode="line">折线</button></div></div><div id="analysis-chart-trend" class="analysis-chart"></div></section>
-          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>累计收益</h2></div><div id="analysis-chart-cumulative" class="analysis-chart"></div></section>
-          <section class="panel chart-panel"><div class="panel-heading"><h2>模型收益占比</h2></div><div id="analysis-chart-share" class="analysis-chart"></div><div class="table-scroll"><table><thead><tr><th>模型</th><th>金额</th><th>占比</th><th>任务数</th><th>单笔均值</th></tr></thead><tbody id="analysis-share-body"><tr><td colspan="5"><div class="empty-state">等待查询</div></td></tr></tbody></table></div></section>
-          <section class="panel chart-panel"><div class="panel-heading"><h2>任务数与单笔均值</h2></div><div id="analysis-chart-task-avg" class="analysis-chart"></div></section>
-          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>24 小时时段分布</h2><p>各小时日均收益 · 北京时间</p></div><div id="analysis-chart-hour" class="analysis-chart"></div></section>
-          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>星期 × 小时热力图</h2></div><div id="analysis-chart-weekday" class="analysis-chart"></div></section>
-          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>模型 × 小时热力图</h2></div><div id="analysis-chart-model-hour" class="analysis-chart"></div></section>
-          <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>模型平均收益对比</h2></div><div id="analysis-chart-model-compare" class="analysis-chart"></div></section>
-        </div>
-        <section class="data-note"><p>收益分析只统计所选设备本机产生的收益；点击「查询」后更新，页面不会自动刷新。金额单位为 USD，时区为中国标准时间（UTC+8）。</p><span id="coverage-tag" class="subtle-tag">等待历史信息</span></section>
-      </section>
-
-      <section class="panel records-panel records-only" id="records-panel">
-        <div class="panel-heading"><h2>收益记录<span id="records-count" class="count-badge">0</span></h2><div class="table-actions"><label class="sr-only" for="model-filter">筛选模型</label><select id="model-filter" class="model-filter" data-model-filter><option value="">全部模型</option></select><button id="export-csv" class="button button-white">导出 CSV</button></div></div>
-        <div class="earnings-filters records-filters" aria-label="明细筛选">
-          <div class="filter-bar">
-            <div class="range-controls">
-              <div class="period-tabs" id="records-period" role="group" aria-label="时间范围"><button class="selected" data-period="1" aria-pressed="true">近 1 天</button><button data-period="7">近 7 天</button><button data-period="30">近 30 天</button><button data-period="365">近一年</button></div>
-              <button type="button" class="button date-button" id="custom-range"><span id="range-label">选择日期</span></button>
+              <form id="analysis-date-form" class="date-form" hidden><label>开始日期<input type="date" name="from" required></label><span>至</span><label>结束日期<input type="date" name="to" required></label><button class="button button-dark" type="submit">应用日期</button><span id="analysis-date-error" role="alert"></span></form>
+              <fieldset class="analysis-models" aria-label="模型筛选"><legend>模型（最多 8 个）</legend><div id="analysis-model-tags" class="model-tag-list"></div></fieldset>
+              <p id="analysis-status" class="state-message" role="status" hidden></p>
+              <p id="analysis-truncated" class="state-message warning" role="status" hidden>部分查询时间超出明细保留范围，已按滚动 365 天截取。</p>
             </div>
           </div>
-          <form id="date-form" class="date-form" hidden><label>开始日期<input type="date" name="from" required></label><span>至</span><label>结束日期<input type="date" name="to" required></label><button class="button button-dark" type="submit">应用日期</button><button class="button button-white" type="button" id="cancel-range">取消</button><span id="date-error" role="alert"></span></form>
-        </div>
-        <div class="table-scroll"><table><thead><tr><th>模型 / 任务</th><th>收益 <span>USD</span></th><th>输入 Token</th><th>输出 Token</th><th>发生时间 <span id="table-timezone">UTC+8</span></th></tr></thead><tbody id="records-body"><tr><td colspan="5"><div class="empty-state">正在读取收益记录…</div></td></tr></tbody></table></div>
-        <div class="table-footer">
-          <span id="page-info">等待记录</span>
-          <div class="pagination" aria-label="明细分页">
-            <form id="page-size-form" class="page-size-form">
-              <label for="page-size">每页</label><input id="page-size" type="number" min="1" max="500" step="1" value="10" list="page-sizes" aria-label="每页条数" required><span>条</span>
-              <datalist id="page-sizes"><option value="10"></option><option value="25"></option><option value="50"></option><option value="100"></option><option value="200"></option><option value="500"></option></datalist>
-              <button type="submit" class="button button-white">应用</button>
-            </form>
-            <div class="page-nav"><button id="prev-page" class="button button-white" disabled>上一页</button><span id="page-number">1 / —</span><button id="next-page" class="button button-white" disabled>下一页</button></div>
-            <form id="page-jump-form" class="page-jump-form">
-              <label for="page-input">跳至</label><input id="page-input" type="number" min="1" step="1" value="1" aria-label="跳转页码" required><span>页</span><button type="submit" class="button button-white">跳转</button><button type="button" id="cancel-page" class="button button-white" hidden>取消</button>
-            </form>
+          <div class="analysis-metrics" aria-label="分析指标">
+            <article class="analysis-metric"><span class="stat-icon" data-icon="wallet"></span><div><span>总收益</span><strong id="analysis-metric-total">—</strong></div></article>
+            <article class="analysis-metric"><span class="stat-icon" data-icon="records"></span><div><span>任务数</span><strong id="analysis-metric-count">—</strong></div></article>
+            <article class="analysis-metric"><span class="stat-icon" data-icon="spark"></span><div><span>单笔平均</span><strong id="analysis-metric-avg">—</strong></div></article>
+            <article class="analysis-metric"><span class="stat-icon" data-icon="day"></span><div><span>日均收益</span><strong id="analysis-metric-daily">—</strong></div></article>
+            <article class="analysis-metric"><span class="stat-icon" data-icon="clock"></span><div><span>最高收益时段</span><strong id="analysis-metric-peak">—</strong></div></article>
           </div>
-        </div>
-        <p id="pagination-status" class="pagination-status" role="status" hidden></p>
-        <p id="export-status" class="export-status" role="status" hidden></p>
-      </section>
+          <div class="analysis-grid">
+            <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>收益趋势</h2><div class="chart-toggle" role="group" aria-label="趋势样式"><button class="selected" data-trend-mode="bar" aria-pressed="true">柱状</button><button data-trend-mode="line">折线</button></div></div><div id="analysis-chart-trend" class="analysis-chart"></div></section>
+            <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>累计收益</h2></div><div id="analysis-chart-cumulative" class="analysis-chart"></div></section>
+            <section class="panel chart-panel"><div class="panel-heading"><h2>模型收益占比</h2></div><div id="analysis-chart-share" class="analysis-chart"></div><div class="table-scroll"><table><thead><tr><th>模型</th><th>金额</th><th>占比</th><th>任务数</th><th>单笔均值</th></tr></thead><tbody id="analysis-share-body"><tr><td colspan="5"><div class="empty-state">等待查询</div></td></tr></tbody></table></div></section>
+            <section class="panel chart-panel"><div class="panel-heading"><h2>任务数与单笔均值</h2></div><div id="analysis-chart-task-avg" class="analysis-chart"></div></section>
+            <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><div><h2>24 小时时段分布</h2><p>各小时日均收益 · 北京时间</p></div></div><div id="analysis-chart-hour" class="analysis-chart"></div></section>
+            <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>星期 × 小时热力图</h2></div><div id="analysis-chart-weekday" class="analysis-chart"></div></section>
+            <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>模型 × 小时热力图</h2></div><div id="analysis-chart-model-hour" class="analysis-chart"></div></section>
+            <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>模型平均收益对比</h2></div><div id="analysis-chart-model-compare" class="analysis-chart"></div></section>
+          </div>
+          <section class="data-note"><p>收益分析只统计所选设备本机产生的收益；点击「查询」后更新，页面不会自动刷新。金额单位为 USD，时区为中国标准时间（UTC+8）。</p><span id="coverage-tag" class="subtle-tag">等待历史信息</span></section>
+        </section>
 
-      <section id="devices-view" class="devices-only">
-        <div class="device-cards-wrap"><div id="device-cards" class="device-cards"></div><button type="button" class="device-add-button" data-action="connect" aria-label="添加设备" title="添加设备"><span data-icon="add"></span></button></div>
-        <div class="panel device-state-panel"><div class="panel-heading"><div><h2>运行状态</h2></div><div class="state-panel-actions"><label class="sr-only" for="detail-device-select">选择设备</label><select id="detail-device-select" class="model-filter"></select><span id="device-state-time" class="state-timestamp"></span></div></div><p id="device-state-message" class="state-message" role="status" hidden>正在读取设备状态…</p><div id="device-state-details" class="health-details"></div></div>
-        <div class="panel control-panel" id="control-panel">
-          <div class="panel-heading"><div><h2>远程操作</h2><p id="control-device-label">当前设备</p></div><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
-          <p id="control-message" class="state-message" role="status">正在检查远程操作能力…</p>
-          <div class="control-content">
-            <div class="control-lifecycle"><button type="button" class="button button-white" data-control="stop" disabled>关闭 Darkbloom</button><button type="button" class="button button-white" data-control="restart" disabled>重启 Darkbloom</button></div>
-            <div class="control-model-grid">
-              <div><label for="control-local-models">本地模型（可多选）</label><select id="control-local-models" multiple size="5" aria-describedby="control-selection-note"></select><p id="control-selection-note">切换会替换整套托管模型；开启使用所选模型。</p><div class="control-lifecycle"><button type="button" class="button button-dark" data-control="switch" disabled>切换模型</button><button type="button" class="button button-white" data-control="start" disabled>开启 Darkbloom</button></div><p id="control-local-error" class="control-note"></p></div>
-              <div><label for="control-download-model">下载模型</label><select id="control-download-model"><option value="">请先刷新模型目录</option></select><p>从设备的官方模型目录选择，下载完成后可在本地模型中选择。</p><button type="button" class="button button-white" data-control="download" disabled>下载所选模型</button><p id="control-catalog-error" class="control-note"></p></div>
+        <section class="panel records-panel records-only" id="records-panel">
+          <div class="panel-heading"><h2>收益记录<span id="records-count" class="count-badge">0</span></h2><div class="table-actions"><label class="sr-only" for="model-filter">筛选模型</label><select id="model-filter" class="model-filter" data-model-filter><option value="">全部模型</option></select><button id="export-csv" class="button button-white">导出 CSV</button></div></div>
+          <div class="earnings-filters records-filters" aria-label="明细筛选">
+            <div class="filter-bar">
+              <div class="range-controls">
+                <div class="period-tabs" id="records-period" role="group" aria-label="时间范围"><button class="selected" data-period="1" aria-pressed="true">近 1 天</button><button data-period="7">近 7 天</button><button data-period="30">近 30 天</button><button data-period="365">近一年</button></div>
+                <button type="button" class="button button-white date-button" id="custom-range"><span data-icon="calendar"></span><span id="range-label">选择日期</span></button>
+              </div>
             </div>
-            <p class="control-note">关闭、重启和切换会等待已接收的任务完成。操作期间可离开页面，执行结果保存在设备端；下载可能需要较长时间。</p>
-            <h3>最近操作</h3><div id="control-jobs" aria-live="polite"></div>
-            <button id="control-retry" type="button" class="button button-white" hidden>核对结果并重试提交</button>
+            <form id="date-form" class="date-form" hidden><label>开始日期<input type="date" name="from" required></label><span>至</span><label>结束日期<input type="date" name="to" required></label><button class="button button-dark" type="submit">应用日期</button><button class="button button-white" type="button" id="cancel-range">取消</button><span id="date-error" role="alert"></span></form>
           </div>
-        </div>
-        <div class="panel network-rates-panel" id="network-rates-panel">
-          <div class="panel-heading"><div><h2>全网模型收益（估算）</h2><p id="network-rates-device-label">当前设备</p></div><button id="network-rates-refresh" type="button" class="button button-white">刷新</button></div>
-          <div class="network-rates-content">
-            <p id="network-rates-message" class="state-message" role="status" hidden></p>
-            <label class="network-rates-toggle"><input id="network-rates-auto-switch" type="checkbox"> 自动切换最优模型</label>
-            <p id="network-rates-status" class="control-note" role="status"></p>
-            <div id="network-rates-candidates"></div>
-            <p class="control-note network-rates-footnote">仅供参考，不代表本机实际收益。</p>
-            <h3>最近切换</h3>
-            <div id="network-rates-switches" aria-live="polite"></div>
+          <div class="table-scroll"><table><thead><tr><th>模型 / 任务</th><th>收益 <span>USD</span></th><th>输入 Token</th><th>输出 Token</th><th>发生时间 <span id="table-timezone">UTC+8</span></th></tr></thead><tbody id="records-body"><tr><td colspan="5"><div class="empty-state">正在读取收益记录…</div></td></tr></tbody></table></div>
+          <div class="table-footer">
+            <span id="page-info">等待记录</span>
+            <div class="pagination" aria-label="明细分页">
+              <form id="page-size-form" class="page-size-form">
+                <label for="page-size">每页</label><input id="page-size" type="number" min="1" max="500" step="1" value="10" list="page-sizes" aria-label="每页条数" required><span>条</span>
+                <datalist id="page-sizes"><option value="10"></option><option value="25"></option><option value="50"></option><option value="100"></option><option value="200"></option><option value="500"></option></datalist>
+                <button type="submit" class="button button-white">应用</button>
+              </form>
+              <div class="page-nav"><button id="prev-page" class="button button-white" disabled>上一页</button><span id="page-number">1 / —</span><button id="next-page" class="button button-white" disabled>下一页</button></div>
+              <form id="page-jump-form" class="page-jump-form">
+                <label for="page-input">跳至</label><input id="page-input" type="number" min="1" step="1" value="1" aria-label="跳转页码" required><span>页</span><button type="submit" class="button button-white">跳转</button><button type="button" id="cancel-page" class="button button-white" hidden>取消</button>
+              </form>
+            </div>
           </div>
-        </div>
-      </section>
+          <p id="pagination-status" class="pagination-status" role="status" hidden></p>
+          <p id="export-status" class="export-status" role="status" hidden></p>
+        </section>
 
-      <footer class="page-footer"><span id="last-refresh">等待首次刷新</span></footer>
-    </main>
+        <section id="devices-view" class="devices-only">
+          <div class="device-cards-wrap"><div id="device-cards" class="device-cards"></div><button type="button" class="device-add-button" data-action="connect" aria-label="添加设备" title="添加设备"><span class="icon-circle" data-icon="add"></span><span>添加设备</span></button></div>
+          <div class="panel device-state-panel"><div class="panel-heading"><div><h2>运行状态</h2><p id="device-state-time" class="state-timestamp"></p></div><div class="state-panel-actions"><label class="sr-only" for="detail-device-select">选择设备</label><select id="detail-device-select" class="model-filter"></select></div></div><p id="device-state-message" class="state-message" role="status" hidden>正在读取设备状态…</p><div id="device-state-details" class="health-details"></div></div>
+          <div class="panel control-panel" id="control-panel">
+            <div class="panel-heading"><div><h2>远程操作</h2><p id="control-device-label">当前设备</p></div><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
+            <p id="control-message" class="state-message" role="status">正在检查远程操作能力…</p>
+            <div class="control-content">
+              <div class="control-lifecycle"><button type="button" class="button button-white" data-control="stop" disabled>关闭 Darkbloom</button><button type="button" class="button button-white" data-control="restart" disabled>重启 Darkbloom</button></div>
+              <div class="control-model-grid">
+                <div class="control-block"><label for="control-local-models">本地模型（可多选）</label><select id="control-local-models" multiple size="5" aria-describedby="control-selection-note"></select><p id="control-selection-note">切换会替换整套托管模型；开启使用所选模型。</p><div class="control-lifecycle"><button type="button" class="button button-dark" data-control="switch" disabled>切换模型</button><button type="button" class="button button-white" data-control="start" disabled>开启 Darkbloom</button></div><p id="control-local-error" class="control-note"></p></div>
+                <div class="control-block"><label for="control-download-model">下载模型</label><select id="control-download-model"><option value="">请先刷新模型目录</option></select><p>从设备的官方模型目录选择，下载完成后可在本地模型中选择。</p><div class="control-lifecycle"><button type="button" class="button button-white" data-control="download" disabled>下载所选模型</button></div><p id="control-catalog-error" class="control-note"></p></div>
+              </div>
+              <p class="control-note">关闭、重启和切换会等待已接收的任务完成。操作期间可离开页面，执行结果保存在设备端；下载可能需要较长时间。</p>
+              <h3>最近操作</h3><div id="control-jobs" aria-live="polite"></div>
+              <button id="control-retry" type="button" class="button button-white" hidden>核对结果并重试提交</button>
+            </div>
+          </div>
+          <div class="panel network-rates-panel" id="network-rates-panel">
+            <div class="panel-heading"><div><h2>全网模型收益（估算）</h2><p id="network-rates-device-label">当前设备</p></div><button id="network-rates-refresh" type="button" class="button button-white">刷新</button></div>
+            <div class="network-rates-content">
+              <p id="network-rates-message" class="state-message" role="status" hidden></p>
+              <label class="network-rates-toggle"><input id="network-rates-auto-switch" type="checkbox"><span class="switch-track" aria-hidden="true"></span>自动切换最优模型</label>
+              <p id="network-rates-status" class="control-note" role="status"></p>
+              <div id="network-rates-candidates"></div>
+              <p class="control-note network-rates-footnote">仅供参考，不代表本机实际收益。</p>
+              <h3>最近切换</h3>
+              <div id="network-rates-switches" aria-live="polite"></div>
+            </div>
+          </div>
+        </section>
+
+        <footer class="page-footer"><span id="last-refresh">等待首次刷新</span></footer>
+      </main>
+    </div>
   </div>
 
   <dialog id="network-rates-confirm-dialog">
@@ -183,7 +222,7 @@
   <dialog id="control-confirm-dialog">
     <form method="dialog"><div class="dialog-header"><h2>确认远程操作</h2><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><p id="control-confirm-message"></p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-dark" value="confirm" id="control-confirm-submit">确认执行</button></div></form>
   </dialog>
-  <dialog id="connect-dialog"><form id="connect-form"><div class="dialog-header"><button type="button" id="close-dialog" class="icon-button" aria-label="关闭连接窗口">×</button></div><h2>添加设备</h2><label>名称<input name="name" autocomplete="off" placeholder="例如：书房 Mac mini" maxlength="60" required></label><label>地址<input name="url" type="url" autocomplete="off" placeholder="https://your-device.your-tailnet.ts.net:8443" required><span class="field-hint">Tailscale HTTPS 地址与端口，无需加 /v1。</span></label><label>访问令牌<div class="password-field"><input name="token" type="password" autocomplete="off" spellcheck="false" placeholder="Agent 配置中的 access.token" maxlength="4096" required><button type="button" id="toggle-token" aria-label="显示令牌" aria-pressed="false">显示</button></div></label><div class="connection-note">连接信息仅保存在本浏览器，不会上传到服务器。</div><div id="connection-result" role="status" hidden></div><div class="dialog-actions"><button type="button" id="test-connection" class="button button-white">测试连接</button><button type="submit" id="save-device" class="button button-dark">保存</button></div></form></dialog>
+  <dialog id="connect-dialog"><form id="connect-form"><div class="dialog-header"><h2>添加设备</h2><button type="button" id="close-dialog" class="icon-button" aria-label="关闭连接窗口">×</button></div><label>名称<input name="name" autocomplete="off" placeholder="例如：书房 Mac mini" maxlength="60" required></label><label>地址<input name="url" type="url" autocomplete="off" placeholder="https://your-device.your-tailnet.ts.net:8443" required><span class="field-hint">Tailscale HTTPS 地址与端口，无需加 /v1。</span></label><label>访问令牌<div class="password-field"><input name="token" type="password" autocomplete="off" spellcheck="false" placeholder="Agent 配置中的 access.token" maxlength="4096" required><button type="button" id="toggle-token" aria-label="显示令牌" aria-pressed="false">显示</button></div></label><div class="connection-note">连接信息仅保存在本浏览器，不会上传到服务器。</div><div id="connection-result" role="status" hidden></div><div class="dialog-actions"><button type="button" id="test-connection" class="button button-white">测试连接</button><button type="submit" id="save-device" class="button button-dark">保存</button></div></form></dialog>
   <dialog id="remove-dialog"><form method="dialog"><h2>移除设备？</h2><p>仅移除连接，设备上的 Agent 和历史数据不变。</p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-danger" value="confirm">移除设备</button></div></form></dialog>
   <div id="toast" class="toast" role="status" hidden></div>
 </body>

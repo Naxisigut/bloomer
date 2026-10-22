@@ -4,8 +4,10 @@ import {
   analysisPeriodRange, allowedGranularities, defaultGranularity, buildAnalysisParams, deriveAnalysisView,
 } from './analysis-data.js';
 import {
-  trendOption, cumulativeOption, modelShareOption, taskAvgOption, hourDistributionOption, weekdayHourHeatmap, modelHourHeatmap, modelCompareOption,
+  trendOption, cumulativeOption, modelShareOption, taskAvgOption, hourDistributionOption, weekdayHourHeatmap, modelHourHeatmap, modelCompareOption, chartTheme,
 } from './analysis-charts.js';
+
+echarts.registerTheme('bloomer', chartTheme);
 
 export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, correctedNow, currentView }) {
   const $ = selector => document.querySelector(selector);
@@ -68,7 +70,7 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
     const element = $(`#analysis-chart-${name}`);
     if (!element) return;
     let chart = charts.get(name);
-    if (!chart) { chart = echarts.init(element, null, { renderer: 'canvas' }); charts.set(name, chart); }
+    if (!chart) { chart = echarts.init(element, 'bloomer', { renderer: 'canvas' }); charts.set(name, chart); }
     chart.setOption(option, true);
   }
 
@@ -81,7 +83,7 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
     const filter = state.queriedModels || [];
     const modelOrder = filter.length ? state.derived.modelOrder.filter(model => filter.includes(model)) : state.derived.modelOrder;
     const hasData = state.response.totals.record_count > 0;
-    setChart('trend', hasData ? trendOption({ filledBuckets, modelOrder, mode: state.trendMode }) : { title: { text: '暂无收益数据', left: 'center', top: 'middle', textStyle: { color: '#87907e', fontSize: 12, fontWeight: 400 } }, series: [] });
+    setChart('trend', hasData ? trendOption({ filledBuckets, modelOrder, mode: state.trendMode }) : { title: { text: '暂无收益数据', left: 'center', top: 'middle', textStyle: { color: '#8a8f98', fontSize: 13, fontWeight: 400 } }, series: [] });
     setChart('cumulative', hasData ? cumulativeOption({ cumulative, modelOrder }) : { series: [] });
     setChart('share', modelShareOption(modelShares));
     setChart('task-avg', hasData ? taskAvgOption(filledBuckets) : { series: [] });

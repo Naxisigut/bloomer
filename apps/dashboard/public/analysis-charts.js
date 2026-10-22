@@ -1,8 +1,31 @@
 import { microToChartNumber } from './analysis-data.js';
 import { money } from './data.js';
 
-const colors = ['#447da1', '#bd8037', '#8570ad', '#328b80', '#b86772', '#798c3a', '#97704c', '#5770b0'];
+const colors = ['#5b8def', '#f2994a', '#8b7cf6', '#2bb3a3', '#e5677e', '#9ab843', '#c08a4f', '#d4a72c'];
 const colorFor = (model, order) => colors[order.indexOf(model) % colors.length];
+const fontFamily = '"Avenir Next","Poppins","PingFang SC","Hiragino Sans GB","Microsoft YaHei",sans-serif';
+const axisLabel = { color: '#9ea3ab', fontSize: 11 };
+const categoryAxis = { axisLine: { lineStyle: { color: '#e6e8ec' } }, axisTick: { show: false }, axisLabel, splitLine: { show: false }, nameTextStyle: axisLabel };
+const valueAxis = { axisLine: { show: false }, axisTick: { show: false }, axisLabel, splitLine: { lineStyle: { color: '#eef0f3' } }, nameTextStyle: axisLabel };
+
+export const chartTheme = {
+  color: colors,
+  backgroundColor: 'transparent',
+  textStyle: { fontFamily, color: '#41454d' },
+  title: { textStyle: { color: '#1b1d21', fontWeight: 600 } },
+  legend: { icon: 'circle', itemWidth: 8, itemHeight: 8, itemGap: 16, textStyle: { color: '#41454d', fontSize: 12 } },
+  tooltip: {
+    backgroundColor: '#1f2229', borderWidth: 0, padding: [10, 14], textStyle: { color: '#fff', fontSize: 12 },
+    extraCssText: 'border-radius:12px;box-shadow:0 10px 30px rgba(27,29,33,.2);',
+    axisPointer: { lineStyle: { color: '#b9bec6', type: 'dashed' }, shadowStyle: { color: 'rgba(91,141,239,.06)' } },
+  },
+  categoryAxis, valueAxis,
+  line: { symbol: 'circle', symbolSize: 6, lineStyle: { width: 2.5 } },
+  bar: { barMaxWidth: 28, itemStyle: { borderRadius: [4, 4, 0, 0] } },
+  pie: { itemStyle: { borderColor: '#fff', borderWidth: 2, borderRadius: 6 } },
+  visualMap: { color: ['#3f6fd8', '#ebf2fe'], textStyle: { color: '#8a8f98' } },
+  dataZoom: { borderColor: '#eef0f3', fillerColor: 'rgba(91,141,239,.12)', handleStyle: { color: '#fff', borderColor: '#b9bec6' }, textStyle: { color: '#8a8f98' }, dataBackground: { lineStyle: { color: '#d5d9df' }, areaStyle: { color: '#eef0f3' } } },
+};
 
 export function trendOption({ filledBuckets, modelOrder, mode = 'bar' }) {
   const labels = filledBuckets.map(bucket => bucket.from);
@@ -46,8 +69,8 @@ export function modelShareOption(modelShares) {
   if (!modelShares.length) return emptyOption('暂无模型收益');
   return {
     tooltip: { trigger: 'item', formatter: params => `${params.name}<br>${money(String(Math.round(params.value * 1e6)))} · ${params.percent}%` },
-    legend: { orient: 'vertical', left: 'left', top: 'middle' },
-    series: [{ type: 'pie', radius: ['42%', '68%'], center: ['62%', '50%'], data: modelShares.map(item => ({ name: item.model, value: microToChartNumber(item.amount_micro_usd) })) }],
+    legend: { type: 'scroll', orient: 'vertical', left: 8, top: 'middle', width: '38%', textStyle: { overflow: 'truncate', width: 150 } },
+    series: [{ type: 'pie', radius: ['48%', '72%'], center: ['68%', '50%'], label: { show: false }, emphasis: { scale: true, scaleSize: 6 }, data: modelShares.map(item => ({ name: item.model, value: microToChartNumber(item.amount_micro_usd) })) }],
   };
 }
 
@@ -60,8 +83,8 @@ export function taskAvgOption(filledBuckets) {
     xAxis: { type: 'category', data: labels, axisLabel: { formatter: bucketLabel(filledBuckets) } },
     yAxis: [{ type: 'value', name: '任务数' }, { type: 'value', name: '单笔 USD' }],
     series: [
-      { name: '任务数', type: 'bar', data: filledBuckets.map(bucket => bucket.record_count), itemStyle: { color: '#447da1' } },
-      { name: '单笔均值', type: 'line', yAxisIndex: 1, smooth: true, data: filledBuckets.map(bucket => bucket.record_count ? microToChartNumber((BigInt(bucket.total_micro_usd) / BigInt(bucket.record_count)).toString()) : 0) },
+      { name: '任务数', type: 'bar', data: filledBuckets.map(bucket => bucket.record_count), itemStyle: { color: '#5b8def' } },
+      { name: '单笔均值', type: 'line', yAxisIndex: 1, smooth: true, itemStyle: { color: '#f2994a' }, data: filledBuckets.map(bucket => bucket.record_count ? microToChartNumber((BigInt(bucket.total_micro_usd) / BigInt(bucket.record_count)).toString()) : 0) },
     ],
   };
 }
@@ -158,5 +181,5 @@ function bucketLabel(buckets) {
 }
 
 function emptyOption(text) {
-  return { title: { text, left: 'center', top: 'middle', textStyle: { color: '#87907e', fontSize: 12, fontWeight: 400 } }, series: [] };
+  return { title: { text, left: 'center', top: 'middle', textStyle: { color: '#8a8f98', fontSize: 13, fontWeight: 400 } }, series: [] };
 }
