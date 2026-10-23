@@ -193,16 +193,31 @@ export function tokenTrendAxis(values) {
   return { low: Math.min(low, ticks[0]), high: Math.max(high, ticks.at(-1)), ticks };
 }
 
-export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set() }) {
+export function tokenTrendColorFor(model, models) {
+  const index = models.indexOf(model);
+  return TOKEN_COLORS[(index >= 0 ? index : 0) % TOKEN_COLORS.length];
+}
+
+export function renderTokenTrendModelChoices(models, selected, { escape, insufficient = new Set(), colorFor }) {
+  const labels = displayModelNames(models);
+  const color = typeof colorFor === 'function' ? colorFor : model => tokenTrendColorFor(model, models);
+  return models.map(model => {
+    const dashed = insufficient.has(model);
+    return `<label class="home-model-choice${dashed ? ' is-insufficient' : ''}" style="--series-color:${color(model)}" title="${escape(model)}"><input type="checkbox" data-network-token-model value="${escape(model)}" ${selected.has(model) ? 'checked' : ''}><i aria-hidden="true"></i><span>${escape(labels.get(model))}${dashed ? ' · 样本不足' : ''}</span></label>`;
+  }).join('');
+}
+
+export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set(), colorFor }) {
   const lines = (series || []).map((item, index) => {
     const points = (item?.points || [])
       .map(point => ({ instant: Date.parse(point.at), tokens: point.tokens }))
       .filter(point => Number.isFinite(point.instant) && Number.isSafeInteger(point.tokens) && point.tokens >= 0)
       .sort((a, b) => a.instant - b.instant);
+    const model = typeof item?.model === 'string' ? item.model : '';
     return {
-      model: typeof item?.model === 'string' ? item.model : '',
-      color: TOKEN_COLORS[index % TOKEN_COLORS.length],
-      dashed: insufficient.has(item?.model),
+      model,
+      color: typeof colorFor === 'function' ? colorFor(model) : TOKEN_COLORS[index % TOKEN_COLORS.length],
+      dashed: insufficient.has(model),
       points,
     };
   }).filter(line => line.points.length);
@@ -243,11 +258,9 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
   }
   const values = drawn.flatMap(line => line.coords.map(point => point.tokens));
   const low = Math.min(...values), peak = Math.max(...values);
-  const legend = drawn.map(line => `<span class="network-token-legend-item${line.dashed ? ' is-insufficient' : ''}" style="--series-color:${line.color}" title="${escape(line.model)}"><i aria-hidden="true"></i><span>${escape(displayModelName(line.model))}</span></span>`).join('');
   return {
     series: drawn,
     instants: instants.map(instant => ({ instant, x: round(x(instant)), timeLabel: tokenClock.format(new Date(instant)) })),
-    legend,
     markup: `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="近 24 小时各模型每台每小时输出 token，最低 ${escape(tokenExact.format(low))}，最高 ${escape(tokenExact.format(peak))}">${svg}</svg><div class="chart-crosshair" hidden></div><div class="chart-tooltip home-revenue-tooltip" hidden></div>${drawn.map((_, index) => `<div class="network-token-dot" data-token-dot="${index}" hidden></div>`).join('')}`,
   };
 }
@@ -255,14 +268,35 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
 export function createNetworkRatesUI({ query, submitSettings, selectedDevice, deviceChoices, selectDevice, currentView, escape, dateTime }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, rates = null, switches = [], trend = null, trendError = '', loading = false, submitting = false, error = '', unsupported = false, generation = 0, pendingToggle = null;
+  let tokenModels = [], tokenSelected = new Set();
   const dialog = $('#network-rates-confirm-dialog');
   const chart = $('#network-token-chart');
-  const legend = $('#network-token-legend');
+  const tokenChoices = $('#network-token-models');
+  const tokenColorFor = model => tokenTrendColorFor(model, tokenModels);
+  const tokenInsufficient = () => new Set((rates?.candidates || []).filter(candidate => candidate.insufficient).map(candidate => candidate.model));
+
+  function syncTokenModels(series) {
+    const fromTrend = (series || []).map(item => item.model).filter(Boolean);
+    tokenModels = [...new Set([...fromTrend, ...tokenSelected])].sort();
+    if (!tokenSelected.size && fromTrend.length) fromTrend.forEach(model => tokenSelected.add(model));
+  }
+
+  function renderTokenModelChoices() {
+    if (!tokenChoices) return;
+    if (unsupported || !tokenModels.length) {
+      tokenChoices.hidden = true;
+      tokenChoices.innerHTML = '';
+      return;
+    }
+    tokenChoices.hidden = false;
+    tokenChoices.innerHTML = renderTokenTrendModelChoices(tokenModels, tokenSelected, { escape, insufficient: tokenInsufficient(), colorFor: tokenColorFor });
+  }
 
   function render() {
     const device = selectedDevice();
     if (device?.id !== deviceID) {
       deviceID = device?.id; rates = null; switches = []; trend = null; trendError = ''; loading = false; submitting = false; error = ''; unsupported = false; generation++;
+      tokenModels = []; tokenSelected = new Set();
       if (dialog?.open) dialog.close();
     }
     const demo = deviceID === 'demo';
@@ -284,6 +318,7 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
     $('#network-rates-status').textContent = unsupported ? '' : rates ? renderNetworkRatesStatus(rates, escape, dateTime) : loading ? '正在读取全网模型收益…' : '';
     $('#network-rates-candidates').innerHTML = unsupported ? '' : rates ? renderCandidatesTable(rates.candidates, escape) : '';
     $('.network-token-card').hidden = unsupported;
+    renderTokenModelChoices();
     renderTokenChart();
     if (unsupported) $('#network-rates-switches').innerHTML = '';
     else if (loading && !switches.length) $('#network-rates-switches').innerHTML = '<p class="control-note">正在读取切换记录…</p>';
@@ -291,9 +326,9 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
   }
 
   function renderTokenChart() {
-    if (legend) { legend.hidden = true; legend.innerHTML = ''; }
     if (!chart || unsupported || chart.clientWidth < 40) return;
     const empty = '近 24 小时暂无各模型输出 token 样本';
+    const noneSelected = '勾选模型以查看对应折线。';
     if (trendError) {
       chart.innerHTML = `<div class="empty-state">${escape(trendError)}</div>`;
       return;
@@ -306,15 +341,18 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
       chart.innerHTML = `<div class="empty-state">${empty}</div>`;
       return;
     }
+    if (!tokenSelected.size) {
+      chart.innerHTML = `<div class="empty-state">${noneSelected}</div>`;
+      return;
+    }
+    const visible = trend.filter(item => tokenSelected.has(item.model));
     const width = Math.max(560, chart.clientWidth);
     const height = chart.clientHeight || 220;
-    const insufficient = new Set((rates?.candidates || []).filter(candidate => candidate.insufficient).map(candidate => candidate.model));
-    const figure = renderTokenTrendFigure(trend, { width, height, escape, insufficient });
+    const figure = renderTokenTrendFigure(visible, { width, height, escape, insufficient: tokenInsufficient(), colorFor: tokenColorFor });
     if (!figure) {
       chart.innerHTML = `<div class="empty-state">${empty}</div>`;
       return;
     }
-    if (legend) { legend.hidden = false; legend.innerHTML = figure.legend; }
     chart.innerHTML = figure.markup;
     const tooltip = chart.querySelector('.chart-tooltip');
     const crosshair = chart.querySelector('.chart-crosshair');
@@ -384,7 +422,10 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
         loading = true; render();
         try {
           const [ratesResponse, switchesResponse, trendResponse] = await Promise.all([query('network-rates', null, deviceID), query('network-rates-switches', null, deviceID), readTrend(deviceID)]);
-          if (selectedDevice()?.id === deviceID) { rates = ratesResponse; switches = switchesResponse.switches; trend = trendResponse.series; trendError = trendResponse.error; unsupported = false; error = ''; }
+          if (selectedDevice()?.id === deviceID) {
+            rates = ratesResponse; switches = switchesResponse.switches; trend = trendResponse.series; trendError = trendResponse.error; unsupported = false; error = '';
+            syncTokenModels(trend);
+          }
         } catch (failure) {
           if (selectedDevice()?.id === deviceID) { error = failure.message; rates = null; switches = []; trend = null; trendError = ''; }
         } finally {
@@ -399,6 +440,7 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
       const [ratesResponse, switchesResponse, trendResponse] = await Promise.all([query('network-rates', null, id), query('network-rates-switches', null, id), readTrend(id)]);
       if (request !== generation || selectedDevice()?.id !== id) return;
       rates = ratesResponse; switches = switchesResponse.switches; trend = trendResponse.series; trendError = trendResponse.error;
+      syncTokenModels(trend);
     } catch (failure) {
       if (request !== generation || selectedDevice()?.id !== id) return;
       trend = null; trendError = '';
@@ -445,6 +487,13 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
     else render();
   });
   $('#network-rates-refresh')?.addEventListener('click', refresh);
+  tokenChoices?.addEventListener('change', event => {
+    const input = event.target;
+    if (!input.hasAttribute('data-network-token-model')) return;
+    if (input.checked) tokenSelected.add(input.value);
+    else tokenSelected.delete(input.value);
+    renderTokenChart();
+  });
   if (chart) new ResizeObserver(() => renderTokenChart()).observe(chart);
 
   return { render, refresh, refreshIfVisible() { if (currentView() === 'network') return refresh(); } };

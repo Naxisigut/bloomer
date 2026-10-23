@@ -7,6 +7,7 @@ import {
   renderCandidatesTable,
   renderSwitchRecords,
   renderTokenTrendFigure,
+  renderTokenTrendModelChoices,
   tokenTrendAxis,
   validateNetworkRatesSettings,
   validateNetworkRatesTokenTrendResponse,
@@ -73,17 +74,21 @@ test('token trend rejects old points payload and draws escaped multi-series curv
   const axis = tokenTrendAxis([1000, 1000]);
   assert.ok(axis.high > axis.low);
   const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
+  const models = ['<img onerror=1>', 'ok'];
+  const choices = renderTokenTrendModelChoices(models, new Set(models), { escape, insufficient: new Set(['ok']), colorFor: model => ({ '<img onerror=1>': '#5b8def', ok: '#f2994a' }[model]) });
+  assert.match(choices, /data-network-token-model/);
+  assert.match(choices, /&lt;img onerror=1&gt;/);
+  assert.match(choices, /样本不足/);
+  assert.doesNotMatch(choices, /<img/);
   const figure = renderTokenTrendFigure([
     { model: '<img onerror=1>', points: [{ at: '2026-10-23T00:00:00Z', tokens: 1000 }, { at: '2026-10-23T01:00:00Z', tokens: 4000 }, { at: '2026-10-23T02:00:00Z', tokens: 2000 }] },
     { model: 'ok', points: [{ at: '2026-10-23T00:00:00Z', tokens: 800 }, { at: '2026-10-23T01:00:00Z', tokens: 1200 }, { at: '2026-10-23T02:00:00Z', tokens: 900 }] },
-  ], { width: 640, height: 220, escape, insufficient: new Set(['ok']) });
+  ], { width: 640, height: 220, escape, insufficient: new Set(['ok']), colorFor: model => ({ '<img onerror=1>': '#5b8def', ok: '#f2994a' }[model]) });
   assert.equal(figure.markup.match(/class="network-token-line"/g).length, 2);
   assert.match(figure.markup, / C/);
   assert.match(figure.markup, /stroke-dasharray="6 4"/);
   assert.doesNotMatch(figure.markup, /network-token-area|linearGradient/);
-  assert.match(figure.legend, /&lt;img onerror=1&gt;/);
   assert.match(figure.markup, /&lt;img onerror=1&gt;/);
-  assert.doesNotMatch(figure.legend, /<img/);
   assert.doesNotMatch(figure.markup, /<img onerror/);
   const peak = figure.series[0].coords[1];
   assert.ok(peak.y < figure.series[0].coords[0].y && peak.y < figure.series[0].coords[2].y);
