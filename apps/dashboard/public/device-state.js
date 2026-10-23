@@ -27,16 +27,22 @@ export function activityReason(sample) {
   return '尚未采集有效的本机任务状态和该设备收益。';
 }
 
+export const taskStatusField = 'task_status';
+
 export const deviceFields = [
   ['cpu_percent', 'CPU 使用率'], ['provider_cpu_percent', 'Darkbloom CPU'],
   ['memory_total_bytes', '总内存'], ['memory_available_bytes', '可用内存（近似）'],
   ['memory_pressure', '内存压力'], ['swap_used_bytes', 'Swap 使用量'],
-  ['gpu_percent', 'GPU 使用率'], ['cpu_temperature_c', 'CPU 温度'], ['gpu_temperature_c', 'GPU 温度'],
+  ['gpu_percent', 'GPU 使用率'],
   ['thermal_state', '系统热压力'], ['disk_available_bytes', '磁盘可用空间'],
-  ['provider_running', 'Darkbloom 进程'], ['inference_active', '任务处理'], ['request_work_pending', '待处理任务'],
+  ['provider_running', 'Darkbloom 进程'],
   ['current_model', '当前模型'], ['model_ready', '模型就绪'],
-  ['is_idle', '当前是否空闲'],
+  [taskStatusField, '工作状态'],
 ];
+
+export function sampleFieldKeys() {
+  return deviceFields.map(([key]) => key).filter(key => key !== taskStatusField);
+}
 
 export function reading(sample, key) {
   const status = sample?.quality?.[key];
@@ -63,17 +69,11 @@ function formatBytes(value) {
   return `${(value / 1024 ** index).toFixed(index ? 2 : 0)} ${['B', 'KiB', 'MiB', 'GiB', 'TiB'][index]}`;
 }
 
-export function sampleStale(response, now = Date.now()) {
-  const at = Date.parse(response?.sample?.collected_at);
-  return response?.meta?.data_stale === true || !Number.isFinite(at) || at > +now || +now - at > 120_000;
-}
-
 export function activityStatus(response, now = Date.now()) {
   const result = (label, className = 'warning', detail = label) => ({ label, className, detail });
   if (response?.error) return result(response.code === 'device_state_unsupported' ? '状态未提供' : '状态读取失败', 'warning', response.error);
   if (!response) return result('读取状态中');
   if (!response.sample) return result('等待状态采集');
-  if (sampleStale(response, now)) return result('状态已过期', 'warning', '最近保存的状态已过期，不能确认本机是否有任务。');
   const s = response.sample;
   if (s.provider_running === false && s.quality?.provider_running === 'ok') return result('未运行', 'offline', 'Darkbloom 进程未运行。');
   const active = reading(s, 'inference_active');
@@ -88,7 +88,6 @@ export function activityStatus(response, now = Date.now()) {
 export function pressureStatus(response, key, now = Date.now()) {
   const value = reading(response?.error ? null : response?.sample, key);
   if (!value.known) return { label: '未知', className: 'warning', detail: response?.error || value.reason };
-  if (sampleStale(response, now)) return { label: `${value.text} · 过期`, className: 'warning', detail: '最近保存的读数已过期。' };
   const raw = response.sample[key];
   return { label: value.text, className: ['serious', 'critical'].includes(raw) ? 'offline' : ['fair', 'warning'].includes(raw) ? 'warning' : '', detail: '设备端每 60 秒从 macOS 本地采集。' };
 }

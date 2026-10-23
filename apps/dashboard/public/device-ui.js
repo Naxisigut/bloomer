@@ -1,4 +1,4 @@
-import { deviceFields, reading, activityStatus, pressureStatus, sampleStale } from './device-state.js';
+import { deviceFields, reading, activityStatus, pressureStatus, taskStatusField } from './device-state.js';
 import { displayModelName } from './models.js';
 
 export function createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, dateTime, escape, onRefresh }) {
@@ -11,7 +11,12 @@ export function createDeviceUI({ query, selectedDevice, deviceChoices, selectDev
     const title = key === 'current_model' && value.known ? value.text : (value.reason || value.text);
     return `<span class="${value.known ? '' : 'reading-unknown'}" title="${escape(title)}">${escape(text)}</span>`;
   };
-  const details = sample => deviceFields.map(([key, label]) => `<div class="health-item"><span>${label}</span><strong>${cell(sample, key)}</strong></div>`).join('');
+  const taskStatusCell = response => {
+    const status = activityStatus(response);
+    const muted = ['未知', '未运行', '状态未提供', '状态读取失败', '等待状态采集', '读取状态中'].includes(status.label);
+    return `<span class="${muted ? 'reading-unknown' : ''}" title="${escape(status.detail)}">${escape(status.label)}</span>`;
+  };
+  const details = (sample, response) => deviceFields.map(([key, label]) => `<div class="health-item"><span>${label}</span><strong>${key === taskStatusField ? taskStatusCell(response) : cell(sample, key)}</strong></div>`).join('');
 
   function renderLatest() {
     const device = selectedDevice()?.id, response = latest.get(device);
@@ -31,9 +36,7 @@ export function createDeviceUI({ query, selectedDevice, deviceChoices, selectDev
     if (response?.error) { message.hidden = false; message.classList.add('warning'); message.textContent = response.error; return; }
     if (!response) { message.hidden = false; message.textContent = '正在读取…'; return; }
     if (!sample) { message.hidden = false; message.textContent = '暂无状态数据'; return; }
-    const stale = sampleStale(response);
-    if (stale) { message.hidden = false; message.classList.add('warning'); message.textContent = '状态数据较旧，以下为最近一次读数。'; }
-    grid.innerHTML = details(sample);
+    grid.innerHTML = details(sample, response);
   }
 
   function syncDevices() {

@@ -1,6 +1,6 @@
 import { dateKey, zonedMidnight, shiftDate, sumMoney } from './data.js';
 import { AppError } from './errors.js';
-import { deviceFields } from './device-state.js';
+import { sampleFieldKeys } from './device-state.js';
 
 const now = new Date();
 const models = ['Qwen3-32B', 'DeepSeek-R1-Distill-Qwen-32B', 'Qwen3-8B', 'EigenLabs/Qwen3.8-27B-4bit-mtpt'];
@@ -70,19 +70,21 @@ function demoNetworkRatesSwitches(clock) {
   };
 }
 function stateSample(id) {
-  const quality = Object.fromEntries(deviceFields.map(([key]) => [key, 'ok']));
-  for (const key of ['cpu_temperature_c', 'gpu_temperature_c']) quality[key] = 'unsupported';
+  const quality = Object.fromEntries(sampleFieldKeys().map(key => [key, 'ok']));
   quality.dispatch_tier = 'unsupported';
   quality.provider_connected = 'unsupported';
   const ready = id % 90 > 3;
   const state = id % 90 === 0 ? 'offline' : id % 90 === 1 ? 'blocked' : id % 90 < 4 ? 'degraded' : 'routable';
+  const taskQuality = state === 'offline' ? 'not_running' : 'ok';
+  quality.inference_active = taskQuality;
+  quality.request_work_pending = taskQuality;
   if (state === 'offline') quality.is_idle = 'unavailable';
   return {
     id, device_id: 'demo-device', collected_at: new Date(id * 60_000).toISOString(), duration_ms: 1100,
     cpu_percent: Math.round(14 + Math.abs(Math.sin(id / 7)) * 32), provider_cpu_percent: Math.round(7 + Math.abs(Math.cos(id / 5)) * 90),
     memory_total_bytes: 64 * 2 ** 30, memory_available_bytes: Math.round((18 + Math.abs(Math.sin(id / 13)) * 9) * 2 ** 30),
     memory_pressure: id % 90 < 4 ? 'warning' : 'normal', swap_used_bytes: 256 * 2 ** 20, gpu_percent: ready ? Math.round(28 + Math.abs(Math.sin(id / 5)) * 58) : 0,
-    cpu_temperature_c: null, gpu_temperature_c: null, thermal_state: id % 90 < 4 ? 'fair' : 'nominal', disk_available_bytes: 320 * 2 ** 30,
+    thermal_state: id % 90 < 4 ? 'fair' : 'nominal', disk_available_bytes: 320 * 2 ** 30,
     provider_running: state !== 'offline', provider_connected: state !== 'offline', current_model: 'Qwen3-32B', model_ready: ready, dispatch_tier: null,
     inference_active: id % 3 === 0, request_work_pending: id % 3 === 0, is_idle: state === 'offline' ? null : id % 3 === 2,
     last_device_earning_at: new Date((id - (id % 3 === 2 ? 12 : 2)) * 60_000).toISOString(),
