@@ -73,7 +73,7 @@ schema 3 新增 `device_identity`、`device_state_samples`，schema 4 的路由�
 
 与既有 `/v1` 接口使用相同的 Bloomer 独立 Bearer 认证；允许任意网页来源（合法预检免令牌，实际查询必须认证）。请求只读取数据库，不触发采集。看板首页与「我的设备」使用相同的本机任务和该设备收益判定口径。
 
-- `GET /v1/device/state`：返回 `device`、最新 `sample`、`meta.sample_interval_seconds` 与 `meta.data_stale`。未采集时 sample 为 null；超过 120 秒或时间在未来时为 stale。即使收益尚无首次成功快照也可查询。不接受查询参数。
+- `GET /v1/device/state`：返回 `device`、最新 `sample`、`meta.sample_interval_seconds`、`meta.data_stale` 与 `meta.collection_enabled`。`collection_enabled` 反映配置 `device_state_enabled`；关闭后仍可查询已保存样本。未采集时 sample 为 null；超过 120 秒或时间在未来时为 stale。即使收益尚无首次成功快照也可查询。不接受查询参数。
 
 ### 收益分析（本机口径）
 

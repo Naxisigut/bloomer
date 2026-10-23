@@ -48,6 +48,7 @@ function demoNetworkRates(clock) {
       backoff_until: null,
     },
     last_error: null,
+    interval_minutes: 5,
   };
 }
 
@@ -94,7 +95,7 @@ function stateSample(id) {
 }
 
 function demoState(clock) {
-  return { device: demoHardware, sample: stateSample(Math.floor(+clock / 60_000)), meta: { sample_interval_seconds: 60, data_stale: false } };
+  return { device: demoHardware, sample: stateSample(Math.floor(+clock / 60_000)), meta: { sample_interval_seconds: 60, data_stale: false, collection_enabled: true } };
 }
 
 function demoAnalysis(params, clock) {

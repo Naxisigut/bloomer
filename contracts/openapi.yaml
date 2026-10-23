@@ -313,6 +313,9 @@ paths:
                           data_stale:
                             type: boolean
                             description: True if no sample, over 120 seconds old, or future dated
+                          collection_enabled:
+                            type: boolean
+                            description: False when device state collection is configured off. A disabled collector keeps the last sample queryable.
         '401':
           $ref: '#/components/responses/Unauthorized'
         '503':
@@ -1271,6 +1274,11 @@ components:
           type: integer
         samples:
           type: integer
+        interval_minutes:
+          type: integer
+          minimum: 0
+          maximum: 60
+          description: Configured model-stats interval in minutes. Zero when the collector is not running.
         updated_at:
           type: string
           format: date-time

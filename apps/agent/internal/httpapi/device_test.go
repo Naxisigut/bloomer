@@ -33,7 +33,7 @@ func TestDeviceAPIOfflineAccountFreshnessAndLatestOnly(t *testing.T) {
 		t.Fatal("unauthenticated telemetry exposed")
 	}
 	w := request("/v1/device/state", auth)
-	if w.Code != 200 || !strings.Contains(w.Body.String(), `"sample":null`) || !strings.Contains(w.Body.String(), `"data_stale":true`) {
+	if w.Code != 200 || !strings.Contains(w.Body.String(), `"sample":null`) || !strings.Contains(w.Body.String(), `"data_stale":true`) || !strings.Contains(w.Body.String(), `"collection_enabled":true`) {
 		t.Fatalf("empty history: %d %s", w.Code, w.Body)
 	}
 	if w := request("/v1/device/state/history", auth); w.Code != 404 {
@@ -77,5 +77,9 @@ func TestDeviceAPIOfflineAccountFreshnessAndLatestOnly(t *testing.T) {
 	h.now = func() time.Time { return now.Add(-time.Minute) }
 	if w := request("/v1/device/state", auth); !strings.Contains(w.Body.String(), `"data_stale":true`) {
 		t.Fatal("future observation looks live")
+	}
+	h.WithDeviceStateEnabled(false)
+	if w := request("/v1/device/state", auth); !strings.Contains(w.Body.String(), `"collection_enabled":false`) {
+		t.Fatalf("disabled device collection not reported: %s", w.Body)
 	}
 }

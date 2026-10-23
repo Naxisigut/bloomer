@@ -105,35 +105,20 @@ const analysisPage = createAnalysisPage({
   query, deviceChoices, syncDevice: syncSelectedDevice, escape, correctedNow, currentView: () => state.view,
   setExporting: value => { state.exporting = value; },
 });
-const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, dateTime, escape, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
+const deviceUI = createDeviceUI({ query, selectedDevice, escape, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
 
 const alertUI = createAlertUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, escape, dateTime });
 const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
 const networkRatesUI = createNetworkRatesUI({ query, submitSettings: (id, auto_switch) => client.submitNetworkRatesSettings(id, auto_switch), selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, escape, dateTime });
-
-function healthStatus(health) {
-  if (!health || health.error) return { label: health?.error ? '连接失败' : '检测中', className: health?.error ? 'offline' : 'warning' };
-  if (health.collection_state === 'disabled') return { label: '采集已关闭', className: 'warning' };
-  if (health.collection_state === 'rate_limited') return { label: '限流等待', className: 'warning' };
-  if (health.data_stale || health.collection_state === 'degraded') return { label: health.last_successful_sync_at ? '数据已过期' : '等待首次采集', className: 'warning' };
-  return { label: health.collection_state === 'collecting' ? '正在采集' : '采集正常', className: '' };
-}
 
 function renderDevices() {
   const active = state.selected;
   $('#nav-device-count').textContent = state.devices.length;
   $('#device-select').innerHTML = deviceChoices().map(device => `<option value="${escape(device.id)}" ${device.id === active ? 'selected' : ''}>${escape(device.name)}</option>`).join('');
   $('#demo-banner').hidden = active !== 'demo';
-  const currentHealth = state.health.get(active);
-  const status = healthStatus(currentHealth);
-  const collectionDot = $('#device-status');
-  collectionDot.className = `collection-dot${status.className ? ' offline' : ''}`;
-  collectionDot.setAttribute('aria-label', `收益采集状态：${status.label}`);
-  collectionDot.title = `收益采集状态：${status.label}`;
   $('#device-cards').innerHTML = deviceChoices().map(device => {
     const health = state.health.get(device.id);
-    const status = healthStatus(health);
-    return `<article class="device-card ${device.id === active ? 'selected' : ''}"><div class="device-card-header"><span class="device-card-avatar" aria-hidden="true">${icon('devices')}</span><h3>${escape(device.name)}${device.id === 'demo' ? ' · 演示' : ''}</h3><span class="status-tag ${status.className}">${status.label}</span></div><p class="device-url">${escape(device.url)}</p><div class="device-stat"><span>Agent 版本</span><strong>${escape(health?.version || '—')}</strong></div>${health?.error ? `<p class="device-card-note">${escape(health.error)}</p>` : ''}<div class="device-card-actions"><button class="button ${device.id === active ? 'button-dark' : 'button-white'}" data-select-device="${escape(device.id)}">${device.id === active ? '当前设备' : '切换到此设备'}</button>${device.id !== 'demo' ? `<button class="button remove-device" data-remove-device="${escape(device.id)}">移除</button>` : ''}</div></article>`;
+    return `<article class="device-card ${device.id === active ? 'selected' : ''}"><div class="device-card-header"><span class="device-card-avatar" aria-hidden="true">${icon('devices')}</span><h3>${escape(device.name)}${device.id === 'demo' ? ' · 演示' : ''}</h3></div><p class="device-url">${escape(device.url)}</p>${health?.error ? `<p class="device-card-note">${escape(health.error)}</p>` : ''}<div class="device-card-actions"><button class="button ${device.id === active ? 'button-dark' : 'button-white'}" data-select-device="${escape(device.id)}">${device.id === active ? '当前设备' : '切换到此设备'}</button>${device.id !== 'demo' ? `<button class="button remove-device" data-remove-device="${escape(device.id)}">移除</button>` : ''}</div></article>`;
   }).join('');
   deviceUI.render();
   controlUI.render();
@@ -392,7 +377,7 @@ async function connect(save) {
     if (save) {
       form.elements.token.value = ''; $('#connect-dialog').close(); await loadDeviceList(); await selectDevice(response.device.id); toast('设备已连接。');
     } else {
-      result.className = 'success'; result.textContent = `连接成功 · Agent ${response.health.version} · ${healthStatus(response.health).label}`;
+      result.className = 'success'; result.textContent = `连接成功 · Agent ${response.health.version}`;
     }
   } catch (error) { result.textContent = error.message; }
   finally { connecting = false; $('#test-connection').disabled = $('#save-device').disabled = false; }

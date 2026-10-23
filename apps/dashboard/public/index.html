@@ -75,12 +75,12 @@
 
           <aside class="overview-aside" aria-label="当前设备">
             <section class="device-spot">
-              <div class="device-avatar"><span data-icon="devices"></span><span id="device-status" class="collection-dot offline" role="img" aria-label="收益采集状态：检测中" title="收益采集状态：检测中"></span></div>
+              <div class="device-avatar"><span data-icon="devices"></span></div>
               <div class="device-select-wrap">
                 <label class="sr-only" for="device-select">选择数据来源设备</label>
                 <select id="device-select"><option value="demo">演示设备</option></select>
               </div>
-              <p class="device-spot-hint">数据来源设备 · 圆点表示采集状态</p>
+              <p class="device-spot-hint">数据来源设备</p>
               <div class="device-overview" role="group" aria-label="设备与收益" aria-live="polite">
                 <div class="device-reading"><span class="reading-icon" data-icon="activity"></span><span class="reading-label">工作状态</span><strong id="activity-status" class="status-tag warning">读取状态中</strong></div>
                 <div class="device-reading"><span class="reading-icon" data-icon="cube"></span><span class="reading-label">当前运行模型</span><strong id="current-running-model" class="reading-value">—</strong></div>
@@ -146,15 +146,14 @@
         </section>
 
         <section id="devices-view" class="devices-only">
-          <div class="device-cards-wrap"><div id="device-cards" class="device-cards"></div><button type="button" class="device-add-button" data-action="connect" aria-label="添加设备" title="添加设备"><span class="icon-circle" data-icon="add"></span><span>添加设备</span></button></div>
+          <div class="device-cards-wrap"><div id="device-cards" class="device-cards"></div></div>
           <div id="devices-sticky-sentinel" aria-hidden="true"></div>
           <div class="devices-sticky">
           <div class="device-tabs-bar"><div class="device-tabs" id="device-tabs" role="tablist" aria-label="设备详情">
             <button type="button" role="tab" id="device-tab-state" data-device-tab="state" aria-controls="device-state-panel">运行状态</button><button type="button" role="tab" id="device-tab-control" data-device-tab="control" aria-controls="control-panel">远程操作</button>
           </div></div>
-          </div>
           <div class="panel device-tabs-panel">
-          <div class="device-tab-pane device-state-panel" id="device-state-panel" role="tabpanel" aria-labelledby="device-tab-state"><div class="panel-heading"><div><p id="device-state-time" class="state-timestamp"></p></div><div class="state-panel-actions"><label class="sr-only" for="detail-device-select">选择设备</label><select id="detail-device-select" class="model-filter"></select></div></div><p id="device-state-message" class="state-message" role="status" hidden>正在读取设备状态…</p><div id="device-state-details" class="health-details"></div></div>
+          <div class="device-tab-pane device-state-panel" id="device-state-panel" role="tabpanel" aria-labelledby="device-tab-state"><p id="device-state-message" class="state-message" role="status" hidden>正在读取设备状态…</p><div id="device-state-details" class="device-state-sections"></div></div>
           <div class="device-tab-pane control-panel" id="control-panel" role="tabpanel" aria-labelledby="device-tab-control" hidden>
             <div class="panel-heading"><div><p id="control-device-label">当前设备</p></div><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
             <p id="control-message" class="state-message" role="status">正在检查远程操作能力…</p>
@@ -168,6 +167,7 @@
               <h3>最近操作<small class="record-limit-hint">最近 5 条</small></h3><div id="control-jobs" aria-live="polite"></div>
               <button id="control-retry" type="button" class="button button-white" hidden>核对结果并重试提交</button>
             </div>
+          </div>
           </div>
           </div>
         </section>

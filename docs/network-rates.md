@@ -39,7 +39,7 @@ Agent 定期拉取公开统计与官方价格，按对照组差值估算各模�
 
 Bearer 认证，无查询参数：
 
-- `GET /v1/device/network-rates`：推荐、候选、样本数、切换门控（`next_eligible_at`、`blocked_reason`、`backoff_until`）、`last_error`（`stats_unavailable` / `pricing_unavailable` / `models_unavailable`）。
+- `GET /v1/device/network-rates`：推荐、候选、样本数、`interval_minutes`、切换门控（`next_eligible_at`、`blocked_reason`、`backoff_until`）、`last_error`（`stats_unavailable` / `pricing_unavailable` / `models_unavailable`）。采集未运行时 `enabled` 为 false，`interval_minutes` 为 0。
 - `POST /v1/device/network-rates/settings`：`{"auto_switch": true|false}`，返回与 GET 相同结构。
 - `GET /v1/device/network-rates/switches`：`{ "switches": [...] }`，最新在前，最多 50 条。
 

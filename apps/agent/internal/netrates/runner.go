@@ -78,6 +78,7 @@ type StatusView struct {
 	Candidates      []CandidateView     `json:"candidates"`
 	Switch          SwitchGateView      `json:"switch"`
 	LastError       *string             `json:"last_error"`
+	IntervalMinutes int                 `json:"interval_minutes"`
 }
 
 type SwitchItemView struct {
@@ -141,7 +142,7 @@ func NewRunner(cfg config.NetworkRates, settings *Settings, store netRateStore, 
 		interval: time.Duration(cfg.IntervalMinutes) * time.Minute,
 		minSwitch: time.Duration(cfg.SwitchMinIntervalMinutes) * time.Minute,
 		wakeSwitch: make(chan struct{}, 1),
-		view: StatusView{Enabled: true, WindowSamples: cfg.WindowSamples, Candidates: []CandidateView{}},
+		view: StatusView{Enabled: true, WindowSamples: cfg.WindowSamples, IntervalMinutes: cfg.IntervalMinutes, Candidates: []CandidateView{}},
 	}
 }
 
@@ -381,6 +382,7 @@ func (r *Runner) applyEstimateViewLocked(st estimateState) {
 	r.view.AutoSwitch = st.autoSwitch
 	r.view.AutoSwitchSince = formatTimePtr(st.autoSince)
 	r.view.WindowSamples = r.cfg.WindowSamples
+	r.view.IntervalMinutes = r.cfg.IntervalMinutes
 	r.view.Samples = st.samples
 	r.view.UpdatedAt = formatTime(st.now)
 	r.view.CurrentModel = optionalString(st.current, st.currentOK)

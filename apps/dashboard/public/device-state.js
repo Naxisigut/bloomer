@@ -38,20 +38,55 @@ export function activityReason(sample) {
 }
 
 export const taskStatusField = 'task_status';
+export const memoryField = 'memory';
+const memoryFieldKeys = ['memory_total_bytes', 'memory_available_bytes'];
 
-export const deviceFields = [
-  ['cpu_percent', 'CPU 使用率'], ['provider_cpu_percent', 'Darkbloom CPU'],
-  ['memory_total_bytes', '总内存'], ['memory_available_bytes', '可用内存（近似）'],
-  ['memory_pressure', '内存压力'], ['swap_used_bytes', 'Swap 使用量'],
-  ['gpu_percent', 'GPU 使用率'],
-  ['thermal_state', '系统热压力'], ['disk_available_bytes', '磁盘可用空间'],
-  ['provider_running', 'Darkbloom 进程'],
-  ['current_model', '当前模型'], ['model_ready', '模型就绪'],
-  [taskStatusField, '工作状态'],
+export const deviceStateSections = [
+  {
+    title: '机器状态',
+    fields: [
+      ['cpu_percent', 'CPU 使用率'],
+      [memoryField, '总内存/可用内存'],
+      ['memory_pressure', '内存压力'],
+      ['swap_used_bytes', 'Swap 使用量'],
+      ['gpu_percent', 'GPU 使用率'],
+      ['thermal_state', '系统热压力'],
+      ['disk_available_bytes', '磁盘可用空间'],
+    ],
+  },
+  {
+    title: 'Darkbloom 状态',
+    fields: [
+      ['provider_cpu_percent', 'Darkbloom CPU'],
+      ['provider_running', 'Darkbloom 进程'],
+      ['current_model', '当前模型'],
+      ['model_ready', '模型就绪'],
+      [taskStatusField, '工作状态'],
+    ],
+  },
 ];
 
+export const deviceFields = deviceStateSections.flatMap(section => section.fields);
+
 export function sampleFieldKeys() {
-  return deviceFields.map(([key]) => key).filter(key => key !== taskStatusField);
+  return deviceFields.flatMap(([key]) => {
+    if (key === taskStatusField) return [];
+    if (key === memoryField) return memoryFieldKeys;
+    return [key];
+  });
+}
+
+export function memoryReading(sample) {
+  const total = reading(sample, 'memory_total_bytes');
+  const available = reading(sample, 'memory_available_bytes');
+  const known = total.known && available.known;
+  const text = known
+    ? formatBytesPair(sample.memory_total_bytes, sample.memory_available_bytes)
+    : `${total.text} / ${available.text}`;
+  const reason = known
+    ? `总内存 ${total.text}；可用内存（近似） ${available.text}`
+    : [...new Set([total.known ? '' : total.reason, available.known ? '' : available.reason].filter(Boolean))].join('；') || text;
+  return { text, known, reason };
 }
 
 export function reading(sample, key) {
@@ -61,7 +96,7 @@ export function reading(sample, key) {
   if (value === null || value === undefined) return { text: key === 'current_model' ? '无当前模型' : '未知', known: false, reason: '来源未提供具体值' };
   if (key.endsWith('_percent') || key.endsWith('_bytes') || key.endsWith('_temperature_c')) {
     if (typeof value !== 'number' || !Number.isFinite(value) || (key.endsWith('_bytes') && value < 0) || (key.endsWith('_percent') && (value < 0 || (key !== 'provider_cpu_percent' && value > 100)))) return { text: '数据异常', known: false, reason: '指标数值无效' };
-    const text = key.endsWith('_bytes') ? formatBytes(value) : `${value.toFixed(1)}${key.endsWith('_percent') ? '%' : ' °C'}`;
+    const text = key.endsWith('_bytes') ? formatBytes(value) : `${formatNumber(value)}${key.endsWith('_percent') ? '%' : ' °C'}`;
     return { text, known: true, reason: '' };
   }
   if (valueLabels[key]) {
@@ -73,10 +108,36 @@ export function reading(sample, key) {
   return { text: value, known: true, reason: '' };
 }
 
-function formatBytes(value) {
-  if (value === 0) return '0 B';
+function formatNumber(value) {
+  const rounded = Math.round(value * 10) / 10;
+  if (Number.isInteger(rounded)) return String(rounded);
+  return rounded.toFixed(1);
+}
+
+const byteUnits = ['B', 'K', 'M', 'G', 'T'];
+
+function byteScale(value) {
+  if (value === 0) return { index: 0, scale: 1 };
   const index = Math.min(4, Math.max(0, Math.floor(Math.log(value) / Math.log(1024))));
-  return `${(value / 1024 ** index).toFixed(index ? 2 : 0)} ${['B', 'KiB', 'MiB', 'GiB', 'TiB'][index]}`;
+  return { index, scale: 1024 ** index };
+}
+
+function formatScaledBytes(value, index, scale) {
+  const amount = value / scale;
+  const text = index === 0 ? String(Math.round(amount)) : formatNumber(amount);
+  return `${text} ${byteUnits[index]}`;
+}
+
+function formatBytes(value) {
+  const { index, scale } = byteScale(value);
+  return formatScaledBytes(value, index, scale);
+}
+
+function formatBytesPair(totalBytes, availableBytes) {
+  const { index, scale } = byteScale(Math.max(totalBytes, availableBytes));
+  const unit = byteUnits[index];
+  const format = value => (index === 0 ? String(Math.round(value / scale)) : formatNumber(value / scale));
+  return `${format(totalBytes)} / ${format(availableBytes)} ${unit}`;
 }
 
 export function activityStatus(response, now = Date.now()) {

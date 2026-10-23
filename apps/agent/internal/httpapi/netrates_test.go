@@ -33,7 +33,7 @@ func TestNetworkRatesHTTP(t *testing.T) {
 		h.ServeHTTP(w, r)
 		return w
 	}
-	if w := request("GET", "/v1/device/network-rates", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"enabled":true`) {
+	if w := request("GET", "/v1/device/network-rates", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"enabled":true`) || !strings.Contains(w.Body.String(), `"interval_minutes":5`) {
 		t.Fatal(w.Code, w.Body)
 	}
 	if w := request("GET", "/v1/device/network-rates?x=1", ""); w.Code != 400 {

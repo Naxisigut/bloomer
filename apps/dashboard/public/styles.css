@@ -203,8 +203,6 @@ main { flex:1; width:100%; padding:28px 40px 0; outline:none }
 .status-tag::before { content:""; flex-shrink:0; width:7px; height:7px; border-radius:50%; background:var(--green) }
 .status-tag.warning::before { background:var(--amber) }
 .status-tag.offline::before { background:var(--red) }
-.collection-dot { display:block; width:12px; height:12px; border:2px solid #fff; border-radius:50%; background:var(--green) }
-.collection-dot.offline { background:var(--red) }
 
 /* Panels */
 .panel { min-width:0; background:var(--paper); border:1px solid var(--line); border-radius:var(--radius) }
@@ -299,7 +297,6 @@ main { flex:1; width:100%; padding:28px 40px 0; outline:none }
 .device-spot { padding:28px 22px 18px; border-radius:var(--radius); background:var(--surface); text-align:center }
 .device-avatar { position:relative; display:flex; align-items:center; justify-content:center; width:76px; height:76px; margin:0 auto; border:3px solid #fff; border-radius:50%; background:linear-gradient(140deg,#fde3c4,#f6c08a); color:#7a4614; box-shadow:0 6px 18px #f2994a33 }
 .device-avatar svg { width:32px; height:32px }
-.device-avatar .collection-dot { position:absolute; right:2px; bottom:2px; width:16px; height:16px; border-width:3px }
 .device-select-wrap { display:flex; justify-content:center; margin-top:14px }
 .device-select-wrap select { min-height:0; max-width:240px; padding:2px 26px 2px 8px; border-color:transparent; background-color:transparent; background-position:right 6px center; font-size:16px; font-weight:600; text-align:center }
 .device-select-wrap select:hover:not(:disabled) { border-color:transparent; background-color:#ebebee }
@@ -391,11 +388,8 @@ tbody tr:nth-child(3n) .row-badge { background:var(--surface); color:var(--ink) 
 .device-card-actions { display:flex; gap:8px; margin-top:auto; padding-top:18px }
 .remove-device { margin-left:auto; color:var(--red) }
 .remove-device:hover { background:var(--red-soft) }
-.device-add-button { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:10px; min-height:170px; padding:20px; border:1.5px dashed var(--line-strong); border-radius:var(--radius); background:#fff; color:var(--muted); font-size:14px; font-weight:500 }
-.device-add-button:hover { border-color:var(--ink); color:var(--ink) }
-.device-add-button:hover .icon-circle { background:var(--ink); color:#fff }
 .devices-sticky { position:sticky; top:var(--devices-sticky-top,0px); z-index:10; padding-top:12px; background:var(--paper) }
-.device-tabs-bar { display:flex; padding:0 16px; border-bottom:1px solid var(--line) }
+.device-tabs-bar { display:flex; padding:0; border-bottom:1px solid var(--line) }
 .device-tabs { display:flex; gap:6px; max-width:100%; margin-bottom:-1px; overflow-x:auto; scrollbar-width:none }
 .device-tabs::-webkit-scrollbar { display:none }
 .device-tabs button { flex-shrink:0; padding:10px 20px; border:1px solid var(--line); border-bottom-color:var(--line); border-radius:var(--radius-sm) var(--radius-sm) 0 0; background:var(--surface); color:var(--muted); font-size:14px; font-weight:500; white-space:nowrap }
@@ -406,6 +400,9 @@ tbody tr:nth-child(3n) .row-badge { background:var(--surface); color:var(--ink) 
 .device-tab-pane>.panel-heading p { margin-top:0 }
 .record-limit-hint { margin-left:8px; color:var(--muted); font-size:12px; font-weight:400 }
 .state-panel-actions { display:flex; align-items:center; flex-wrap:wrap; justify-content:flex-end; gap:10px }
+.device-state-sections { display:flex; flex-direction:column; gap:22px; padding:18px 24px 24px }
+.device-state-section-title { margin:0 0 10px; padding:0 2px; color:var(--muted); font-size:12px; font-weight:600; letter-spacing:0.02em }
+.device-state-section .health-details { padding:0 }
 .health-details { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:10px; padding:18px 24px 24px }
 .health-item { display:flex; flex-direction:column; gap:4px; min-width:0; padding:14px 16px; border-radius:var(--radius-sm); background:var(--surface) }
 .health-item>span { color:var(--muted); font-size:12px }
@@ -538,12 +535,12 @@ dialog input::placeholder { color:var(--faint); font-size:13px }
   .analysis-actions .button { flex:1 }
   .device-cards-wrap { grid-template-columns:minmax(0,1fr) }
   .panel-heading { padding:18px 16px 0 }
-  .device-tabs-bar { padding:0 8px }
   .device-tabs button { padding:9px 14px; font-size:13px }
   .earnings-filters { padding-left:16px; padding-right:16px }
   .control-content,.network-rates-content,#alert-records { padding-left:16px; padding-right:16px }
   .alert-controls,.network-rates-toolbar { padding:14px 16px }
   .state-message { margin-left:16px; margin-right:16px }
+  .device-state-sections { padding:14px 16px 18px; gap:18px }
   .health-details { grid-template-columns:repeat(2,minmax(0,1fr)); padding:14px 16px 18px; gap:8px }
   th:first-child,td:first-child { padding-left:16px }
   th:last-child,td:last-child { padding-right:16px }

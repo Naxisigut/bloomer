@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { reading, activityStatus, pressureStatus, activityReason, deviceFields, sampleFieldKeys, runningModelLabel } from '../public/device-state.js';
+import { reading, activityStatus, pressureStatus, activityReason, deviceFields, sampleFieldKeys, memoryReading, runningModelLabel } from '../public/device-state.js';
 import { demoQuery } from '../public/demo.js';
 import { queryAgent } from '../public/agent-client.js';
 
@@ -23,6 +23,9 @@ test('device detail fields omit unsupported temperatures and include task status
   assert.ok(!keys.includes('gpu_temperature_c'));
   assert.ok(!keys.includes('is_idle'));
   assert.ok(!sampleFieldKeys().includes('task_status'));
+  assert.ok(!keys.includes('memory_total_bytes'));
+  assert.ok(sampleFieldKeys().includes('memory_total_bytes'));
+  assert.ok(sampleFieldKeys().includes('memory_available_bytes'));
 });
 
 test('activity displays local task flags and ignores earnings idle verdict', () => {
@@ -53,15 +56,16 @@ test('local pressure indicators distinguish severity and unknown readings', () =
 
 test('metric formatting preserves zero and false, respects quality and rejects invalid numeric values', () => {
   const sample = { cpu_percent: 0, provider_running: false, swap_used_bytes: 0, memory_available_bytes: 8 * 2 ** 30, dispatch_tier: 'A', quality: { cpu_percent: 'ok', provider_running: 'ok', swap_used_bytes: 'ok', memory_available_bytes: 'ok', dispatch_tier: 'unsupported' } };
-  assert.equal(reading(sample, 'cpu_percent').text, '0.0%');
+  assert.equal(reading(sample, 'cpu_percent').text, '0%');
   assert.equal(reading(sample, 'provider_running').text, '未运行');
   assert.equal(reading({ ...sample, provider_running: 'false' }, 'provider_running').known, false);
   assert.equal(reading(sample, 'swap_used_bytes').text, '0 B');
-  assert.equal(reading(sample, 'memory_available_bytes').text, '8.00 GiB');
+  assert.equal(reading(sample, 'memory_available_bytes').text, '8 G');
+  assert.equal(memoryReading({ ...sample, memory_total_bytes: 16 * 2 ** 30, quality: { ...sample.quality, memory_total_bytes: 'ok' } }).text, '16 / 8 G');
   assert.equal(reading(sample, 'dispatch_tier').known, false);
   assert.equal(reading({ ...sample, cpu_percent: NaN }, 'cpu_percent').known, false);
   assert.equal(reading({ ...sample, cpu_percent: 101 }, 'cpu_percent').known, false);
-  assert.equal(reading({ ...sample, provider_cpu_percent: 250, quality: { provider_cpu_percent: 'ok' } }, 'provider_cpu_percent').text, '250.0%');
+  assert.equal(reading({ ...sample, provider_cpu_percent: 250, quality: { provider_cpu_percent: 'ok' } }, 'provider_cpu_percent').text, '250%');
   assert.equal(reading(null, 'cpu_percent').text, '未提供');
 });
 

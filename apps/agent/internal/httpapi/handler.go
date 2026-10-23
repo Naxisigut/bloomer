@@ -30,10 +30,16 @@ type Handler struct {
 	version, accountID string
 	runtime            *health.Runtime
 	now                func() time.Time
+	deviceStateEnabled bool
 }
 
 func New(s *store.Store, token, version, accountID string, runtime *health.Runtime) *Handler {
-	return &Handler{store: s, tokenHash: sha256.Sum256([]byte(token)), version: version, accountID: accountID, runtime: runtime, now: time.Now}
+	return &Handler{store: s, tokenHash: sha256.Sum256([]byte(token)), version: version, accountID: accountID, runtime: runtime, now: time.Now, deviceStateEnabled: true}
+}
+
+func (h *Handler) WithDeviceStateEnabled(enabled bool) *Handler {
+	h.deviceStateEnabled = enabled
+	return h
 }
 
 type APIError struct {

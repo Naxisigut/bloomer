@@ -120,7 +120,7 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 		}
 		ratesRunner = netrates.NewRunner(c.NetworkRates, ratesSettings, db, ratesClient, controls, currentModel, clock.Now, logger)
 	}
-	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls).WithAlerts(alerts).WithNetworkRates(ratesRunner)
+	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls).WithAlerts(alerts).WithNetworkRates(ratesRunner).WithDeviceStateEnabled(c.DeviceStateEnabled)
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError)}
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.Serve(listener) }()

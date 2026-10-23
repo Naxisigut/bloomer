@@ -31,6 +31,7 @@ func (h *Handler) deviceState(ctx context.Context, w http.ResponseWriter, r *htt
 	metadata := map[string]any{
 		"sample_interval_seconds": int(telemetry.Interval.Seconds()),
 		"data_stale":              stale,
+		"collection_enabled":      h.deviceStateEnabled,
 	}
 	writeJSON(w, 200, map[string]any{"device": device, "sample": sample, "meta": metadata})
 }
