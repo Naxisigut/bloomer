@@ -4,7 +4,7 @@ import { CursorPager } from './pagination.js';
 import { createDeviceUI } from './device-ui.js';
 import { createAlertUI } from './alert-ui.js';
 import { createControlUI } from './control-ui.js';
-import { createNetworkRatesUI, formatRecommendationTopbar, formatUsdPerHourMicro } from './network-rates.js';
+import { createNetworkRatesUI } from './network-rates.js';
 import { displayModelName, displayModelNames } from './models.js';
 import { DeviceStore } from './connections.js';
 import { createAgentClient } from './agent-client.js';
@@ -59,7 +59,6 @@ const state = {
   custom: {}, model: '', view: 'overview', data: {}, health: new Map(), page: 0,
   pageSize: Number(preference('pageSize') || 10), pager: null, pageController: null, pendingPage: null,
   generation: 0, busy: false, exporting: false, exportController: null, fetchedAt: null, errors: [], summaryErrors: [], filterErrors: [], range: null, recordsLoaded: false,
-  networkRates: { data: null, error: null, unsupported: false },
 };
 if (!Number.isInteger(state.pageSize) || state.pageSize < 1 || state.pageSize > 500) state.pageSize = 10;
 $('#page-size').value = state.pageSize;
@@ -186,12 +185,10 @@ function renderMetrics() {
   $('#last-hour-amount').textContent = money(lastHour ? sumMoney(lastHour.items) : null, 4);
   $('#last-day-amount').textContent = money(lastDay ? sumMoney(lastDay.items) : null, 4);
   $('#available-balance').textContent = money(overview?.official?.available_balance_micro_usd);
-  $$('.summary-amount').forEach(element => { element.title = element.textContent; });
-  const recommendation = !state.networkRates.unsupported && !state.networkRates.error && state.networkRates.data?.recommendation;
-  $('#network-rates-recommendation').textContent = formatRecommendationTopbar({ rates: state.networkRates.data, unsupported: state.networkRates.unsupported, error: state.networkRates.error });
-  $('#network-rates-recommendation').title = recommendation
-    ? `${recommendation.model}${recommendation.fallback ? '（兜底）' : ''} · ${formatUsdPerHourMicro(recommendation.usd_per_hour_micro)}`
-    : $('#network-rates-recommendation').textContent;
+  for (const id of ['last-hour-amount', 'last-day-amount', 'available-balance']) {
+    const element = $(`#${id}`);
+    element.title = element.textContent;
+  }
   const start = state.range?.from;
   $('#range-label').textContent = start ? `${dateTime(start, true)} — ${dateTime(new Date(Date.parse(state.range.to) - 1), true)}` : '选择日期';
   syncRecordsPeriodUi();
@@ -236,20 +233,7 @@ function summaryJobs(device = state.selected) {
     ['overview', query('overview', null, device)],
     ['lastHour', query('stats', { ...rollingRange(1, now), ...params }, device)],
     ['lastDay', query('stats', { ...rollingRange(24, now), ...params }, device)],
-    ['networkRates', query('network-rates', null, device)],
   ];
-}
-
-function applyNetworkRatesResult(result) {
-  if (result.status === 'fulfilled') state.networkRates = { data: result.value, error: null, unsupported: false };
-  else {
-    const reason = result.reason;
-    state.networkRates = {
-      data: null,
-      error: reason?.code === 'network_rates_unsupported' ? null : reason?.message || '读取失败',
-      unsupported: reason?.code === 'network_rates_unsupported',
-    };
-  }
 }
 
 async function refreshSummary() {
@@ -259,8 +243,7 @@ async function refreshSummary() {
   state.summaryErrors = [];
   results.forEach((result, index) => {
     const key = jobs[index][0];
-    if (key === 'networkRates') applyNetworkRatesResult(result);
-    else if (result.status === 'fulfilled') state.data[key] = result.value;
+    if (result.status === 'fulfilled') state.data[key] = result.value;
     else { delete state.data[key]; state.summaryErrors.push(result.reason.message); }
   });
   state.errors = [...new Set([...state.summaryErrors, ...state.filterErrors])];
@@ -275,8 +258,7 @@ async function loadSummary({ device = state.selected } = {}) {
   state.summaryErrors = [];
   results.forEach((result, index) => {
     const key = jobs[index][0];
-    if (key === 'networkRates') applyNetworkRatesResult(result);
-    else if (result.status === 'fulfilled') {
+    if (result.status === 'fulfilled') {
       if (key === 'health') state.health.set(device, result.value);
       else state.data[key] = result.value;
     } else {

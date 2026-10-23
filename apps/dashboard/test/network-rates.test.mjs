@@ -3,7 +3,6 @@ import assert from 'node:assert/strict';
 import { queryAgent, submitNetworkRatesSettings } from '../public/agent-client.js';
 import {
   blockedReasonLabel,
-  formatRecommendationTopbar,
   formatUsdPerHourMicro,
   renderCandidatesTable,
   renderSwitchRecords,
@@ -25,18 +24,6 @@ const ratesBody = {
   switch: { next_eligible_at: null, blocked_reason: 'insufficient_samples', backoff_until: null },
   last_error: null,
 };
-
-test('topbar recommendation renders model and hourly rate or em dash when empty', () => {
-  assert.equal(formatRecommendationTopbar({ rates: ratesBody, unsupported: false, error: null }), '—');
-  assert.equal(formatRecommendationTopbar({ rates: null, unsupported: true, error: null }), '—');
-  assert.equal(formatRecommendationTopbar({ rates: null, unsupported: false, error: '失败' }), '—');
-  const withRec = { ...ratesBody, recommendation: { model: 'DeepSeek', usd_per_hour_micro: '142500', fallback: false } };
-  assert.equal(formatRecommendationTopbar({ rates: withRec, unsupported: false, error: null }), 'DeepSeek · $0.14/h');
-  const fallback = { ...withRec, recommendation: { model: 'gemma-4-26b-qat-4bit', usd_per_hour_micro: '8500', fallback: true } };
-  assert.equal(formatRecommendationTopbar({ rates: fallback, unsupported: false, error: null }), 'gemma-4-26b-qat-4bit（兜底） · $0.0085/h');
-  const prefixed = { ...withRec, recommendation: { model: 'EigenLabs/Qwen3.8-27B-4bit-mtpt', usd_per_hour_micro: '142500', fallback: false } };
-  assert.equal(formatRecommendationTopbar({ rates: prefixed, unsupported: false, error: null }), 'Qwen3.8-27B-4bit-mtpt · $0.14/h');
-});
 
 test('hourly micro formatting uses two decimals or finer below one cent', () => {
   assert.equal(formatUsdPerHourMicro('142500'), '$0.14/h');

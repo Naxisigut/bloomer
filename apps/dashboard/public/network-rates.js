@@ -64,14 +64,6 @@ export function formatUsdPerHourMicro(microStr) {
   return `${negative ? '−' : ''}$${trimmed}/h`;
 }
 
-export function formatRecommendationTopbar({ rates, unsupported, error }) {
-  if (unsupported || error || !rates) return '—';
-  const rec = rates.recommendation;
-  if (!rec) return '—';
-  const name = `${displayModelName(rec.model)}${rec.fallback ? '（兜底）' : ''}`;
-  return `${name} · ${formatUsdPerHourMicro(rec.usd_per_hour_micro)}`;
-}
-
 export function validateNetworkRatesSettings(body) {
   if (!body || typeof body !== 'object' || Array.isArray(body) || Object.keys(body).some(key => key !== 'auto_switch') || typeof body.auto_switch !== 'boolean') {
     throw new AppError(400, 'invalid_request', '自动切换设置无效。');

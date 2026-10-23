@@ -1,3 +1,5 @@
+import { displayModelName } from './models.js';
+
 const qualityLabels = { unsupported: '未支持', unavailable: '未读取', permission_denied: '无权限', invalid: '数据异常', stale: '数据已过期', not_running: '进程未运行' };
 const valueLabels = {
   memory_pressure: { normal: '正常', warning: '偏高', critical: '严重' },
@@ -19,6 +21,14 @@ const activityErrors = {
   no_device_earnings: '尚无该设备的收益明细，暂不能确认空闲。',
   earnings_time_invalid: '该设备的最新收益时间异常。',
 };
+export function runningModelLabel(response) {
+  if (response?.error) return { text: '—', title: response.error };
+  if (!response?.sample) return { text: '—', title: response ? '暂无状态数据' : '正在读取当前运行模型' };
+  const value = reading(response.sample, 'current_model');
+  if (value.known) return { text: displayModelName(value.text), title: value.text };
+  return { text: value.text, title: value.reason || value.text };
+}
+
 export function activityReason(sample) {
   if (sample?.activity_error) return activityErrors[sample.activity_error] || '空闲状态暂不可用。';
   if (sample?.inference_active === true || sample?.request_work_pending === true) return '本机有正在处理或排队的任务。';

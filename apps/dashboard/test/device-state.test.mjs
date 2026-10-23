@@ -1,11 +1,20 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { reading, activityStatus, pressureStatus, activityReason, deviceFields, sampleFieldKeys } from '../public/device-state.js';
+import { reading, activityStatus, pressureStatus, activityReason, deviceFields, sampleFieldKeys, runningModelLabel } from '../public/device-state.js';
 import { demoQuery } from '../public/demo.js';
 import { queryAgent } from '../public/agent-client.js';
 
 const now = Date.parse('2026-10-19T10:00:00Z');
 const response = overrides => ({ sample: { collected_at: new Date(now).toISOString(), is_idle: true, inference_active: false, request_work_pending: false, quality: { is_idle: 'ok', inference_active: 'ok', request_work_pending: 'ok' }, ...overrides }, meta: { data_stale: false } });
+
+test('homepage running model uses the device-state sample and shortens prefixed ids', () => {
+  assert.deepEqual(runningModelLabel(undefined), { text: '—', title: '正在读取当前运行模型' });
+  assert.deepEqual(runningModelLabel({ error: '设备返回的状态数据无效。' }), { text: '—', title: '设备返回的状态数据无效。' });
+  assert.deepEqual(runningModelLabel({ sample: null }), { text: '—', title: '暂无状态数据' });
+  assert.deepEqual(runningModelLabel({ sample: { current_model: 'EigenLabs/Qwen3-32B', quality: { current_model: 'ok' } } }), { text: 'Qwen3-32B', title: 'EigenLabs/Qwen3-32B' });
+  assert.deepEqual(runningModelLabel({ sample: { current_model: null, quality: { current_model: 'ok' } } }), { text: '无当前模型', title: '来源未提供具体值' });
+  assert.equal(runningModelLabel({ sample: { current_model: 'Qwen3-32B', quality: { current_model: 'stale' } } }).text, '数据已过期');
+});
 
 test('device detail fields omit unsupported temperatures and include task status row', () => {
   const keys = deviceFields.map(([key]) => key);

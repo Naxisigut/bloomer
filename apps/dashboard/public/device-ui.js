@@ -1,4 +1,4 @@
-import { deviceFields, reading, activityStatus, pressureStatus, taskStatusField } from './device-state.js';
+import { deviceFields, reading, activityStatus, pressureStatus, taskStatusField, runningModelLabel } from './device-state.js';
 import { displayModelName } from './models.js';
 
 export function createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, dateTime, escape, onRefresh }) {
@@ -23,6 +23,8 @@ export function createDeviceUI({ query, selectedDevice, deviceChoices, selectDev
     if (response && device === renderedDevice && pending.has(device)) return;
     renderedDevice = device;
     const status = activityStatus(response);
+    const runningModel = runningModelLabel(response), modelElement = $('#current-running-model');
+    modelElement.textContent = runningModel.text; modelElement.title = runningModel.title;
     const statusElement = $('#activity-status');
     statusElement.textContent = status.label; statusElement.className = `status-tag ${status.className}`; statusElement.title = status.detail;
     for (const [selector, key] of [['#thermal-status', 'thermal_state'], ['#memory-pressure-status', 'memory_pressure']]) {
