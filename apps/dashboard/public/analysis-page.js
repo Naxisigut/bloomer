@@ -1,5 +1,5 @@
 import * as echarts from './vendor/echarts.esm.min.mjs';
-import { DASHBOARD_TIMEZONE, money, dateKey, shiftDate } from './data.js';
+import { DASHBOARD_TIMEZONE, money, dateKey, shiftDate, csvRows } from './data.js';
 import {
   analysisPeriodRange, allowedGranularities, defaultGranularity, buildAnalysisParams, deriveAnalysisView,
 } from './analysis-data.js';
@@ -10,15 +10,19 @@ import { displayModelNames } from './models.js';
 
 echarts.registerTheme('bloomer', chartTheme);
 
-export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, correctedNow, currentView }) {
+const number = value => new Intl.NumberFormat('en-US').format(value);
+
+export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, correctedNow, currentView, setExporting = () => {} }) {
   const $ = selector => document.querySelector(selector);
   const root = $('#analysis');
   const charts = new Map();
   const state = {
     device: null, period: '7', custom: {}, granularity: 'day', allModels: true, models: new Set(),
     response: null, derived: null, meta: null, error: null, busy: false, controller: null, generation: 0,
-    queried: false, trendMode: 'bar',
+    queried: false, trendMode: 'bar', exporting: false,
   };
+  let exportController = null;
+  let exportCancelReason = '';
 
   function renderDeviceOptions() {
     const select = $('#analysis-device');
@@ -99,6 +103,8 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
 
   function renderStatus() {
     $('#analysis-query').disabled = state.busy;
+    const exportButton = $('#analysis-export');
+    if (exportButton) exportButton.disabled = state.exporting;
     $('#analysis-cancel').hidden = !state.controller;
     $('#analysis-status').hidden = !state.error && !state.busy;
     $('#analysis-status').className = `state-message ${state.error ? 'warning' : ''}`;
@@ -147,9 +153,73 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
     }
   }
 
+  function showExportStatus(message) {
+    const status = $('#analysis-export-status');
+    if (!status) return;
+    status.hidden = false;
+    status.textContent = message;
+  }
+
+  function abortExport(reason = '筛选已改变，本次导出已取消。') {
+    exportCancelReason = reason;
+    exportController?.abort();
+  }
+
+  async function exportDetails() {
+    if (state.exporting) return;
+    let range;
+    try { range = currentRange(); } catch (error) { showExportStatus(error.message); return; }
+    const device = state.device;
+    if (!device) { showExportStatus('请先选择设备。'); return; }
+    const models = state.allModels ? [] : [...state.models].slice(0, 8);
+    const targets = models.length ? models : [''];
+    exportController?.abort();
+    const controller = new AbortController();
+    exportController = controller;
+    exportCancelReason = '';
+    state.exporting = true;
+    setExporting(true);
+    renderStatus();
+    const items = [];
+    const seen = new Set();
+    try {
+      for (const model of targets) {
+        let cursor = null;
+        do {
+          showExportStatus(`正在导出所选条件的全部明细…已读取 ${number(items.length)} 条`);
+          const response = await query('earnings', { from: range.from, to: range.to, limit: 500, ...(model ? { model } : {}), ...(cursor ? { cursor } : {}) }, device, controller.signal);
+          for (const item of response.items) if (!seen.has(item.record_id)) { seen.add(item.record_id); items.push(item); }
+          if (items.length > 100000) throw new Error('所选范围超过 100,000 条，请缩小时间范围后导出。');
+          if (response.next_cursor === cursor && cursor) throw new Error('设备返回了重复游标，请刷新后重试。');
+          cursor = response.next_cursor;
+        } while (cursor);
+      }
+      if (targets.length > 1) items.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.record_id.localeCompare(a.record_id));
+      if (!items.length) { showExportStatus('当前筛选没有可导出的明细。'); return; }
+      const url = URL.createObjectURL(new Blob([csvRows(items)], { type: 'text/csv;charset=utf-8' }));
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `bloomer-${device === 'demo' ? 'demo-' : ''}${dateKey(range.from, DASHBOARD_TIMEZONE)}.csv`;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+      showExportStatus(`已导出 ${number(items.length)} 条明细 · USD 精确到 6 位小数 · 时间采用北京时间（UTC+8）。`);
+    } catch (error) {
+      showExportStatus(error.name === 'AbortError' ? (exportCancelReason || '本次导出已取消。') : error.message);
+    } finally {
+      if (exportController === controller) {
+        state.exporting = false;
+        exportController = null;
+        setExporting(false);
+        renderStatus();
+      }
+    }
+  }
+
   function bindFilters() {
     $('#analysis-device')?.addEventListener('change', event => {
-      state.device = event.target.value;
+      const next = event.target.value;
+      if (state.device && next !== state.device) abortExport('设备已切换，本次导出已取消。');
+      state.device = next;
       syncDevice(state.device, { fromAnalysis: true });
       renderDeviceOptions();
     });
@@ -195,6 +265,7 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
       renderModelTags();
     });
     $('#analysis-query')?.addEventListener('click', () => runQuery());
+    $('#analysis-export')?.addEventListener('click', () => exportDetails());
     $('#analysis-cancel')?.addEventListener('click', () => state.controller?.abort());
     $$('[data-trend-mode]').forEach(button => button.addEventListener('click', () => {
       state.trendMode = button.dataset.trendMode;
@@ -219,12 +290,14 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
   }
 
   function onGlobalDeviceChange(deviceId) {
+    if (state.device && state.device !== deviceId) abortExport('设备已切换，本次导出已取消。');
     state.device = deviceId;
     renderDeviceOptions();
   }
 
   function dispose() {
     state.controller?.abort();
+    abortExport();
     for (const chart of charts.values()) chart.dispose();
     charts.clear();
   }
