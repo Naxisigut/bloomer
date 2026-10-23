@@ -73,12 +73,16 @@ export function activityStatus(response, now = Date.now()) {
   if (response?.error) return result(response.code === 'device_state_unsupported' ? '状态未提供' : '状态读取失败', 'warning', response.error);
   if (!response) return result('读取状态中');
   if (!response.sample) return result('等待状态采集');
-  if (sampleStale(response, now)) return result('状态已过期', 'warning', '当前显示最近保存的状态，不能确认当前是否空闲。');
+  if (sampleStale(response, now)) return result('状态已过期', 'warning', '最近保存的状态已过期，不能确认本机是否有任务。');
   const s = response.sample;
-  if (s.provider_running === false && s.quality?.provider_running === 'ok') return result('未运行', 'offline', activityReason(s));
-  if (!reading(s, 'is_idle').known) return result('未知', 'warning', activityReason(s));
-  if (s.is_idle) return result('空闲', 'warning', activityReason(s));
-  return result(s.inference_active === true || s.request_work_pending === true ? '处理中' : '近期有收益', '', activityReason(s));
+  if (s.provider_running === false && s.quality?.provider_running === 'ok') return result('未运行', 'offline', 'Darkbloom 进程未运行。');
+  const active = reading(s, 'inference_active');
+  const pending = reading(s, 'request_work_pending');
+  if (active.known && s.inference_active === true) return result('处理中', '', '本机正在处理任务。');
+  if (pending.known && s.request_work_pending === true) return result('排队', '', '本机有已接受或排队的任务。');
+  if (active.known && pending.known) return result('无任务', '', '本机没有正在处理或排队的任务。');
+  const detail = [...new Set([active, pending].filter(item => !item.known).map(item => item.reason))].join('；') || '本地任务状态暂不可用。';
+  return result('未知', 'warning', detail);
 }
 
 export function pressureStatus(response, key, now = Date.now()) {

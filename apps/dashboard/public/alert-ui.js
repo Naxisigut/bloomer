@@ -1,6 +1,11 @@
+export const alertHistoryLimit = 10;
 const kinds = { coordinator_disconnected: '协调器连接中断', connection_flapping: '连接频繁重连', provider_not_running: 'Provider 进程停止', provider_state_unknown: 'Provider 状态未知', model_not_ready: '模型未就绪', no_earnings: '设备长时间无收益', test: '测试推送' };
 const events = { triggered: '首次告警', reminder: '持续提醒', recovered: '已恢复', test: '测试推送' };
 const delivery = { pending: '等待推送', retrying: '等待重试', sent: '推送成功', failed: '推送失败', superseded: '已被后续状态替代' };
+
+export function visibleAlerts(items) {
+  return Array.isArray(items) ? items.slice(0, alertHistoryLimit) : [];
+}
 
 export function alertRecordHTML(record, escape, dateTime) {
   const warning = record.level === 'critical' || record.delivery_status === 'failed';
@@ -23,7 +28,7 @@ export function createAlertUI({ query, selectedDevice, deviceChoices, selectDevi
   }
   async function refresh() {
     render(); const id = deviceID, request = ++generation; loading = true; error = ''; render();
-    try { const response = await query('alerts', null, id); if (request === generation && selectedDevice()?.id === id) items = response.items; }
+    try { const response = await query('alerts', null, id); if (request === generation && selectedDevice()?.id === id) items = visibleAlerts(response.items); }
     catch (err) { if (request === generation && selectedDevice()?.id === id) error = err.message; }
     finally { if (request === generation) { loading = false; render(); } }
   }

@@ -7,13 +7,16 @@ import { queryAgent } from '../public/agent-client.js';
 const now = Date.parse('2026-10-19T10:00:00Z');
 const response = overrides => ({ sample: { collected_at: new Date(now).toISOString(), is_idle: true, inference_active: false, request_work_pending: false, quality: { is_idle: 'ok', inference_active: 'ok', request_work_pending: 'ok' }, ...overrides }, meta: { data_stale: false } });
 
-test('activity displays sampled device verdict and preserves missing/stale observations', () => {
-  assert.equal(activityStatus(response({}), now).label, '空闲');
-  assert.equal(activityStatus(response({is_idle:false,inference_active:true}), now).label, '处理中');
-  assert.equal(activityStatus(response({is_idle:false,request_work_pending:true}), now).label, '处理中');
-  assert.equal(activityStatus(response({is_idle:false}), now).label, '近期有收益');
-  assert.equal(activityStatus(response({is_idle:null,activity_error:'earnings_stale'}), now).label, '未知');
+test('activity displays local task flags and ignores earnings idle verdict', () => {
+  assert.equal(activityStatus(response({}), now).label, '无任务');
+  assert.equal(activityStatus(response({is_idle:false,inference_active:true,request_work_pending:true}), now).label, '处理中');
+  assert.equal(activityStatus(response({is_idle:false,request_work_pending:true}), now).label, '排队');
+  assert.equal(activityStatus(response({is_idle:false,activity_error:'earnings_stale'}), now).label, '无任务');
+  assert.equal(activityStatus(response({is_idle:null,inference_active:false,request_work_pending:false,activity_error:'earnings_stale',quality:{is_idle:'unavailable',inference_active:'ok',request_work_pending:'ok'}}), now).label, '无任务');
+  assert.equal(activityStatus(response({inference_active:true,quality:{inference_active:'ok'}}), now).label, '处理中');
+  assert.equal(activityStatus(response({quality:{inference_active:'ok',request_work_pending:'stale'}}), now).label, '未知');
   assert.equal(activityStatus(response({quality:{}}), now).label, '未知');
+  assert.equal(activityStatus(response({provider_running:false,quality:{provider_running:'ok',is_idle:'unavailable'}}), now).label, '未运行');
   assert.equal(activityStatus(response({collected_at:new Date(now-121000).toISOString()}),now).label,'状态已过期');
   assert.equal(activityStatus(response({collected_at:new Date(now+1000).toISOString()}),now).label,'状态已过期');
   assert.equal(activityStatus({sample:null},now).label,'等待状态采集');

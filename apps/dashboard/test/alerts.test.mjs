@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { queryAgent, createAgentClient } from '../public/agent-client.js';
-import { alertRecordHTML } from '../public/alert-ui.js';
+import { alertRecordHTML, visibleAlerts } from '../public/alert-ui.js';
 import { demoQuery } from '../public/demo.js';
 
 const device = { url: 'http://127.0.0.1:17890', token: 'dashboard-token' };
@@ -27,5 +27,7 @@ test('alert rows escape device text, show retry results and demo never sends a p
   assert.ok(html.includes('已恢复')); assert.ok(html.includes('等待重试')); assert.ok(html.includes('已尝试 2 次'));
   const client = createAgentClient({ selected: 'demo' });
   assert.equal((await client.query('alerts')).items.length, 1);
+  const newestFirst = Array.from({ length: 12 }, (_, index) => ({ id: 12 - index }));
+  assert.deepEqual(visibleAlerts(newestFirst).map(item => item.id), [12, 11, 10, 9, 8, 7, 6, 5, 4, 3]);
   await assert.rejects(client.query('alert-test'), { code: 'demo_read_only' });
 });
