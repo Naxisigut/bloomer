@@ -1,4 +1,5 @@
 import { deviceFields, reading, activityStatus, pressureStatus, sampleStale } from './device-state.js';
+import { displayModelName } from './models.js';
 
 export function createDeviceUI({ query, selectedDevice, deviceChoices, selectDevice, dateTime, escape, onRefresh }) {
   const $ = selector => document.querySelector(selector);
@@ -6,7 +7,9 @@ export function createDeviceUI({ query, selectedDevice, deviceChoices, selectDev
   let selected, renderedDevice;
   const cell = (sample, key) => {
     const value = reading(sample, key);
-    return `<span class="${value.known ? '' : 'reading-unknown'}" title="${escape(value.reason || value.text)}">${escape(value.text)}</span>`;
+    const text = key === 'current_model' && value.known ? displayModelName(value.text) : value.text;
+    const title = key === 'current_model' && value.known ? value.text : (value.reason || value.text);
+    return `<span class="${value.known ? '' : 'reading-unknown'}" title="${escape(title)}">${escape(text)}</span>`;
   };
   const details = sample => deviceFields.map(([key, label]) => `<div class="health-item"><span>${label}</span><strong>${cell(sample, key)}</strong></div>`).join('');
 

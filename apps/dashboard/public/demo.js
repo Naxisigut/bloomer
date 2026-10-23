@@ -3,7 +3,7 @@ import { AppError } from './errors.js';
 import { deviceFields } from './device-state.js';
 
 const now = new Date();
-const models = ['Qwen3-32B', 'DeepSeek-R1-Distill-Qwen-32B', 'Qwen3-8B', 'Llama-3.3-70B-Instruct'];
+const models = ['Qwen3-32B', 'DeepSeek-R1-Distill-Qwen-32B', 'Qwen3-8B', 'EigenLabs/Qwen3.8-27B-4bit-mtpt'];
 let seed = 427;
 const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 const records = [];

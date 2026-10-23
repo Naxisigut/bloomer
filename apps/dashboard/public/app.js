@@ -4,7 +4,8 @@ import { CursorPager } from './pagination.js';
 import { createDeviceUI } from './device-ui.js';
 import { createAlertUI } from './alert-ui.js';
 import { createControlUI } from './control-ui.js';
-import { createNetworkRatesUI, formatRecommendationTopbar } from './network-rates.js';
+import { createNetworkRatesUI, formatRecommendationTopbar, formatUsdPerHourMicro } from './network-rates.js';
+import { displayModelName, displayModelNames } from './models.js';
 import { DeviceStore } from './connections.js';
 import { createAgentClient } from './agent-client.js';
 import { createHomeRevenueChart } from './home-revenue.js';
@@ -118,7 +119,8 @@ function resetQuery({ clearModel = false, preserveSummary = false } = {}) {
 function renderModelFilters() {
   const models = state.data.models?.items || [];
   const choices = [...new Set([...models.map(item => item.key), ...(state.model ? [state.model] : [])])].sort();
-  const options = '<option value="">全部模型</option>' + choices.map(model => `<option value="${escape(model)}" ${state.model === model ? 'selected' : ''}>${escape(model)}</option>`).join('');
+  const labels = displayModelNames(choices);
+  const options = '<option value="">全部模型</option>' + choices.map(model => `<option value="${escape(model)}" title="${escape(model)}" ${state.model === model ? 'selected' : ''}>${escape(labels.get(model))}</option>`).join('');
   $$('[data-model-filter]').forEach(select => { select.innerHTML = options; select.disabled = state.busy; });
 }
 
@@ -183,8 +185,11 @@ function renderMetrics() {
   $('#last-day-amount').textContent = money(lastDay ? sumMoney(lastDay.items) : null, 4);
   $('#available-balance').textContent = money(overview?.official?.available_balance_micro_usd);
   $$('.summary-amount').forEach(element => { element.title = element.textContent; });
+  const recommendation = !state.networkRates.unsupported && !state.networkRates.error && state.networkRates.data?.recommendation;
   $('#network-rates-recommendation').textContent = formatRecommendationTopbar({ rates: state.networkRates.data, unsupported: state.networkRates.unsupported, error: state.networkRates.error });
-  $('#network-rates-recommendation').title = $('#network-rates-recommendation').textContent;
+  $('#network-rates-recommendation').title = recommendation
+    ? `${recommendation.model}${recommendation.fallback ? '（兜底）' : ''} · ${formatUsdPerHourMicro(recommendation.usd_per_hour_micro)}`
+    : $('#network-rates-recommendation').textContent;
   const start = state.range?.from;
   $('#range-label').textContent = start ? `${dateTime(start, true)} — ${dateTime(new Date(Date.parse(state.range.to) - 1), true)}` : '选择日期';
   syncRecordsPeriodUi();
@@ -195,7 +200,7 @@ function renderRecords() {
   const page = state.data.earnings;
   const total = state.data.trend ? sumCount(state.data.trend.items) : null;
   const pages = total === null ? null : Math.max(1, Math.ceil(total / state.pageSize));
-  $('#records-body').innerHTML = page?.items.length ? page.items.map(item => `<tr><td><div class="model-cell"><span class="row-badge" aria-hidden="true">${icon('cube')}</span><div class="model-text"><strong title="${escape(item.model)}">${escape(item.model)}</strong><small title="记录 ${escape(item.record_id)} · Provider ${escape(item.provider_id)}">${escape(item.job_id || item.record_id)}</small></div></div></td><td class="amount-cell">${escape(money(item.amount_micro_usd, 6))}</td><td>${number(item.prompt_tokens)}</td><td>${number(item.completion_tokens)}</td><td>${escape(dateTime(item.created_at))}</td></tr>`).join('') : `<tr><td colspan="5"><div class="empty-state">${page ? '当前筛选无记录' : state.busy ? '正在读取记录…' : '明细读取失败，请检查设备后刷新。'}</div></td></tr>`;
+  $('#records-body').innerHTML = page?.items.length ? page.items.map(item => `<tr><td><div class="model-cell"><span class="row-badge" aria-hidden="true">${icon('cube')}</span><div class="model-text"><strong title="${escape(item.model)}">${escape(displayModelName(item.model))}</strong><small title="记录 ${escape(item.record_id)} · Provider ${escape(item.provider_id)}">${escape(item.job_id || item.record_id)}</small></div></div></td><td class="amount-cell">${escape(money(item.amount_micro_usd, 6))}</td><td>${number(item.prompt_tokens)}</td><td>${number(item.completion_tokens)}</td><td>${escape(dateTime(item.created_at))}</td></tr>`).join('') : `<tr><td colspan="5"><div class="empty-state">${page ? '当前筛选无记录' : state.busy ? '正在读取记录…' : '明细读取失败，请检查设备后刷新。'}</div></td></tr>`;
   $('#records-body').setAttribute('aria-busy', String(state.busy));
   $('#records-count').textContent = total === null ? '—' : number(total);
   $('#page-number').textContent = `${state.page + 1} / ${pages === null ? '—' : number(pages)}`;

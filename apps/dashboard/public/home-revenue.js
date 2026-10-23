@@ -1,4 +1,5 @@
 import { DASHBOARD_TIMEZONE, dateKey, money, sumMoney, timeRange } from './data.js';
+import { displayModelNames } from './models.js';
 
 const HOUR = 3_600_000;
 const TOTAL_COLOR = '#5b8def';
@@ -75,20 +76,22 @@ export function createHomeRevenueChart({ query, selectedDevice, currentView, esc
   const colorFor = model => colors[state.models.indexOf(model) % colors.length];
 
   function renderChoices() {
-    choices.innerHTML = `<label class="home-model-choice" style="--series-color:${TOTAL_COLOR}"><input type="checkbox" data-home-total ${state.showTotal ? 'checked' : ''}><i aria-hidden="true"></i><span>全部收益</span></label>` + state.models.map(model => `<label class="home-model-choice" style="--series-color:${colorFor(model)}"><input type="checkbox" data-home-model value="${escape(model)}" ${state.selected.has(model) ? 'checked' : ''}><i aria-hidden="true"></i><span>${escape(model)}</span></label>`).join('');
+    const labels = displayModelNames(state.models);
+    choices.innerHTML = `<label class="home-model-choice" style="--series-color:${TOTAL_COLOR}"><input type="checkbox" data-home-total ${state.showTotal ? 'checked' : ''}><i aria-hidden="true"></i><span>全部收益</span></label>` + state.models.map(model => `<label class="home-model-choice" style="--series-color:${colorFor(model)}" title="${escape(model)}"><input type="checkbox" data-home-model value="${escape(model)}" ${state.selected.has(model) ? 'checked' : ''}><i aria-hidden="true"></i><span>${escape(labels.get(model))}</span></label>`).join('');
   }
 
   function render() {
     if (currentView() !== 'overview') return;
     $('#home-revenue-total').textContent = money(state.all ? sumMoney(state.all.items) : null, 4);
-    const errors = [...state.errors, ...[...state.seriesErrors].filter(([model]) => state.selected.has(model)).map(([model, error]) => `${model}：${error}`)];
+    const labels = displayModelNames(state.models);
+    const errors = [...state.errors, ...[...state.seriesErrors].filter(([model]) => state.selected.has(model)).map(([model, error]) => `${labels.get(model)}：${error}`)];
     const status = $('#home-revenue-status');
     status.textContent = errors.join('；'); status.hidden = !errors.length;
     chart.setAttribute('aria-busy', String(state.loading || state.pending.size > 0));
     const series = [
       ...(state.showTotal && state.all ? [{ name: '全部收益', color: TOTAL_COLOR, items: state.all.items }] : []),
       ...state.models.filter(model => state.selected.has(model) && state.series.has(model))
-        .map(model => ({ name: model, color: colorFor(model), items: state.series.get(model).items })),
+        .map(model => ({ name: labels.get(model), color: colorFor(model), items: state.series.get(model).items })),
     ].map(item => ({ ...item, points: hourlyPoints(item.items, state.range) }));
     const allPoints = series.flatMap(item => item.points);
     if (!allPoints.length) {

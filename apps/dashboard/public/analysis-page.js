@@ -6,6 +6,7 @@ import {
 import {
   trendOption, cumulativeOption, modelShareOption, taskAvgOption, hourDistributionOption, weekdayHourHeatmap, modelHourHeatmap, modelCompareOption, chartTheme,
 } from './analysis-charts.js';
+import { displayModelNames } from './models.js';
 
 echarts.registerTheme('bloomer', chartTheme);
 
@@ -42,10 +43,11 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
     if (!host) return;
     const list = state.response?.models?.map(item => item.model) || [];
     const choices = [...new Set([...list, ...state.models])];
+    const labels = displayModelNames(choices);
     host.innerHTML = `<button type="button" class="model-tag ${state.allModels ? 'selected' : ''}" data-all-models aria-pressed="${state.allModels}">全部模型</button>` + choices.map(model => {
       const selected = !state.allModels && state.models.has(model);
       const missing = state.response && !list.includes(model);
-      return `<button type="button" class="model-tag ${selected ? 'selected' : ''}" data-model="${escape(model)}" aria-pressed="${selected}">${escape(model)}${missing ? '<span class="tag-note">无数据</span>' : ''}</button>`;
+      return `<button type="button" class="model-tag ${selected ? 'selected' : ''}" data-model="${escape(model)}" title="${escape(model)}" aria-pressed="${selected}"><span class="model-tag-label">${escape(labels.get(model))}</span>${missing ? '<span class="tag-note">无数据</span>' : ''}</button>`;
     }).join('');
   }
 
@@ -63,7 +65,8 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
     const body = $('#analysis-share-body');
     if (!body) return;
     const rows = state.derived?.modelShares || [];
-    body.innerHTML = rows.length ? rows.map(row => `<tr><td>${escape(row.model)}</td><td class="amount-cell">${escape(money(row.amount_micro_usd))}</td><td>${row.share.toFixed(1)}%</td><td>${new Intl.NumberFormat('zh-CN').format(row.record_count)}</td><td class="amount-cell">${escape(money(row.avgPerRecord, 4))}</td></tr>`).join('') : `<tr><td colspan="5"><div class="empty-state">暂无模型数据</div></td></tr>`;
+    const labels = displayModelNames(rows.map(row => row.model));
+    body.innerHTML = rows.length ? rows.map(row => `<tr><td title="${escape(row.model)}">${escape(labels.get(row.model))}</td><td class="amount-cell">${escape(money(row.amount_micro_usd))}</td><td>${row.share.toFixed(1)}%</td><td>${new Intl.NumberFormat('zh-CN').format(row.record_count)}</td><td class="amount-cell">${escape(money(row.avgPerRecord, 4))}</td></tr>`).join('') : `<tr><td colspan="5"><div class="empty-state">暂无模型数据</div></td></tr>`;
   }
 
   function setChart(name, option) {

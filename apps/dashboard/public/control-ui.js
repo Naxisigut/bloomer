@@ -1,4 +1,5 @@
 import { randomID } from './identifiers.js';
+import { displayModelName } from './models.js';
 import { isPermanentControlError, isTransientControlError, nextControlPollDelayMs, shouldControlAutoPoll } from './control-poll.js';
 
 const actions = { start: '开启 Darkbloom', stop: '关闭 Darkbloom', restart: '重启 Darkbloom', switch: '切换模型', download: '下载模型' };
@@ -77,7 +78,7 @@ export function createControlUI({ submitControl, query, selectedDevice, currentV
     $('#control-catalog-error').textContent = models?.catalog_error ? '官方目录暂不可用；本地模型仍可选择。请检查设备网络后刷新。' : '';
     $('#control-retry').hidden = !pending || demo;
     $('#control-retry').disabled = loading || submitting || Boolean(running) || !status?.available;
-    $('#control-jobs').innerHTML = status?.jobs?.length ? status.jobs.map(job => `<div class="control-job"><span>${escape(actions[job.action] || job.action)}${job.models?.length ? `<small>${job.models.map(escape).join('、')}</small>` : ''}<small>${escape(dateTime(job.created_at))} · ${escape(job.id)}</small>${job.error ? `<small>${escape(reasons[job.error] || '请核对设备端执行结果。')}</small>` : ''}</span><span class="status-tag ${job.status === 'failed' || job.status === 'unconfirmed' ? 'warning' : ''}">${escape(statuses[job.status] || '未知')}</span></div>`).join('') : '<p class="control-note">暂无操作记录</p>';
+    $('#control-jobs').innerHTML = status?.jobs?.length ? status.jobs.map(job => `<div class="control-job"><span>${escape(actions[job.action] || job.action)}${job.models?.length ? `<small title="${escape(job.models.join('、'))}">${job.models.map(id => escape(displayModelName(id))).join('、')}</small>` : ''}<small>${escape(dateTime(job.created_at))} · ${escape(job.id)}</small>${job.error ? `<small>${escape(reasons[job.error] || '请核对设备端执行结果。')}</small>` : ''}</span><span class="status-tag ${job.status === 'failed' || job.status === 'unconfirmed' ? 'warning' : ''}">${escape(statuses[job.status] || '未知')}</span></div>`).join('') : '<p class="control-note">暂无操作记录</p>';
   }
   async function refresh(withModels = false) {
     render();
@@ -96,9 +97,9 @@ export function createControlUI({ submitControl, query, selectedDevice, currentV
         if (id !== deviceID || generation !== requestGeneration) return;
         models = result;
         const selected = new Set([...$('#control-local-models').selectedOptions].map(option => option.value));
-        $('#control-local-models').innerHTML = models.local.map(model => `<option value="${escape(model.id)}" ${selected.has(model.id) ? 'selected' : ''}>${escape(model.display_name || model.id)}</option>`).join('');
+        $('#control-local-models').innerHTML = models.local.map(model => `<option value="${escape(model.id)}" title="${escape(model.id)}" ${selected.has(model.id) ? 'selected' : ''}>${escape(model.display_name || displayModelName(model.id))}</option>`).join('');
         const download = $('#control-download-model').value;
-        $('#control-download-model').innerHTML = '<option value="">选择要下载的模型</option>' + models.catalog.map(model => `<option value="${escape(model.id)}" ${download === model.id ? 'selected' : ''}>${escape(model.display_name || model.id)}${model.size_gb ? ` · ${escape(model.size_gb)} GB` : ''}</option>`).join('');
+        $('#control-download-model').innerHTML = '<option value="">选择要下载的模型</option>' + models.catalog.map(model => `<option value="${escape(model.id)}" title="${escape(model.id)}" ${download === model.id ? 'selected' : ''}>${escape(model.display_name || displayModelName(model.id))}${model.size_gb ? ` · ${escape(model.size_gb)} GB` : ''}</option>`).join('');
       }
     } catch (failure) {
       if (id === deviceID && generation === requestGeneration) {

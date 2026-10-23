@@ -1,5 +1,11 @@
 import { microToChartNumber } from './analysis-data.js';
 import { money } from './data.js';
+import { displayModelNames } from './models.js';
+
+const modelLabel = (models) => {
+  const labels = displayModelNames(models);
+  return id => labels.get(id) ?? id;
+};
 
 const colors = ['#5b8def', '#f2994a', '#8b7cf6', '#2bb3a3', '#e5677e', '#9ab843', '#c08a4f', '#d4a72c'];
 const colorFor = (model, order) => colors[order.indexOf(model) % colors.length];
@@ -29,8 +35,9 @@ export const chartTheme = {
 
 export function trendOption({ filledBuckets, modelOrder, mode = 'bar' }) {
   const labels = filledBuckets.map(bucket => bucket.from);
+  const label = modelLabel(modelOrder);
   const series = modelOrder.map(model => ({
-    name: model,
+    name: label(model),
     type: mode === 'line' ? 'line' : 'bar',
     stack: mode === 'bar' ? 'amount' : undefined,
     emphasis: { focus: 'series' },
@@ -51,9 +58,10 @@ export function trendOption({ filledBuckets, modelOrder, mode = 'bar' }) {
 
 export function cumulativeOption({ cumulative, modelOrder }) {
   const labels = cumulative.map(point => point.from);
+  const label = modelLabel(modelOrder);
   const series = [
     ...modelOrder.map(model => ({
-      name: model,
+      name: label(model),
       type: 'line',
       smooth: true,
       showSymbol: false,
@@ -67,10 +75,11 @@ export function cumulativeOption({ cumulative, modelOrder }) {
 
 export function modelShareOption(modelShares) {
   if (!modelShares.length) return emptyOption('暂无模型收益');
+  const label = modelLabel(modelShares.map(item => item.model));
   return {
     tooltip: { trigger: 'item', formatter: params => `${params.name}<br>${money(String(Math.round(params.value * 1e6)))} · ${params.percent}%` },
     legend: { type: 'scroll', orient: 'vertical', left: 8, top: 'middle', width: '38%', textStyle: { overflow: 'truncate', width: 150 } },
-    series: [{ type: 'pie', radius: ['48%', '72%'], center: ['68%', '50%'], label: { show: false }, emphasis: { scale: true, scaleSize: 6 }, data: modelShares.map(item => ({ name: item.model, value: microToChartNumber(item.amount_micro_usd) })) }],
+    series: [{ type: 'pie', radius: ['48%', '72%'], center: ['68%', '50%'], label: { show: false }, emphasis: { scale: true, scaleSize: 6 }, data: modelShares.map(item => ({ name: label(item.model), value: microToChartNumber(item.amount_micro_usd) })) }],
   };
 }
 
@@ -93,6 +102,7 @@ export function hourDistributionOption(hourDaily, modelOrder) {
   const hours = Array.from({ length: 24 }, (_, hour) => hour);
   const models = modelOrder.length ? modelOrder : [...new Set(hourDaily.map(row => row.model))];
   if (!hourDaily.length) return emptyOption('暂无时段数据');
+  const label = modelLabel(models);
   return {
     tooltip: { trigger: 'axis', valueFormatter: value => money(String(Math.round(Number(value) * 1e6))) },
     legend: { type: 'scroll', bottom: 0 },
@@ -100,7 +110,7 @@ export function hourDistributionOption(hourDaily, modelOrder) {
     xAxis: { type: 'category', data: hours.map(hour => `${String(hour).padStart(2, '0')}:00`) },
     yAxis: { type: 'value', name: '小时日均 USD' },
     series: models.map(model => ({
-      name: model,
+      name: label(model),
       type: 'line',
       smooth: true,
       showSymbol: false,
@@ -135,11 +145,12 @@ export function modelHourHeatmap(hourOfDay, modelOrder) {
     }
   }
   const max = Math.max(...data.map(item => item[2]), 0.000001);
+  const label = modelLabel(models);
   return {
     tooltip: { position: 'top' },
-    grid: { left: 80, right: 16, top: 16, bottom: 40 },
+    grid: { left: 148, right: 16, top: 16, bottom: 40 },
     xAxis: { type: 'category', data: Array.from({ length: 24 }, (_, hour) => `${String(hour).padStart(2, '0')}:00`) },
-    yAxis: { type: 'category', data: models },
+    yAxis: { type: 'category', data: models.map(label), axisLabel: { overflow: 'truncate', width: 128 } },
     visualMap: { min: 0, max, calculable: true, orient: 'horizontal', left: 'center', bottom: 0 },
     series: [{ type: 'heatmap', data }],
   };
@@ -154,11 +165,12 @@ export function modelCompareOption(models, spanDays, granularity = 'day') {
     daily: Number(BigInt(item.amount_micro_usd) / days) / 1e6,
     active: item.active_buckets ? Number(BigInt(item.amount_micro_usd) / BigInt(item.active_buckets)) / 1e6 : 0,
   }));
+  const label = modelLabel(rows.map(row => row.model));
   return {
     tooltip: { trigger: 'axis' },
     legend: { bottom: 0 },
     grid: { left: 48, right: 16, top: 24, bottom: 40 },
-    xAxis: { type: 'category', data: rows.map(row => row.model) },
+    xAxis: { type: 'category', data: rows.map(row => label(row.model)), axisLabel: { overflow: 'truncate', width: 96, interval: 0 } },
     yAxis: { type: 'value', name: 'USD' },
     series: [
       { name: '单笔均值', type: 'bar', data: rows.map(row => row.avg) },

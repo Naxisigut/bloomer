@@ -1,4 +1,5 @@
 import { AppError } from './errors.js';
+import { displayModelName, displayModelNames } from './models.js';
 
 const BLOCKED_REASONS = {
   auto_switch_off: '未开启自动切换',
@@ -66,7 +67,7 @@ export function formatRecommendationTopbar({ rates, unsupported, error }) {
   if (unsupported || error || !rates) return '—';
   const rec = rates.recommendation;
   if (!rec) return '—';
-  const name = `${rec.model}${rec.fallback ? '（兜底）' : ''}`;
+  const name = `${displayModelName(rec.model)}${rec.fallback ? '（兜底）' : ''}`;
   return `${name} · ${formatUsdPerHourMicro(rec.usd_per_hour_micro)}`;
 }
 
@@ -129,10 +130,11 @@ function candidateRowClass(candidate) {
 
 export function renderCandidatesTable(candidates, escape) {
   if (!candidates?.length) return '<p class="control-note">暂无候选模型数据</p>';
+  const labels = displayModelNames(candidates.map(candidate => candidate.model));
   const rows = candidates.map(candidate => {
     const muted = candidateRowClass(candidate);
     const priceNote = candidate.price_source === 'fallback' ? '（兜底价）' : '';
-    return `<tr${muted ? ` class="${muted}"` : ''}><td>${escape(candidate.model)}${candidate.insufficient ? ' · 样本不足' : ''}</td><td>${candidate.downloaded ? '是' : '否'}</td><td>${escape(String(Math.round(candidate.avg_providers * 10) / 10))}</td><td>${escape(new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(candidate.requests_per_hour))}</td><td>${escape(new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(candidate.tokens_per_hour))}</td><td>${escape(formatUsdPerHourMicro(candidate.usd_per_hour_micro))}</td><td>${escape(priceSourceLabel(candidate.price_source))}${priceNote ? ` ${escape(priceNote)}` : ''}</td></tr>`;
+    return `<tr${muted ? ` class="${muted}"` : ''}><td title="${escape(candidate.model)}">${escape(labels.get(candidate.model))}${candidate.insufficient ? ' · 样本不足' : ''}</td><td>${candidate.downloaded ? '是' : '否'}</td><td>${escape(String(Math.round(candidate.avg_providers * 10) / 10))}</td><td>${escape(new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(candidate.requests_per_hour))}</td><td>${escape(new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(candidate.tokens_per_hour))}</td><td>${escape(formatUsdPerHourMicro(candidate.usd_per_hour_micro))}</td><td>${escape(priceSourceLabel(candidate.price_source))}${priceNote ? ` ${escape(priceNote)}` : ''}</td></tr>`;
   }).join('');
   return `<div class="table-scroll network-rates-table-wrap"><table><thead><tr><th>模型</th><th>已下载</th><th>对照组均台数</th><th>每台每小时接单</th><th>每台每小时输出 token</th><th>估算 $/h</th><th>价格来源</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -141,9 +143,9 @@ export function renderSwitchRecords(switches, escape, dateTime) {
   if (!switches?.length) return '<p class="control-note">暂无切换记录</p>';
   return switches.map(item => {
     const summary = item.summary?.length
-      ? `<ul class="network-rates-summary">${item.summary.map(row => `<li>${escape(row.model)} · ${escape(formatUsdPerHourMicro(row.usd_per_hour_micro))} · 均 ${escape(String(Math.round(row.avg_providers * 10) / 10))} 台</li>`).join('')}</ul>`
+      ? `<ul class="network-rates-summary">${item.summary.map(row => `<li title="${escape(row.model)}">${escape(displayModelName(row.model))} · ${escape(formatUsdPerHourMicro(row.usd_per_hour_micro))} · 均 ${escape(String(Math.round(row.avg_providers * 10) / 10))} 台</li>`).join('')}</ul>`
       : '<p class="control-note">无候选摘要</p>';
-    return `<details class="network-rates-switch"><summary><span class="network-rates-switch-head"><strong>${escape(dateTime(item.at))}</strong><span>${escape(item.from_model)} → ${escape(item.to_model)}</span><span>${escape(switchReasonLabel(item.reason))}</span><span class="status-tag ${item.status === 'failed' || item.status === 'unconfirmed' ? 'warning' : ''}">${escape(switchStatusLabel(item.status))}</span>${item.error ? `<span>${escape(item.error)}</span>` : ''}</span></summary>${summary}</details>`;
+    return `<details class="network-rates-switch"><summary><span class="network-rates-switch-head"><strong>${escape(dateTime(item.at))}</strong><span title="${escape(item.from_model)} → ${escape(item.to_model)}">${escape(displayModelName(item.from_model))} → ${escape(displayModelName(item.to_model))}</span><span>${escape(switchReasonLabel(item.reason))}</span><span class="status-tag ${item.status === 'failed' || item.status === 'unconfirmed' ? 'warning' : ''}">${escape(switchStatusLabel(item.status))}</span>${item.error ? `<span>${escape(item.error)}</span>` : ''}</span></summary>${summary}</details>`;
   }).join('');
 }
 

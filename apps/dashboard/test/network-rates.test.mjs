@@ -34,6 +34,8 @@ test('topbar recommendation renders model and hourly rate or em dash when empty'
   assert.equal(formatRecommendationTopbar({ rates: withRec, unsupported: false, error: null }), 'DeepSeek · $0.14/h');
   const fallback = { ...withRec, recommendation: { model: 'gemma-4-26b-qat-4bit', usd_per_hour_micro: '8500', fallback: true } };
   assert.equal(formatRecommendationTopbar({ rates: fallback, unsupported: false, error: null }), 'gemma-4-26b-qat-4bit（兜底） · $0.0085/h');
+  const prefixed = { ...withRec, recommendation: { model: 'EigenLabs/Qwen3.8-27B-4bit-mtpt', usd_per_hour_micro: '142500', fallback: false } };
+  assert.equal(formatRecommendationTopbar({ rates: prefixed, unsupported: false, error: null }), 'Qwen3.8-27B-4bit-mtpt · $0.14/h');
 });
 
 test('hourly micro formatting uses two decimals or finer below one cent', () => {
