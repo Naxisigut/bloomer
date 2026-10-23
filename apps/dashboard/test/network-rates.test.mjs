@@ -6,7 +6,10 @@ import {
   formatUsdPerHourMicro,
   renderCandidatesTable,
   renderSwitchRecords,
+  renderTokenTrendFigure,
+  tokenTrendAxis,
   validateNetworkRatesSettings,
+  validateNetworkRatesTokenTrendResponse,
 } from '../public/network-rates.js';
 
 const device = { url: 'https://mac.tail123.ts.net:8443', token: 'synthetic-test-token' };
@@ -62,9 +65,25 @@ test('switch records show only the five most recent entries', () => {
   assert.doesNotMatch(html, /from-5/);
 });
 
+test('token trend rejects malformed points and draws a smooth join', () => {
+  assert.deepEqual(validateNetworkRatesTokenTrendResponse({ points: [{ at: '2026-10-23T01:00:00Z', tokens: 1200 }] }).points.length, 1);
+  assert.throws(() => validateNetworkRatesTokenTrendResponse({ points: [{ at: '2026-10-23T01:00:00Z', tokens: -1 }] }));
+  const axis = tokenTrendAxis([1000, 1000]);
+  assert.ok(axis.high > axis.low);
+  const figure = renderTokenTrendFigure([
+    { at: '2026-10-23T00:00:00Z', tokens: 1000 },
+    { at: '2026-10-23T01:00:00Z', tokens: 4000 },
+    { at: '2026-10-23T02:00:00Z', tokens: 2000 },
+  ], { width: 640, height: 220, escape: value => String(value) });
+  assert.match(figure.markup, /class="network-token-line"/);
+  assert.match(figure.markup, / C/);
+  const peak = figure.coords[1];
+  assert.ok(peak.y < figure.coords[0].y && peak.y < figure.coords[2].y);
+});
+
 test('old agents return network_rates_unsupported for network rates routes', async () => {
   const failure = async (response, route = 'network-rates') => queryAgent(device, route, undefined, { fetcher: async () => response });
-  for (const route of ['network-rates', 'network-rates-switches', 'network-rates-settings']) {
+  for (const route of ['network-rates', 'network-rates-switches', 'network-rates-settings', 'network-rates-token-trend']) {
     await assert.rejects(failure(new Response('old', { status: 404 }), route), { code: 'network_rates_unsupported' });
   }
 });

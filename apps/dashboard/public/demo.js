@@ -52,6 +52,18 @@ function demoNetworkRates(clock) {
   };
 }
 
+function demoTokenTrend(clock) {
+  const points = [];
+  const step = 5 * 60_000;
+  const start = Math.floor((+clock - 24 * 3_600_000) / step) * step;
+  for (let at = start; at <= +clock; at += step) {
+    const hours = (at - start) / 3_600_000;
+    const wave = 9_200_000 + Math.round(1_450_000 * Math.sin(hours / 3.4) + 520_000 * Math.sin(hours / 1.15));
+    points.push({ at: new Date(at).toISOString(), tokens: wave });
+  }
+  return { points };
+}
+
 function demoNetworkRatesSwitches(clock) {
   return {
     switches: [{
@@ -176,10 +188,11 @@ export function demoQuery(route, params = new URLSearchParams(), clock = new Dat
   if (route === 'alerts') return { items: [{ id: 1, type: 'coordinator_disconnected', event: 'recovered', level: 'active', device_name: '演示 Mac', title: '演示 Mac · 协调器连接已恢复', body: '设备：演示 Mac\n告警：协调器连接中断\n已恢复，持续 4 小时 21 分钟。', created_at: clock.toISOString(), first_triggered_at: new Date(+clock - 261 * 60_000).toISOString(), last_push_at: clock.toISOString(), recovered: true, duration_seconds: 261 * 60, delivery_status: 'sent', attempts: 1, last_attempt_at: clock.toISOString(), next_attempt_at: null }] };
 
   if (route.startsWith('control') || route === 'network-rates-settings') throw new AppError(403, 'demo_read_only', '演示设备不执行远程操作。');
-  if (!['health', 'overview', 'earnings', 'stats', 'analysis', 'device-state', 'network-rates', 'network-rates-switches'].includes(route)) throw new AppError(404, 'not_found', '接口不存在。');
+  if (!['health', 'overview', 'earnings', 'stats', 'analysis', 'device-state', 'network-rates', 'network-rates-switches', 'network-rates-token-trend'].includes(route)) throw new AppError(404, 'not_found', '接口不存在。');
   if (route === 'device-state') return demoState(clock);
   if (route === 'network-rates') return demoNetworkRates(clock);
   if (route === 'network-rates-switches') return demoNetworkRatesSwitches(clock);
+  if (route === 'network-rates-token-trend') return demoTokenTrend(clock);
   if (route === 'analysis') return demoAnalysis(params, clock);
   const timezone = params.get('timezone') || 'Asia/Shanghai';
   const from = params.get('from') || new Date(+clock - 365 * 86_400_000).toISOString();

@@ -5,6 +5,26 @@ import (
 	"time"
 )
 
+func TestTotalOutputTokenTrendSumsSelectedModelsPerHour(t *testing.T) {
+	base := time.Date(2026, 10, 23, 1, 0, 0, 0, time.UTC)
+	end := base.Add(30 * time.Minute)
+	later := end.Add(30 * time.Minute)
+	intervals := []Interval{
+		{StartedAt: base, EndedAt: end, Model: "a", DeltaTokens: 6000},
+		{StartedAt: base, EndedAt: end, Model: "b", DeltaTokens: 3000},
+		{StartedAt: base, EndedAt: end, Model: "c", DeltaTokens: 9000},
+		{StartedAt: end, EndedAt: later, Model: "a", DeltaTokens: 3000},
+	}
+	all := TotalOutputTokenTrend(intervals, nil)
+	if len(all) != 2 || !all[0].At.Equal(end) || all[0].Tokens != 36000 || all[1].Tokens != 6000 {
+		t.Fatalf("all models: %+v", all)
+	}
+	selected := TotalOutputTokenTrend(intervals, map[string]bool{"a": true, "b": true})
+	if len(selected) != 2 || selected[0].Tokens != 18000 || selected[1].Tokens != 6000 {
+		t.Fatalf("selected models: %+v", selected)
+	}
+}
+
 func TestDiffIntervalValidityAndAggregation(t *testing.T) {
 	base := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
 	interval := 5 * time.Minute

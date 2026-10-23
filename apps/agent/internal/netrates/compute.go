@@ -23,7 +23,7 @@ func Diff(prev, next Snapshot, interval time.Duration) (intervals []Interval, va
 		prevByID[p.ID] = p
 	}
 	type agg struct {
-		providers                    int
+		providers                  int
 		deltaRequests, deltaTokens int64
 	}
 	byModel := map[string]*agg{}
@@ -75,9 +75,9 @@ func Estimate(intervals []Interval, window int, prices map[string]int64, fallbac
 	}
 	samples = len(endedSet)
 	type totals struct {
-		providerHours                float64
+		providerHours              float64
 		deltaRequests, deltaTokens int64
-		providerSum                  int64
+		providerSum                int64
 	}
 	byModel := map[string]*totals{}
 	for _, iv := range intervals {
@@ -181,6 +181,48 @@ func latestEndedAt(intervals []Interval, window int) map[time.Time]bool {
 	out := make(map[time.Time]bool, len(ends))
 	for _, t := range ends {
 		out[t] = true
+	}
+	return out
+}
+
+// TokenTrendPoint is the control-group output-token rate at one sample.
+// Tokens is the sum of selected models' delta tokens, divided by the interval hours.
+type TokenTrendPoint struct {
+	At     time.Time
+	Tokens int64
+}
+
+// TotalOutputTokenTrend sums output tokens per hour across models that share an end time.
+// An empty models set includes every model. Points are ordered from oldest to newest.
+func TotalOutputTokenTrend(intervals []Interval, models map[string]bool) []TokenTrendPoint {
+	type bucket struct {
+		at   time.Time
+		rate float64
+	}
+	order := make([]int64, 0)
+	buckets := map[int64]*bucket{}
+	for _, iv := range intervals {
+		if len(models) > 0 && !models[iv.Model] {
+			continue
+		}
+		hours := iv.EndedAt.Sub(iv.StartedAt).Hours()
+		if hours <= 0 || iv.DeltaTokens < 0 {
+			continue
+		}
+		key := iv.EndedAt.UTC().UnixMicro()
+		b := buckets[key]
+		if b == nil {
+			b = &bucket{at: iv.EndedAt.UTC()}
+			buckets[key] = b
+			order = append(order, key)
+		}
+		b.rate += float64(iv.DeltaTokens) / hours
+	}
+	sort.Slice(order, func(i, j int) bool { return order[i] < order[j] })
+	out := make([]TokenTrendPoint, 0, len(order))
+	for _, key := range order {
+		b := buckets[key]
+		out = append(out, TokenTrendPoint{At: b.at, Tokens: int64(math.Round(b.rate))})
 	}
 	return out
 }

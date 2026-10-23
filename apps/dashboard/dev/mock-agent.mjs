@@ -54,6 +54,7 @@ for (const port of [18190, 18191]) {
         return;
       }
       if (req.method === 'GET' && url.pathname === '/v1/device/network-rates/switches') { send(200, { switches }); return; }
+      if (req.method === 'GET' && url.pathname === '/v1/device/network-rates/token-trend') { send(200, demoQuery('network-rates-token-trend')); return; }
       if (req.method === 'GET' && url.pathname === '/v1/device/network-rates') { send(200, mockNetworkRates(networkRatesAutoSwitch)); return; }
       send(404, { code: 'not_found' }); return;
     }

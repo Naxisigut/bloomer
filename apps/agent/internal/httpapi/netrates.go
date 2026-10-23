@@ -34,6 +34,12 @@ func (h *Handler) deviceNetworkRates(w http.ResponseWriter, r *http.Request, id 
 			failure(w, 405, "method_not_allowed", "Method unavailable", id)
 			return
 		}
+	case "/v1/device/network-rates/token-trend":
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", "GET")
+			failure(w, 405, "method_not_allowed", "Method unavailable", id)
+			return
+		}
 	default:
 		failure(w, 404, "not_found", "Endpoint unavailable", id)
 		return
@@ -51,6 +57,10 @@ func (h *Handler) deviceNetworkRates(w http.ResponseWriter, r *http.Request, id 
 			writeJSON(w, 200, map[string]any{"switches": []any{}})
 			return
 		}
+		if path == "/v1/device/network-rates/token-trend" {
+			writeJSON(w, 200, emptyTokenTrend())
+			return
+		}
 		writeJSON(w, 200, disabledNetworkRates())
 		return
 	}
@@ -59,6 +69,13 @@ func (h *Handler) deviceNetworkRates(w http.ResponseWriter, r *http.Request, id 
 	switch path {
 	case "/v1/device/network-rates":
 		writeJSON(w, 200, h.networkRates.Status())
+	case "/v1/device/network-rates/token-trend":
+		trend, err := h.networkRates.TokenTrend(ctx)
+		if err != nil {
+			failure(w, 503, "database_unavailable", "Local database is unavailable", id)
+			return
+		}
+		writeJSON(w, 200, trend)
 	case "/v1/device/network-rates/switches":
 		rows, err := h.networkRates.Switches(ctx, 50)
 		if err != nil {
@@ -87,6 +104,10 @@ func (h *Handler) deviceNetworkRates(w http.ResponseWriter, r *http.Request, id 
 		}
 		writeJSON(w, 200, view)
 	}
+}
+
+func emptyTokenTrend() netrates.TokenTrendView {
+	return netrates.TokenTrendView{Points: []netrates.TokenTrendPointView{}}
 }
 
 func disabledNetworkRates() netrates.StatusView {

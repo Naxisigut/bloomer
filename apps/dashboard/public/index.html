@@ -185,6 +185,10 @@
             <label class="network-rates-toggle"><input id="network-rates-auto-switch" type="checkbox"><span class="switch-track" aria-hidden="true"></span>自动切换最优模型</label>
             <p id="network-rates-status" class="control-note" role="status"></p>
             <div id="network-rates-candidates"></div>
+            <section class="network-token-card" aria-labelledby="network-token-title">
+              <div class="network-token-heading"><h3 id="network-token-title">总输出 token</h3><p>近 24 小时 · 上方各模型合计，每小时</p></div>
+              <div id="network-token-chart" class="network-token-chart"></div>
+            </section>
             <p class="control-note network-rates-footnote">仅供参考，不代表本机实际收益。</p>
             <h3>最近切换<small class="record-limit-hint">最近 5 条</small></h3>
             <div id="network-rates-switches" aria-live="polite"></div>

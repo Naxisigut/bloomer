@@ -48,6 +48,20 @@ func TestNetworkRatesHTTP(t *testing.T) {
 	if w := request("GET", "/v1/device/network-rates/switches", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"switches"`) {
 		t.Fatal(w.Code, w.Body)
 	}
+	base := time.Now().UTC().Add(-10 * time.Minute).Truncate(time.Microsecond)
+	next := base.Add(5 * time.Minute)
+	if err = s.SaveNetRateRound(context.Background(), netrates.Snapshot{At: next}, []netrates.Interval{
+		{StartedAt: base, EndedAt: next, Model: "a", Providers: 2, DeltaRequests: 10, DeltaTokens: 6000},
+		{StartedAt: base, EndedAt: next, Model: "b", Providers: 1, DeltaRequests: 1, DeltaTokens: 3000},
+	}, time.Now().Add(-7*24*time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	if w := request("GET", "/v1/device/network-rates/token-trend", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"tokens":108000`) {
+		t.Fatal(w.Code, w.Body)
+	}
+	if w := request("POST", "/v1/device/network-rates/token-trend", ""); w.Code != 405 {
+		t.Fatal(w.Code)
+	}
 	if w := request("POST", "/v1/device/network-rates", ""); w.Code != 405 {
 		t.Fatal(w.Code)
 	}
@@ -57,6 +71,9 @@ func TestNetworkRatesHTTP(t *testing.T) {
 	}
 	if w := request("POST", "/v1/device/network-rates/settings", `{"auto_switch":true}`); w.Code != 503 {
 		t.Fatal(w.Code)
+	}
+	if w := request("GET", "/v1/device/network-rates/token-trend", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"points":[]`) {
+		t.Fatal(w.Code, w.Body)
 	}
 }
 

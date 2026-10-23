@@ -280,6 +280,28 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '405':
           description: Method not allowed
+  /v1/device/network-rates/token-trend:
+    get:
+      operationId: getNetworkRateTokenTrend
+      summary: Hourly total output-token trend for the models in the latest estimate
+      description: |
+        Sums output tokens across the current candidate models at each stored interval
+        in the last 24 hours, then divides by the interval length. Tokens are the cohort
+        total per hour, not the per-machine rate shown in the candidate table.
+        No query parameters. An empty points array means no retained samples.
+      responses:
+        '200':
+          description: Oldest point first
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NetworkRateTokenTrend'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          description: Method not allowed
+        '503':
+          description: database_unavailable
   /v1/device/state:
     get:
       operationId: getDeviceState
@@ -1337,6 +1359,25 @@ components:
           enum: [official, fallback]
         insufficient:
           type: boolean
+    NetworkRateTokenTrend:
+      type: object
+      required: [points]
+      properties:
+        points:
+          type: array
+          maxItems: 2000
+          items:
+            type: object
+            required: [at, tokens]
+            properties:
+              at:
+                type: string
+                format: date-time
+              tokens:
+                type: integer
+                format: int64
+                minimum: 0
+                description: Combined output tokens per hour across the selected models
     NetworkRatesSwitchGate:
       type: object
       required: [next_eligible_at, blocked_reason, backoff_until]

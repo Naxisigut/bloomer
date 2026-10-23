@@ -1,9 +1,9 @@
 import { AppError } from './errors.js';
 import { validateDevice } from './connections.js';
 import { demoQuery } from './demo.js';
-import { validateNetworkRatesResponse, validateNetworkRatesSettings, validateNetworkRatesSwitchesResponse } from './network-rates.js';
+import { validateNetworkRatesResponse, validateNetworkRatesSettings, validateNetworkRatesSwitchesResponse, validateNetworkRatesTokenTrendResponse } from './network-rates.js';
 
-const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs', 'network-rates': '/v1/device/network-rates', 'network-rates-settings': '/v1/device/network-rates/settings', 'network-rates-switches': '/v1/device/network-rates/switches' };
+const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs', 'network-rates': '/v1/device/network-rates', 'network-rates-settings': '/v1/device/network-rates/settings', 'network-rates-switches': '/v1/device/network-rates/switches', 'network-rates-token-trend': '/v1/device/network-rates/token-trend' };
 const messages = {
   analysis_unsupported: '该设备 Agent 尚不支持收益分析，请升级 Agent。',
   device_identity_unavailable: '设备身份尚未识别，暂时无法统计本机收益。',
@@ -58,6 +58,9 @@ function validateResponse(route, body, operation) {
   }
   if (route === 'network-rates-switches') {
     try { return validateNetworkRatesSwitchesResponse(body); } catch { throw invalidResponse(); }
+  }
+  if (route === 'network-rates-token-trend') {
+    try { return validateNetworkRatesTokenTrendResponse(body); } catch { throw invalidResponse(); }
   }
   return body;
 }

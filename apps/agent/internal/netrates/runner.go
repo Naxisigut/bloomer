@@ -18,6 +18,7 @@ import (
 
 const roundTimeout = 90 * time.Second
 const sampleMaxAge = 10 * time.Minute
+const tokenTrendWindow = 24 * time.Hour
 
 type netRateStore interface {
 	LoadNetRateBaseline(ctx context.Context) (Snapshot, bool, error)
@@ -43,14 +44,14 @@ type controlBridge interface {
 }
 
 type CandidateView struct {
-	Model            string  `json:"model"`
-	Downloaded       bool    `json:"downloaded"`
-	AvgProviders     float64 `json:"avg_providers"`
-	RequestsPerHour  float64 `json:"requests_per_hour"`
-	TokensPerHour    float64 `json:"tokens_per_hour"`
-	USDPerHourMicro  string  `json:"usd_per_hour_micro"`
-	PriceSource      string  `json:"price_source"`
-	Insufficient     bool    `json:"insufficient"`
+	Model           string  `json:"model"`
+	Downloaded      bool    `json:"downloaded"`
+	AvgProviders    float64 `json:"avg_providers"`
+	RequestsPerHour float64 `json:"requests_per_hour"`
+	TokensPerHour   float64 `json:"tokens_per_hour"`
+	USDPerHourMicro string  `json:"usd_per_hour_micro"`
+	PriceSource     string  `json:"price_source"`
+	Insufficient    bool    `json:"insufficient"`
 }
 
 type RecommendationView struct {
@@ -81,16 +82,25 @@ type StatusView struct {
 	IntervalMinutes int                 `json:"interval_minutes"`
 }
 
+type TokenTrendPointView struct {
+	At     string `json:"at"`
+	Tokens int64  `json:"tokens"`
+}
+
+type TokenTrendView struct {
+	Points []TokenTrendPointView `json:"points"`
+}
+
 type SwitchItemView struct {
-	ID         int64         `json:"id"`
-	At         string        `json:"at"`
-	FromModel  string        `json:"from_model"`
-	ToModel    string        `json:"to_model"`
-	Reason     string        `json:"reason"`
-	Status     string        `json:"status"`
-	Error      *string       `json:"error"`
-	JobID      string        `json:"job_id"`
-	Summary    []SummaryView `json:"summary"`
+	ID        int64         `json:"id"`
+	At        string        `json:"at"`
+	FromModel string        `json:"from_model"`
+	ToModel   string        `json:"to_model"`
+	Reason    string        `json:"reason"`
+	Status    string        `json:"status"`
+	Error     *string       `json:"error"`
+	JobID     string        `json:"job_id"`
+	Summary   []SummaryView `json:"summary"`
 }
 
 type SummaryView struct {
@@ -100,33 +110,33 @@ type SummaryView struct {
 }
 
 type Runner struct {
-	mu           sync.RWMutex
-	cfg          config.NetworkRates
-	settings     *Settings
-	store        netRateStore
-	client       statsClient
-	control      controlBridge
-	currentModel func(context.Context) (string, bool)
-	now          func() time.Time
-	log          *slog.Logger
-	interval     time.Duration
-	minSwitch    time.Duration
-	wakeSwitch   chan struct{}
+	mu             sync.RWMutex
+	cfg            config.NetworkRates
+	settings       *Settings
+	store          netRateStore
+	client         statsClient
+	control        controlBridge
+	currentModel   func(context.Context) (string, bool)
+	now            func() time.Time
+	log            *slog.Logger
+	interval       time.Duration
+	minSwitch      time.Duration
+	wakeSwitch     chan struct{}
 	prices         map[string]int64
 	lastSnapshotAt time.Time
 	view           StatusView
 }
 
 type estimateState struct {
-	now                                                         time.Time
-	cands                                                       []Candidate
-	samples                                                     int
-	rec                                                         *Recommendation
-	current                                                     string
-	currentOK, modelsUnavailable, controlBusy                   bool
-	downloaded                                                  map[string]bool
-	autoSwitch                                                  bool
-	autoSince, lastSwitchAt, backoffUntil                       *time.Time
+	now                                       time.Time
+	cands                                     []Candidate
+	samples                                   int
+	rec                                       *Recommendation
+	current                                   string
+	currentOK, modelsUnavailable, controlBusy bool
+	downloaded                                map[string]bool
+	autoSwitch                                bool
+	autoSince, lastSwitchAt, backoffUntil     *time.Time
 }
 
 func NewRunner(cfg config.NetworkRates, settings *Settings, store netRateStore, client statsClient, ctl controlBridge, currentModel func(context.Context) (string, bool), now func() time.Time, log *slog.Logger) *Runner {
@@ -139,10 +149,10 @@ func NewRunner(cfg config.NetworkRates, settings *Settings, store netRateStore, 
 	return &Runner{
 		cfg: cfg, settings: settings, store: store, client: client, control: ctl,
 		currentModel: currentModel, now: now, log: log,
-		interval: time.Duration(cfg.IntervalMinutes) * time.Minute,
-		minSwitch: time.Duration(cfg.SwitchMinIntervalMinutes) * time.Minute,
+		interval:   time.Duration(cfg.IntervalMinutes) * time.Minute,
+		minSwitch:  time.Duration(cfg.SwitchMinIntervalMinutes) * time.Minute,
 		wakeSwitch: make(chan struct{}, 1),
-		view: StatusView{Enabled: true, WindowSamples: cfg.WindowSamples, IntervalMinutes: cfg.IntervalMinutes, Candidates: []CandidateView{}},
+		view:       StatusView{Enabled: true, WindowSamples: cfg.WindowSamples, IntervalMinutes: cfg.IntervalMinutes, Candidates: []CandidateView{}},
 	}
 }
 
@@ -263,6 +273,30 @@ func (r *Runner) SetAutoSwitch(on bool) (StatusView, error) {
 	return view, nil
 }
 
+func (r *Runner) TokenTrend(ctx context.Context) (TokenTrendView, error) {
+	r.mu.RLock()
+	models := map[string]bool{}
+	for _, candidate := range r.view.Candidates {
+		models[candidate.Model] = true
+	}
+	var filter map[string]bool
+	if len(models) > 0 {
+		filter = models
+	}
+	since := r.now().Add(-tokenTrendWindow)
+	r.mu.RUnlock()
+	intervals, err := r.store.NetRateIntervals(ctx, since)
+	if err != nil {
+		return TokenTrendView{}, err
+	}
+	points := TotalOutputTokenTrend(intervals, filter)
+	view := TokenTrendView{Points: make([]TokenTrendPointView, 0, len(points))}
+	for _, point := range points {
+		view.Points = append(view.Points, TokenTrendPointView{At: point.At.UTC().Format(time.RFC3339Nano), Tokens: point.Tokens})
+	}
+	return view, nil
+}
+
 func (r *Runner) Switches(ctx context.Context, limit int) ([]SwitchItemView, error) {
 	if limit < 1 {
 		limit = 1
@@ -363,7 +397,7 @@ func (r *Runner) loadEstimateState(ctx context.Context, now time.Time) (estimate
 		now: now, cands: cands, samples: samples, rec: rec, current: current, currentOK: currentOK,
 		downloaded: downloaded, modelsUnavailable: modelsUnavailable,
 		controlBusy: r.control != nil && r.control.Busy(),
-		autoSwitch: autoSwitch, autoSince: autoSince, lastSwitchAt: lastSwitchAt, backoffUntil: backoffUntil,
+		autoSwitch:  autoSwitch, autoSince: autoSince, lastSwitchAt: lastSwitchAt, backoffUntil: backoffUntil,
 	}, nil
 }
 
@@ -561,19 +595,19 @@ func (r *Runner) maybeSwitch(ctx context.Context, now time.Time, view StatusView
 }
 
 type switchInput struct {
-	now                                                         time.Time
-	autoSwitch                                                  bool
-	autoSince, lastSwitchAt, backoffUntil                       *time.Time
-	samples, window                                             int
-	minInterval                                                 time.Duration
-	controlBusy, modelsUnavailable, currentOK                   bool
-	currentModel, fallbackModel                                 string
-	lastModelChange                                             time.Time
-	ratio                                                       float64
-	nearZeroMicro                                               int64
-	recommendation                                              *Recommendation
-	candidates                                                  []Candidate
-	downloaded                                                  map[string]bool
+	now                                       time.Time
+	autoSwitch                                bool
+	autoSince, lastSwitchAt, backoffUntil     *time.Time
+	samples, window                           int
+	minInterval                               time.Duration
+	controlBusy, modelsUnavailable, currentOK bool
+	currentModel, fallbackModel               string
+	lastModelChange                           time.Time
+	ratio                                     float64
+	nearZeroMicro                             int64
+	recommendation                            *Recommendation
+	candidates                                []Candidate
+	downloaded                                map[string]bool
 }
 
 func (r *Runner) evaluateSwitchGate(in switchInput) SwitchGateView {
