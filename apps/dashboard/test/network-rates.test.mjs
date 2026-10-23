@@ -65,20 +65,28 @@ test('switch records show only the five most recent entries', () => {
   assert.doesNotMatch(html, /from-5/);
 });
 
-test('token trend rejects malformed points and draws a smooth join', () => {
-  assert.deepEqual(validateNetworkRatesTokenTrendResponse({ points: [{ at: '2026-10-23T01:00:00Z', tokens: 1200 }] }).points.length, 1);
-  assert.throws(() => validateNetworkRatesTokenTrendResponse({ points: [{ at: '2026-10-23T01:00:00Z', tokens: -1 }] }));
+test('token trend rejects old points payload and draws escaped multi-series curves', () => {
+  assert.equal(validateNetworkRatesTokenTrendResponse({ series: [{ model: 'a', points: [{ at: '2026-10-23T01:00:00Z', tokens: 1200 }] }] }).series.length, 1);
+  assert.throws(() => validateNetworkRatesTokenTrendResponse({ points: [{ at: '2026-10-23T01:00:00Z', tokens: 1200 }] }));
+  assert.throws(() => validateNetworkRatesTokenTrendResponse({ series: [], points: [] }));
+  assert.throws(() => validateNetworkRatesTokenTrendResponse({ series: [{ model: 'a', points: [{ at: '2026-10-23T01:00:00Z', tokens: -1 }] }] }));
   const axis = tokenTrendAxis([1000, 1000]);
   assert.ok(axis.high > axis.low);
+  const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
   const figure = renderTokenTrendFigure([
-    { at: '2026-10-23T00:00:00Z', tokens: 1000 },
-    { at: '2026-10-23T01:00:00Z', tokens: 4000 },
-    { at: '2026-10-23T02:00:00Z', tokens: 2000 },
-  ], { width: 640, height: 220, escape: value => String(value) });
-  assert.match(figure.markup, /class="network-token-line"/);
+    { model: '<img onerror=1>', points: [{ at: '2026-10-23T00:00:00Z', tokens: 1000 }, { at: '2026-10-23T01:00:00Z', tokens: 4000 }, { at: '2026-10-23T02:00:00Z', tokens: 2000 }] },
+    { model: 'ok', points: [{ at: '2026-10-23T00:00:00Z', tokens: 800 }, { at: '2026-10-23T01:00:00Z', tokens: 1200 }, { at: '2026-10-23T02:00:00Z', tokens: 900 }] },
+  ], { width: 640, height: 220, escape, insufficient: new Set(['ok']) });
+  assert.equal(figure.markup.match(/class="network-token-line"/g).length, 2);
   assert.match(figure.markup, / C/);
-  const peak = figure.coords[1];
-  assert.ok(peak.y < figure.coords[0].y && peak.y < figure.coords[2].y);
+  assert.match(figure.markup, /stroke-dasharray="6 4"/);
+  assert.doesNotMatch(figure.markup, /network-token-area|linearGradient/);
+  assert.match(figure.legend, /&lt;img onerror=1&gt;/);
+  assert.match(figure.markup, /&lt;img onerror=1&gt;/);
+  assert.doesNotMatch(figure.legend, /<img/);
+  assert.doesNotMatch(figure.markup, /<img onerror/);
+  const peak = figure.series[0].coords[1];
+  assert.ok(peak.y < figure.series[0].coords[0].y && peak.y < figure.series[0].coords[2].y);
 });
 
 test('old agents return network_rates_unsupported for network rates routes', async () => {

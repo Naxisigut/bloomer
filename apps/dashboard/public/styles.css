@@ -437,10 +437,15 @@ tbody tr:nth-child(3n) .row-badge { background:var(--surface); color:var(--ink) 
 .network-rates-table-wrap th:last-child,.network-rates-table-wrap td:last-child { padding-right:16px }
 .network-rates-muted td { color:var(--faint) }
 .network-rates-footnote { margin-top:6px }
-.network-token-card { margin:18px 0 8px; padding:16px 16px 6px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface) }
+.network-token-card { min-width:0; max-width:100%; margin:18px 0 8px; padding:16px 16px 6px; border:1px solid var(--line); border-radius:var(--radius); background:var(--surface) }
 .network-rates-content .network-token-card h3 { margin:0; font-size:15px }
 .network-token-heading p { margin:4px 0 0; color:var(--muted); font-size:12px; line-height:1.6 }
-.network-token-chart { position:relative; height:220px; margin-top:4px; overflow-x:auto; overflow-y:hidden }
+.network-token-legend { display:flex; flex-wrap:wrap; gap:8px 14px; min-width:0; margin:10px 0 2px }
+.network-token-legend-item { display:inline-flex; align-items:center; gap:6px; min-width:0; max-width:100%; color:var(--ink-2); font-size:12px }
+.network-token-legend-item span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
+.network-token-legend-item i { flex-shrink:0; width:16px; height:0; border-top:2.5px solid var(--series-color) }
+.network-token-legend-item.is-insufficient i { border-top-style:dashed }
+.network-token-chart { position:relative; height:220px; max-width:100%; margin-top:4px; overflow-x:auto; overflow-y:hidden }
 .network-token-chart>svg { min-width:560px; width:100%; height:100% }
 .network-token-line { fill:none; stroke-width:2.5; stroke-linecap:round; stroke-linejoin:round }
 .network-token-chart .chart-crosshair { top:16px; bottom:28px }

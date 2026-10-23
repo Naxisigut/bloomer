@@ -283,15 +283,18 @@ paths:
   /v1/device/network-rates/token-trend:
     get:
       operationId: getNetworkRateTokenTrend
-      summary: Hourly total output-token trend for the models in the latest estimate
+      summary: Per-model output-token trend for the latest candidate set
       description: |
-        Sums output tokens across the current candidate models at each stored interval
-        in the last 24 hours, then divides by the interval length. Tokens are the cohort
-        total per hour, not the per-machine rate shown in the candidate table.
-        No query parameters. An empty points array means no retained samples.
+        Returns one series per model for stored intervals in the last 24 hours.
+        Each point is tokens per machine per hour, matching the candidate table:
+        round(delta_tokens / (providers * hours)). Intervals with providers<=0,
+        hours<=0, or delta_tokens<0 are skipped and not filled with zeros.
+        When candidates exist, only those models are returned in table order;
+        otherwise every model seen in the window is returned, sorted by name.
+        No query parameters. An empty series array means no retained samples.
       responses:
         '200':
-          description: Oldest point first
+          description: Series in candidate or name order; points oldest first
           content:
             application/json:
               schema:
@@ -1361,23 +1364,32 @@ components:
           type: boolean
     NetworkRateTokenTrend:
       type: object
-      required: [points]
+      required: [series]
       properties:
-        points:
+        series:
           type: array
-          maxItems: 2000
+          maxItems: 256
           items:
             type: object
-            required: [at, tokens]
+            required: [model, points]
             properties:
-              at:
+              model:
                 type: string
-                format: date-time
-              tokens:
-                type: integer
-                format: int64
-                minimum: 0
-                description: Combined output tokens per hour across the selected models
+              points:
+                type: array
+                maxItems: 2000
+                items:
+                  type: object
+                  required: [at, tokens]
+                  properties:
+                    at:
+                      type: string
+                      format: date-time
+                    tokens:
+                      type: integer
+                      format: int64
+                      minimum: 0
+                      description: Output tokens per machine per hour for this model
     NetworkRatesSwitchGate:
       type: object
       required: [next_eligible_at, blocked_reason, backoff_until]

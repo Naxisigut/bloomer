@@ -185,44 +185,75 @@ func latestEndedAt(intervals []Interval, window int) map[time.Time]bool {
 	return out
 }
 
-// TokenTrendPoint is the control-group output-token rate at one sample.
-// Tokens is the sum of selected models' delta tokens, divided by the interval hours.
+// TokenTrendPoint is one model's per-machine output-token rate at one sample.
 type TokenTrendPoint struct {
 	At     time.Time
 	Tokens int64
 }
 
-// TotalOutputTokenTrend sums output tokens per hour across models that share an end time.
-// An empty models set includes every model. Points are ordered from oldest to newest.
-func TotalOutputTokenTrend(intervals []Interval, models map[string]bool) []TokenTrendPoint {
-	type bucket struct {
-		at   time.Time
-		rate float64
+// TokenTrendSeries is one model's points, oldest first.
+type TokenTrendSeries struct {
+	Model  string
+	Points []TokenTrendPoint
+}
+
+// OutputTokenTrend groups intervals by model using the same per-machine hourly rate as the
+// candidate table: round(delta_tokens / (providers * hours)). Intervals with providers<=0,
+// hours<=0, or delta_tokens<0 are skipped and not filled with zeros. A non-empty models list
+// keeps that order; an empty list returns every remaining model sorted by name.
+func OutputTokenTrend(intervals []Interval, models []string) []TokenTrendSeries {
+	type sample struct {
+		at     time.Time
+		tokens int64
 	}
-	order := make([]int64, 0)
-	buckets := map[int64]*bucket{}
+	byModel := map[string]map[int64]sample{}
 	for _, iv := range intervals {
-		if len(models) > 0 && !models[iv.Model] {
-			continue
-		}
 		hours := iv.EndedAt.Sub(iv.StartedAt).Hours()
-		if hours <= 0 || iv.DeltaTokens < 0 {
+		if iv.Providers <= 0 || hours <= 0 || iv.DeltaTokens < 0 {
 			continue
 		}
 		key := iv.EndedAt.UTC().UnixMicro()
-		b := buckets[key]
-		if b == nil {
-			b = &bucket{at: iv.EndedAt.UTC()}
-			buckets[key] = b
-			order = append(order, key)
+		points := byModel[iv.Model]
+		if points == nil {
+			points = map[int64]sample{}
+			byModel[iv.Model] = points
 		}
-		b.rate += float64(iv.DeltaTokens) / hours
+		points[key] = sample{
+			at:     iv.EndedAt.UTC(),
+			tokens: int64(math.Round(float64(iv.DeltaTokens) / (float64(iv.Providers) * hours))),
+		}
 	}
-	sort.Slice(order, func(i, j int) bool { return order[i] < order[j] })
-	out := make([]TokenTrendPoint, 0, len(order))
-	for _, key := range order {
-		b := buckets[key]
-		out = append(out, TokenTrendPoint{At: b.at, Tokens: int64(math.Round(b.rate))})
+	var order []string
+	if len(models) > 0 {
+		seen := map[string]bool{}
+		for _, model := range models {
+			if seen[model] || byModel[model] == nil {
+				continue
+			}
+			seen[model] = true
+			order = append(order, model)
+		}
+	} else {
+		order = make([]string, 0, len(byModel))
+		for model := range byModel {
+			order = append(order, model)
+		}
+		sort.Strings(order)
+	}
+	out := make([]TokenTrendSeries, 0, len(order))
+	for _, model := range order {
+		points := byModel[model]
+		keys := make([]int64, 0, len(points))
+		for key := range points {
+			keys = append(keys, key)
+		}
+		sort.Slice(keys, func(i, j int) bool { return keys[i] < keys[j] })
+		series := TokenTrendSeries{Model: model, Points: make([]TokenTrendPoint, 0, len(keys))}
+		for _, key := range keys {
+			pt := points[key]
+			series.Points = append(series.Points, TokenTrendPoint{At: pt.at, Tokens: pt.tokens})
+		}
+		out = append(out, series)
 	}
 	return out
 }

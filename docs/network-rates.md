@@ -42,7 +42,7 @@ Bearer 认证，无查询参数：
 - `GET /v1/device/network-rates`：推荐、候选、样本数、`interval_minutes`、切换门控（`next_eligible_at`、`blocked_reason`、`backoff_until`）、`last_error`（`stats_unavailable` / `pricing_unavailable` / `models_unavailable`）。采集未运行时 `enabled` 为 false，`interval_minutes` 为 0。
 - `POST /v1/device/network-rates/settings`：`{"auto_switch": true|false}`，返回与 GET 相同结构。
 - `GET /v1/device/network-rates/switches`：`{ "switches": [...] }`，最新在前，最多 50 条。
-- `GET /v1/device/network-rates/token-trend`：`{ "points": [{ "at", "tokens" }] }`，最近 24 小时内每个有效间隔一点，从旧到新。`tokens` 是当前候选模型输出 token 合计后除以间隔小时数，不是表中的「每台每小时」。没有样本时 `points` 为空数组。
+- `GET /v1/device/network-rates/token-trend`：`{ "series": [{ "model", "points": [{ "at", "tokens" }] }] }`，最近 24 小时。每个模型一条序列，点从旧到新。`tokens` 与候选表「每台每小时输出 token」相同：`round(delta_tokens / (providers * hours))`，不是各模型合计。有候选时只返回这些模型且顺序一致；候选为空时返回间隔中出现过的全部模型，按名称排序。跳过 `providers<=0`、`hours<=0` 或 `delta_tokens<0` 的间隔，不补 0。没有样本时 `series` 为空数组。
 
 契约细节见 `contracts/openapi.yaml`。
 

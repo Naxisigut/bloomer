@@ -107,7 +107,7 @@ func (h *Handler) deviceNetworkRates(w http.ResponseWriter, r *http.Request, id 
 }
 
 func emptyTokenTrend() netrates.TokenTrendView {
-	return netrates.TokenTrendView{Points: []netrates.TokenTrendPointView{}}
+	return netrates.TokenTrendView{Series: []netrates.TokenTrendSeriesView{}}
 }
 
 func disabledNetworkRates() netrates.StatusView {

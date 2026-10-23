@@ -53,15 +53,25 @@ function demoNetworkRates(clock) {
 }
 
 function demoTokenTrend(clock) {
-  const points = [];
   const step = 5 * 60_000;
   const start = Math.floor((+clock - 24 * 3_600_000) / step) * step;
-  for (let at = start; at <= +clock; at += step) {
-    const hours = (at - start) / 3_600_000;
-    const wave = 9_200_000 + Math.round(1_450_000 * Math.sin(hours / 3.4) + 520_000 * Math.sin(hours / 1.15));
-    points.push({ at: new Date(at).toISOString(), tokens: wave });
-  }
-  return { points };
+  const specs = [
+    { model: 'DeepSeek-R1-Distill-Qwen-32B', tokens: (hours, recent) => 300000 + 18000 * Math.sin(hours / 3.2) + recent * 18000 },
+    { model: 'Qwen3-32B', tokens: (hours, recent) => 330000 + 14000 * Math.sin(hours / 2.7 + 1.2) - recent * 22000 },
+    { model: 'Qwen3-8B', tokens: hours => 410000 + 16000 * Math.sin(hours / 2.1 + 0.4) },
+    { model: 'gemma-4-26b-qat-4bit', tokens: hours => 24000 + 2800 * Math.sin(hours / 1.8 + 2.1) },
+  ];
+  return {
+    series: specs.map(spec => {
+      const points = [];
+      for (let at = start; at <= +clock; at += step) {
+        const hours = (at - start) / 3_600_000;
+        const recent = Math.max(0, hours - 20);
+        points.push({ at: new Date(at).toISOString(), tokens: Math.max(0, Math.round(spec.tokens(hours, recent))) });
+      }
+      return { model: spec.model, points };
+    }),
+  };
 }
 
 function demoNetworkRatesSwitches(clock) {

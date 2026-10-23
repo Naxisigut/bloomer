@@ -87,8 +87,13 @@ type TokenTrendPointView struct {
 	Tokens int64  `json:"tokens"`
 }
 
-type TokenTrendView struct {
+type TokenTrendSeriesView struct {
+	Model  string                `json:"model"`
 	Points []TokenTrendPointView `json:"points"`
+}
+
+type TokenTrendView struct {
+	Series []TokenTrendSeriesView `json:"series"`
 }
 
 type SwitchItemView struct {
@@ -275,13 +280,9 @@ func (r *Runner) SetAutoSwitch(on bool) (StatusView, error) {
 
 func (r *Runner) TokenTrend(ctx context.Context) (TokenTrendView, error) {
 	r.mu.RLock()
-	models := map[string]bool{}
+	models := make([]string, 0, len(r.view.Candidates))
 	for _, candidate := range r.view.Candidates {
-		models[candidate.Model] = true
-	}
-	var filter map[string]bool
-	if len(models) > 0 {
-		filter = models
+		models = append(models, candidate.Model)
 	}
 	since := r.now().Add(-tokenTrendWindow)
 	r.mu.RUnlock()
@@ -289,10 +290,14 @@ func (r *Runner) TokenTrend(ctx context.Context) (TokenTrendView, error) {
 	if err != nil {
 		return TokenTrendView{}, err
 	}
-	points := TotalOutputTokenTrend(intervals, filter)
-	view := TokenTrendView{Points: make([]TokenTrendPointView, 0, len(points))}
-	for _, point := range points {
-		view.Points = append(view.Points, TokenTrendPointView{At: point.At.UTC().Format(time.RFC3339Nano), Tokens: point.Tokens})
+	computed := OutputTokenTrend(intervals, models)
+	view := TokenTrendView{Series: make([]TokenTrendSeriesView, 0, len(computed))}
+	for _, series := range computed {
+		points := make([]TokenTrendPointView, 0, len(series.Points))
+		for _, point := range series.Points {
+			points = append(points, TokenTrendPointView{At: point.At.UTC().Format(time.RFC3339Nano), Tokens: point.Tokens})
+		}
+		view.Series = append(view.Series, TokenTrendSeriesView{Model: series.Model, Points: points})
 	}
 	return view, nil
 }

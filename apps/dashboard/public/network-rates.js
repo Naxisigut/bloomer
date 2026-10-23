@@ -154,16 +154,19 @@ export function renderNetworkRatesStatus(rates, escape, dateTime) {
   return parts.join(' · ');
 }
 
-const TOKEN_COLOR = '#5b8def';
+const TOKEN_COLORS = ['#5b8def', '#f2994a', '#8b7cf6', '#2bb3a3', '#e5677e', '#9ab843', '#c08a4f', '#d4a72c'];
 const tokenCompact = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
 const tokenExact = new Intl.NumberFormat('zh-CN');
 const tokenClock = new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const tokenAxisClock = new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 
 export function validateNetworkRatesTokenTrendResponse(body) {
-  if (!object(body) || !Array.isArray(body.points) || body.points.length > 2000) throw new Error('invalid');
-  for (const point of body.points) {
-    if (!object(point) || !Number.isFinite(Date.parse(point.at)) || !Number.isSafeInteger(point.tokens) || point.tokens < 0) throw new Error('invalid');
+  if (!object(body) || Object.hasOwn(body, 'points') || !Array.isArray(body.series) || body.series.length > 256) throw new Error('invalid');
+  for (const series of body.series) {
+    if (!object(series) || typeof series.model !== 'string' || !Array.isArray(series.points) || series.points.length > 2000) throw new Error('invalid');
+    for (const point of series.points) {
+      if (!object(point) || !Number.isFinite(Date.parse(point.at)) || !Number.isSafeInteger(point.tokens) || point.tokens < 0) throw new Error('invalid');
+    }
   }
   return body;
 }
@@ -190,25 +193,36 @@ export function tokenTrendAxis(values) {
   return { low: Math.min(low, ticks[0]), high: Math.max(high, ticks.at(-1)), ticks };
 }
 
-export function renderTokenTrendFigure(points, { width, height, escape }) {
-  const series = (points || [])
-    .map(point => ({ instant: Date.parse(point.at), tokens: point.tokens }))
-    .filter(point => Number.isFinite(point.instant) && Number.isSafeInteger(point.tokens))
-    .sort((a, b) => a.instant - b.instant);
-  if (!series.length) return null;
-  const axis = tokenTrendAxis(series.map(point => point.tokens));
+export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set() }) {
+  const lines = (series || []).map((item, index) => {
+    const points = (item?.points || [])
+      .map(point => ({ instant: Date.parse(point.at), tokens: point.tokens }))
+      .filter(point => Number.isFinite(point.instant) && Number.isSafeInteger(point.tokens) && point.tokens >= 0)
+      .sort((a, b) => a.instant - b.instant);
+    return {
+      model: typeof item?.model === 'string' ? item.model : '',
+      color: TOKEN_COLORS[index % TOKEN_COLORS.length],
+      dashed: insufficient.has(item?.model),
+      points,
+    };
+  }).filter(line => line.points.length);
+  if (!lines.length) return null;
+  const axis = tokenTrendAxis(lines.flatMap(line => line.points.map(point => point.tokens)));
   const left = Math.max(48, ...axis.ticks.map(tick => tokenCompact.format(tick).length * 7 + 14));
   const right = 16, top = 16, bottom = 28;
   const plotWidth = Math.max(1, width - left - right), plotHeight = Math.max(1, height - top - bottom);
   const y = value => top + (axis.high - value) / (axis.high - axis.low) * plotHeight;
-  const start = series[0].instant, end = series.at(-1).instant, span = Math.max(1, end - start);
-  const x = instant => series.length === 1 ? left + plotWidth / 2 : left + (instant - start) / span * plotWidth;
+  const instants = [...new Set(lines.flatMap(line => line.points.map(point => point.instant)))].sort((a, b) => a - b);
+  const start = instants[0], end = instants.at(-1), span = Math.max(1, end - start);
+  const x = instant => instants.length === 1 ? left + plotWidth / 2 : left + (instant - start) / span * plotWidth;
   const round = value => Math.round(value * 10) / 10;
-  const coords = series.map(point => ({ x: round(x(point.instant)), y: round(y(point.tokens)), tokens: point.tokens, instant: point.instant, timeLabel: tokenClock.format(new Date(point.instant)) }));
-  const line = smoothLinePath(coords);
-  const baseline = round(y(axis.low));
-  const area = coords.length > 1 ? `${line} L${coords.at(-1).x},${baseline} L${coords[0].x},${baseline} Z` : '';
-  let svg = `<defs><linearGradient id="network-token-area" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${TOKEN_COLOR}" stop-opacity=".22"/><stop offset="1" stop-color="${TOKEN_COLOR}" stop-opacity="0"/></linearGradient></defs>`;
+  const drawn = lines.map(line => ({
+    ...line,
+    coords: line.points.map(point => ({
+      x: round(x(point.instant)), y: round(y(point.tokens)), tokens: point.tokens, instant: point.instant,
+    })),
+  }));
+  let svg = '';
   for (const tick of axis.ticks) {
     const yPos = round(y(tick));
     svg += `<line class="chart-grid" x1="${left}" x2="${width - right}" y1="${yPos}" y2="${yPos}"/><text class="chart-label" x="${left - 8}" y="${yPos + 3}" text-anchor="end">${escape(tokenCompact.format(tick))}</text>`;
@@ -216,18 +230,25 @@ export function renderTokenTrendFigure(points, { width, height, escape }) {
   const labelCount = plotWidth < 420 ? 4 : 6;
   const seen = new Set();
   for (let index = 0; index < labelCount; index++) {
-    const point = series[Math.round(index * (series.length - 1) / Math.max(1, labelCount - 1))];
-    if (!point || seen.has(point.instant)) continue;
-    seen.add(point.instant);
-    svg += `<text class="chart-label" x="${round(x(point.instant))}" y="${height - 8}" text-anchor="middle">${escape(tokenAxisClock.format(new Date(point.instant)))}</text>`;
+    const instant = instants[Math.round(index * (instants.length - 1) / Math.max(1, labelCount - 1))];
+    if (instant == null || seen.has(instant)) continue;
+    seen.add(instant);
+    svg += `<text class="chart-label" x="${round(x(instant))}" y="${height - 8}" text-anchor="middle">${escape(tokenAxisClock.format(new Date(instant)))}</text>`;
   }
-  if (area) svg += `<path fill="url(#network-token-area)" d="${area}"/>`;
-  svg += `<path class="network-token-line" stroke="${TOKEN_COLOR}" d="${line}"/>`;
-  if (coords.length === 1) svg += `<circle fill="${TOKEN_COLOR}" cx="${coords[0].x}" cy="${coords[0].y}" r="3.5"/>`;
-  const low = Math.min(...series.map(point => point.tokens)), peak = Math.max(...series.map(point => point.tokens));
+  for (const line of drawn) {
+    const path = line.coords.length > 1 ? smoothLinePath(line.coords) : '';
+    const dash = line.dashed ? ' stroke-dasharray="6 4"' : '';
+    if (path) svg += `<path class="network-token-line" stroke="${line.color}"${dash} d="${path}"><title>${escape(line.model)}</title></path>`;
+    if (line.coords.length === 1) svg += `<circle fill="${line.color}" cx="${line.coords[0].x}" cy="${line.coords[0].y}" r="3.5"><title>${escape(line.model)}</title></circle>`;
+  }
+  const values = drawn.flatMap(line => line.coords.map(point => point.tokens));
+  const low = Math.min(...values), peak = Math.max(...values);
+  const legend = drawn.map(line => `<span class="network-token-legend-item${line.dashed ? ' is-insufficient' : ''}" style="--series-color:${line.color}" title="${escape(line.model)}"><i aria-hidden="true"></i><span>${escape(displayModelName(line.model))}</span></span>`).join('');
   return {
-    coords,
-    markup: `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="近 24 小时总输出 token 折线，最低 ${escape(tokenExact.format(low))}，最高 ${escape(tokenExact.format(peak))}，每小时">${svg}</svg><div class="chart-crosshair" hidden></div><div class="chart-tooltip home-revenue-tooltip" hidden></div><div class="network-token-dot" hidden></div>`,
+    series: drawn,
+    instants: instants.map(instant => ({ instant, x: round(x(instant)), timeLabel: tokenClock.format(new Date(instant)) })),
+    legend,
+    markup: `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="近 24 小时各模型每台每小时输出 token，最低 ${escape(tokenExact.format(low))}，最高 ${escape(tokenExact.format(peak))}">${svg}</svg><div class="chart-crosshair" hidden></div><div class="chart-tooltip home-revenue-tooltip" hidden></div>${drawn.map((_, index) => `<div class="network-token-dot" data-token-dot="${index}" hidden></div>`).join('')}`,
   };
 }
 
@@ -236,6 +257,7 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
   let deviceID, rates = null, switches = [], trend = null, trendError = '', loading = false, submitting = false, error = '', unsupported = false, generation = 0, pendingToggle = null;
   const dialog = $('#network-rates-confirm-dialog');
   const chart = $('#network-token-chart');
+  const legend = $('#network-token-legend');
 
   function render() {
     const device = selectedDevice();
@@ -269,7 +291,9 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
   }
 
   function renderTokenChart() {
+    if (legend) { legend.hidden = true; legend.innerHTML = ''; }
     if (!chart || unsupported || chart.clientWidth < 40) return;
+    const empty = '近 24 小时暂无各模型输出 token 样本';
     if (trendError) {
       chart.innerHTML = `<div class="empty-state">${escape(trendError)}</div>`;
       return;
@@ -279,20 +303,21 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
       return;
     }
     if (!trend.length) {
-      chart.innerHTML = '<div class="empty-state">近 24 小时暂无输出 token 样本</div>';
+      chart.innerHTML = `<div class="empty-state">${empty}</div>`;
       return;
     }
     const width = Math.max(560, chart.clientWidth);
     const height = chart.clientHeight || 220;
-    const figure = renderTokenTrendFigure(trend, { width, height, escape });
+    const insufficient = new Set((rates?.candidates || []).filter(candidate => candidate.insufficient).map(candidate => candidate.model));
+    const figure = renderTokenTrendFigure(trend, { width, height, escape, insufficient });
     if (!figure) {
-      chart.innerHTML = '<div class="empty-state">近 24 小时暂无输出 token 样本</div>';
+      chart.innerHTML = `<div class="empty-state">${empty}</div>`;
       return;
     }
+    if (legend) { legend.hidden = false; legend.innerHTML = figure.legend; }
     chart.innerHTML = figure.markup;
     const tooltip = chart.querySelector('.chart-tooltip');
     const crosshair = chart.querySelector('.chart-crosshair');
-    const dot = chart.querySelector('.network-token-dot');
     const svg = chart.querySelector('svg');
     const show = event => {
       const matrix = svg.getScreenCTM();
@@ -301,40 +326,54 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
       pointer.x = event.clientX;
       pointer.y = event.clientY;
       const local = pointer.matrixTransform(matrix.inverse());
-      let nearest = figure.coords[0], best = Infinity;
-      for (const coord of figure.coords) {
-        const distance = Math.abs(coord.x - local.x);
-        if (distance < best) { best = distance; nearest = coord; }
+      let nearest = figure.instants[0], best = Infinity;
+      for (const item of figure.instants) {
+        const distance = Math.abs(item.x - local.x);
+        if (distance < best) { best = distance; nearest = item; }
       }
-      tooltip.innerHTML = `<span class="tooltip-time">${escape(nearest.timeLabel)}</span><span class="tooltip-row"><i style="background:${TOKEN_COLOR}"></i>总输出 token<strong>${escape(tokenExact.format(nearest.tokens))} / 小时</strong></span>`;
+      const rows = figure.series.map((line, index) => ({ line, index, point: line.coords.find(coord => coord.instant === nearest.instant) }));
+      tooltip.innerHTML = `<span class="tooltip-time">${escape(nearest.timeLabel)}</span>` + rows.map(row => `<span class="tooltip-row"><i style="background:${row.line.color}"></i>${escape(displayModelName(row.line.model))}<strong>${escape(row.point ? tokenExact.format(row.point.tokens) : '—')}</strong></span>`).join('');
       tooltip.hidden = false;
       const bounds = chart.getBoundingClientRect();
       const svgBounds = svg.getBoundingClientRect();
       const scaleX = svgBounds.width / width;
       const scaleY = svgBounds.height / height;
-      const center = svgBounds.left - bounds.left + nearest.x * scaleX;
-      const dotTop = svgBounds.top - bounds.top + nearest.y * scaleY;
       const scroll = chart.scrollLeft;
-      dot.hidden = false;
-      dot.style.left = `${center + scroll}px`;
-      dot.style.top = `${dotTop}px`;
+      const center = svgBounds.left - bounds.left + nearest.x * scaleX;
+      let topAnchor = Infinity;
+      for (const row of rows) {
+        const dot = chart.querySelector(`[data-token-dot="${row.index}"]`);
+        if (!dot) continue;
+        if (!row.point) { dot.hidden = true; continue; }
+        const dotTop = svgBounds.top - bounds.top + row.point.y * scaleY;
+        topAnchor = Math.min(topAnchor, dotTop);
+        dot.hidden = false;
+        dot.style.background = row.line.color;
+        dot.style.left = `${center + scroll}px`;
+        dot.style.top = `${dotTop}px`;
+      }
+      if (!Number.isFinite(topAnchor)) topAnchor = 16;
       crosshair.style.left = `${center + scroll}px`;
       crosshair.hidden = false;
       const gap = 10, tooltipWidth = tooltip.offsetWidth, tooltipHeight = tooltip.offsetHeight;
       const left = center - tooltipWidth / 2;
-      const above = dotTop - tooltipHeight - gap;
+      const above = topAnchor - tooltipHeight - gap;
       tooltip.style.left = `${scroll + Math.max(gap, Math.min(left, chart.clientWidth - tooltipWidth - gap))}px`;
-      tooltip.style.top = `${above >= gap ? above : Math.min(dotTop + gap, chart.clientHeight - tooltipHeight - gap)}px`;
+      tooltip.style.top = `${above >= gap ? above : Math.min(topAnchor + gap, chart.clientHeight - tooltipHeight - gap)}px`;
     };
-    const hide = () => { tooltip.hidden = true; crosshair.hidden = true; dot.hidden = true; };
+    const hide = () => {
+      tooltip.hidden = true;
+      crosshair.hidden = true;
+      chart.querySelectorAll('[data-token-dot]').forEach(dot => { dot.hidden = true; });
+    };
     chart.onpointermove = show;
     chart.onpointerleave = hide;
   }
 
   function readTrend(id) {
     return query('network-rates-token-trend', null, id).then(
-      value => ({ points: value.points, error: '' }),
-      failure => ({ points: [], error: failure.code === 'network_rates_unsupported' ? '设备 Agent 版本过旧，暂无输出 token 趋势。' : failure.message }),
+      value => ({ series: value.series, error: '' }),
+      failure => ({ series: [], error: failure.code === 'network_rates_unsupported' ? '设备 Agent 版本过旧，暂无输出 token 趋势。' : failure.message }),
     );
   }
 
@@ -345,7 +384,7 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
         loading = true; render();
         try {
           const [ratesResponse, switchesResponse, trendResponse] = await Promise.all([query('network-rates', null, deviceID), query('network-rates-switches', null, deviceID), readTrend(deviceID)]);
-          if (selectedDevice()?.id === deviceID) { rates = ratesResponse; switches = switchesResponse.switches; trend = trendResponse.points; trendError = trendResponse.error; unsupported = false; error = ''; }
+          if (selectedDevice()?.id === deviceID) { rates = ratesResponse; switches = switchesResponse.switches; trend = trendResponse.series; trendError = trendResponse.error; unsupported = false; error = ''; }
         } catch (failure) {
           if (selectedDevice()?.id === deviceID) { error = failure.message; rates = null; switches = []; trend = null; trendError = ''; }
         } finally {
@@ -359,7 +398,7 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
     try {
       const [ratesResponse, switchesResponse, trendResponse] = await Promise.all([query('network-rates', null, id), query('network-rates-switches', null, id), readTrend(id)]);
       if (request !== generation || selectedDevice()?.id !== id) return;
-      rates = ratesResponse; switches = switchesResponse.switches; trend = trendResponse.points; trendError = trendResponse.error;
+      rates = ratesResponse; switches = switchesResponse.switches; trend = trendResponse.series; trendError = trendResponse.error;
     } catch (failure) {
       if (request !== generation || selectedDevice()?.id !== id) return;
       trend = null; trendError = '';
