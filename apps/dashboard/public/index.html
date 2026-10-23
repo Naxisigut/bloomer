@@ -22,6 +22,7 @@
         <button class="nav-item active" data-view="overview" aria-current="page"><span data-icon="overview"></span><span class="nav-label">首页</span></button>
         <button class="nav-item" data-view="analysis"><span data-icon="analysis"></span><span class="nav-label">收益分析</span></button>
         <button class="nav-item" data-view="records"><span data-icon="records"></span><span class="nav-label">收益明细</span></button>
+        <button class="nav-item" data-view="network"><span data-icon="network"></span><span class="nav-label">全网数据</span></button>
         <button class="nav-item" data-view="devices"><span data-icon="devices"></span><span class="nav-label">我的设备</span><span id="nav-device-count" class="nav-count">0</span></button>
         <button class="nav-item" data-view="alerts"><span data-icon="alerts"></span><span class="nav-label">告警记录</span></button>
       </nav>
@@ -95,6 +96,7 @@
               <h2>快捷入口</h2>
               <button type="button" class="quick-link" data-goto="analysis"><span class="quick-icon tone-blue" data-icon="analysis"></span><span><strong>收益分析</strong><small>趋势、占比与时段热力图</small></span><span class="quick-arrow" data-icon="chevron"></span></button>
               <button type="button" class="quick-link" data-goto="records"><span class="quick-icon tone-orange" data-icon="records"></span><span><strong>收益明细</strong><small>逐笔记录与 CSV 导出</small></span><span class="quick-arrow" data-icon="chevron"></span></button>
+              <button type="button" class="quick-link" data-goto="network"><span class="quick-icon tone-amber" data-icon="network"></span><span><strong>全网数据</strong><small>对照组收益估算与自动切换</small></span><span class="quick-arrow" data-icon="chevron"></span></button>
               <button type="button" class="quick-link" data-goto="devices"><span class="quick-icon tone-green" data-icon="devices"></span><span><strong>我的设备</strong><small>运行状态与远程操作</small></span><span class="quick-arrow" data-icon="chevron"></span></button>
               <button type="button" class="quick-link" data-goto="alerts"><span class="quick-icon tone-gray" data-icon="alerts"></span><span><strong>告警记录</strong><small>推送历史与测试推送</small></span><span class="quick-arrow" data-icon="chevron"></span></button>
             </section>
@@ -182,9 +184,16 @@
 
         <section id="devices-view" class="devices-only">
           <div class="device-cards-wrap"><div id="device-cards" class="device-cards"></div><button type="button" class="device-add-button" data-action="connect" aria-label="添加设备" title="添加设备"><span class="icon-circle" data-icon="add"></span><span>添加设备</span></button></div>
-          <div class="panel device-state-panel"><div class="panel-heading"><div><h2>运行状态</h2><p id="device-state-time" class="state-timestamp"></p></div><div class="state-panel-actions"><label class="sr-only" for="detail-device-select">选择设备</label><select id="detail-device-select" class="model-filter"></select></div></div><p id="device-state-message" class="state-message" role="status" hidden>正在读取设备状态…</p><div id="device-state-details" class="health-details"></div></div>
-          <div class="panel control-panel" id="control-panel">
-            <div class="panel-heading"><div><h2>远程操作</h2><p id="control-device-label">当前设备</p></div><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
+          <div id="devices-sticky-sentinel" aria-hidden="true"></div>
+          <div class="devices-sticky">
+          <div class="device-tabs-bar"><div class="device-tabs" id="device-tabs" role="tablist" aria-label="设备详情">
+            <button type="button" role="tab" id="device-tab-state" data-device-tab="state" aria-controls="device-state-panel">运行状态</button><button type="button" role="tab" id="device-tab-control" data-device-tab="control" aria-controls="control-panel">远程操作</button>
+          </div></div>
+          </div>
+          <div class="panel device-tabs-panel">
+          <div class="device-tab-pane device-state-panel" id="device-state-panel" role="tabpanel" aria-labelledby="device-tab-state"><div class="panel-heading"><div><p id="device-state-time" class="state-timestamp"></p></div><div class="state-panel-actions"><label class="sr-only" for="detail-device-select">选择设备</label><select id="detail-device-select" class="model-filter"></select></div></div><p id="device-state-message" class="state-message" role="status" hidden>正在读取设备状态…</p><div id="device-state-details" class="health-details"></div></div>
+          <div class="device-tab-pane control-panel" id="control-panel" role="tabpanel" aria-labelledby="device-tab-control" hidden>
+            <div class="panel-heading"><div><p id="control-device-label">当前设备</p></div><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
             <p id="control-message" class="state-message" role="status">正在检查远程操作能力…</p>
             <div class="control-content">
               <div class="control-lifecycle"><button type="button" class="button button-white" data-control="stop" disabled>关闭 Darkbloom</button><button type="button" class="button button-white" data-control="restart" disabled>重启 Darkbloom</button></div>
@@ -193,21 +202,29 @@
                 <div class="control-block"><label for="control-download-model">下载模型</label><select id="control-download-model"><option value="">请先刷新模型目录</option></select><p>从设备的官方模型目录选择，下载完成后可在本地模型中选择。</p><div class="control-lifecycle"><button type="button" class="button button-white" data-control="download" disabled>下载所选模型</button></div><p id="control-catalog-error" class="control-note"></p></div>
               </div>
               <p class="control-note">关闭、重启和切换会等待已接收的任务完成。操作期间可离开页面，执行结果保存在设备端；下载可能需要较长时间。</p>
-              <h3>最近操作</h3><div id="control-jobs" aria-live="polite"></div>
+              <h3>最近操作<small class="record-limit-hint">最近 5 条</small></h3><div id="control-jobs" aria-live="polite"></div>
               <button id="control-retry" type="button" class="button button-white" hidden>核对结果并重试提交</button>
             </div>
           </div>
-          <div class="panel network-rates-panel" id="network-rates-panel">
-            <div class="panel-heading"><div><h2>全网模型收益（估算）</h2><p id="network-rates-device-label">当前设备</p></div><button id="network-rates-refresh" type="button" class="button button-white">刷新</button></div>
-            <div class="network-rates-content">
-              <p id="network-rates-message" class="state-message" role="status" hidden></p>
-              <label class="network-rates-toggle"><input id="network-rates-auto-switch" type="checkbox"><span class="switch-track" aria-hidden="true"></span>自动切换最优模型</label>
-              <p id="network-rates-status" class="control-note" role="status"></p>
-              <div id="network-rates-candidates"></div>
-              <p class="control-note network-rates-footnote">仅供参考，不代表本机实际收益。</p>
-              <h3>最近切换</h3>
-              <div id="network-rates-switches" aria-live="polite"></div>
-            </div>
+          </div>
+        </section>
+
+        <section class="panel network-only" id="network-rates-panel" aria-label="全网数据">
+          <div class="panel-heading"><div><h2>全网模型收益（估算）</h2><p>对照组统计 · 自动切换与最近记录</p></div></div>
+          <div class="network-rates-toolbar">
+            <label for="network-rates-device">选择设备</label>
+            <select id="network-rates-device" aria-label="全网数据设备"></select>
+            <span class="toolbar-spacer"></span>
+            <button id="network-rates-refresh" type="button" class="button button-white">刷新</button>
+          </div>
+          <div class="network-rates-content">
+            <p id="network-rates-message" class="state-message" role="status" hidden></p>
+            <label class="network-rates-toggle"><input id="network-rates-auto-switch" type="checkbox"><span class="switch-track" aria-hidden="true"></span>自动切换最优模型</label>
+            <p id="network-rates-status" class="control-note" role="status"></p>
+            <div id="network-rates-candidates"></div>
+            <p class="control-note network-rates-footnote">仅供参考，不代表本机实际收益。</p>
+            <h3>最近切换<small class="record-limit-hint">最近 5 条</small></h3>
+            <div id="network-rates-switches" aria-live="polite"></div>
           </div>
         </section>
 

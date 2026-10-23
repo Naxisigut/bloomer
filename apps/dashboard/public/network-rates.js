@@ -22,6 +22,7 @@ const LAST_ERRORS = {
   models_unavailable: '无法读取已下载模型',
 };
 
+const RECENT_SWITCH_LIMIT = 5;
 const SWITCH_REASONS = { better_model: '更优模型', fallback: '兜底切换' };
 const SWITCH_STATUSES = { running: '执行中', succeeded: '已完成', failed: '失败', unconfirmed: '结果未确认' };
 
@@ -141,7 +142,7 @@ export function renderCandidatesTable(candidates, escape) {
 
 export function renderSwitchRecords(switches, escape, dateTime) {
   if (!switches?.length) return '<p class="control-note">暂无切换记录</p>';
-  return switches.map(item => {
+  return switches.slice(0, RECENT_SWITCH_LIMIT).map(item => {
     const summary = item.summary?.length
       ? `<ul class="network-rates-summary">${item.summary.map(row => `<li title="${escape(row.model)}">${escape(displayModelName(row.model))} · ${escape(formatUsdPerHourMicro(row.usd_per_hour_micro))} · 均 ${escape(String(Math.round(row.avg_providers * 10) / 10))} 台</li>`).join('')}</ul>`
       : '<p class="control-note">无候选摘要</p>';
@@ -159,7 +160,7 @@ export function renderNetworkRatesStatus(rates, escape, dateTime) {
   return parts.join(' · ');
 }
 
-export function createNetworkRatesUI({ query, submitSettings, selectedDevice, currentView, escape, dateTime }) {
+export function createNetworkRatesUI({ query, submitSettings, selectedDevice, deviceChoices, selectDevice, currentView, escape, dateTime }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, rates = null, switches = [], loading = false, submitting = false, error = '', unsupported = false, generation = 0, pendingToggle = null;
   const dialog = $('#network-rates-confirm-dialog');
@@ -171,7 +172,7 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, cu
       if (dialog?.open) dialog.close();
     }
     const demo = deviceID === 'demo';
-    $('#network-rates-device-label').textContent = device?.name || '当前设备';
+    $('#network-rates-device').innerHTML = deviceChoices().map(item => `<option value="${escape(item.id)}" ${item.id === deviceID ? 'selected' : ''}>${escape(item.name)}</option>`).join('');
     const toggle = $('#network-rates-auto-switch');
     toggle.checked = Boolean(rates?.auto_switch);
     toggle.disabled = demo || loading || submitting || unsupported || !rates?.enabled;
@@ -243,6 +244,7 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, cu
     }
   }
 
+  $('#network-rates-device')?.addEventListener('change', event => selectDevice(event.target.value));
   $('#network-rates-auto-switch')?.addEventListener('change', event => {
     const input = event.target;
     const next = input.checked;
@@ -260,5 +262,5 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, cu
   });
   $('#network-rates-refresh')?.addEventListener('click', refresh);
 
-  return { render, refresh };
+  return { render, refresh, refreshIfVisible() { if (currentView() === 'network') return refresh(); } };
 }

@@ -67,6 +67,14 @@ test('switch records and candidates escape server strings', () => {
   assert.match(switches, /x&lt;script&gt;/);
 });
 
+test('switch records show only the five most recent entries', () => {
+  const items = Array.from({ length: 8 }, (_, index) => ({ id: index, at: '2026-10-22T08:00:00Z', from_model: `from-${index}`, to_model: 'to', reason: 'better_model', status: 'succeeded', error: null, job_id: 'j', summary: [] }));
+  const html = renderSwitchRecords(items, String, () => '2026-10-22');
+  assert.equal(html.match(/<details/g).length, 5);
+  assert.match(html, /from-0/);
+  assert.doesNotMatch(html, /from-5/);
+});
+
 test('old agents return network_rates_unsupported for network rates routes', async () => {
   const failure = async (response, route = 'network-rates') => queryAgent(device, route, undefined, { fetcher: async () => response });
   for (const route of ['network-rates', 'network-rates-switches', 'network-rates-settings']) {

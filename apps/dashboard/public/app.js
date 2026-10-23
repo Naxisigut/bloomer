@@ -22,6 +22,7 @@ const icons = {
   analysis: '<path d="M4 3v18h17M8 17v-5M13 17V8M18 17V4"/>',
   records: '<rect x="5" y="3" width="14" height="18" rx="2"/><path d="M9 8h6M9 12h6M9 16h4"/>',
   devices: '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4M7 13h4"/>',
+  network: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c2.6 3.2 3.9 6.6 3.9 9s-1.3 5.8-3.9 9M12 3c-2.6 3.2-3.9 6.6-3.9 9s1.3 5.8 3.9 9"/>',
   refresh: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 6.1a8 8 0 0 1 13.2 3L20 12M4 12l.7 2.9a8 8 0 0 0 13.2 3"/>',
   add: '<path d="M12 5v14M5 12h14"/>',
   calendar: '<rect x="3.5" y="5" width="17" height="15.5" rx="3"/><path d="M8 3v4M16 3v4M3.5 10h17"/>',
@@ -39,6 +40,7 @@ const pageCopy = {
   overview: ['今日概览', '实时查看设备状态与 Darkbloom 收益'],
   analysis: ['收益分析', '按时间与模型多维度分析收益，点击「查询」后更新'],
   records: ['收益明细', '逐笔收益记录，可按时间、模型筛选并导出 CSV'],
+  network: ['全网数据', '对照组模型收益估算、推荐与自动切换'],
   devices: ['我的设备', '管理连接、查看运行状态与远程操作 Darkbloom'],
   alerts: ['告警记录', '设备告警与推送历史，可发送测试推送'],
 };
@@ -103,7 +105,7 @@ const deviceUI = createDeviceUI({ query, selectedDevice, deviceChoices, selectDe
 
 const alertUI = createAlertUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, escape, dateTime });
 const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
-const networkRatesUI = createNetworkRatesUI({ query, submitSettings: (id, auto_switch) => client.submitNetworkRatesSettings(id, auto_switch), selectedDevice, currentView: () => state.view, escape, dateTime });
+const networkRatesUI = createNetworkRatesUI({ query, submitSettings: (id, auto_switch) => client.submitNetworkRatesSettings(id, auto_switch), selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, escape, dateTime });
 
 function resetQuery({ clearModel = false, preserveSummary = false } = {}) {
   state.exportController?.abort();
@@ -359,11 +361,12 @@ function setView(view, { load = true } = {}) {
   const changed = state.view !== view;
   state.view = view; $('#main').dataset.view = view;
   $('#overview-topbar').hidden = view !== 'overview';
-  const titles = { overview: '首页', analysis: '收益分析', records: '收益明细', devices: '我的设备', alerts: '告警记录' };
+  const titles = { overview: '首页', analysis: '收益分析', records: '收益明细', network: '全网数据', devices: '我的设备', alerts: '告警记录' };
   document.title = `Bloomer · ${titles[view]}`;
   [$('#page-title').textContent, $('#page-subtitle').textContent] = pageCopy[view];
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); networkRatesUI.refresh(); }
+  if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); }
+  if (view === 'network') networkRatesUI.refresh();
   if (view === 'alerts') alertUI.refresh();
   if (view === 'overview' && load) homeRevenue.refresh();
   if (view === 'analysis') {
@@ -376,6 +379,7 @@ function setView(view, { load = true } = {}) {
   renderAlerts(); updateClock();
   history.replaceState(null, '', `#${view}`);
   if (changed) window.scrollTo({ top: 0, behavior: 'auto' });
+  if (view === 'devices') syncDevicesSticky();
 }
 
 async function selectDevice(id) {
@@ -386,7 +390,39 @@ async function selectDevice(id) {
   if (state.view === 'analysis') { renderDevices(); await alertUI.refreshIfVisible(); return; }
   await loadData({ reset: true, clearModel: true });
   await alertUI.refreshIfVisible();
+  await networkRatesUI.refreshIfVisible();
 }
+const deviceTabs = $$('[data-device-tab]');
+function selectDeviceTab(tab, { focus = false } = {}) {
+  const active = deviceTabs.find(button => button.dataset.deviceTab === tab) || deviceTabs[0];
+  deviceTabs.forEach(button => {
+    const selected = button === active;
+    button.classList.toggle('selected', selected);
+    button.setAttribute('aria-selected', String(selected));
+    button.tabIndex = selected ? 0 : -1;
+    $(`#${button.getAttribute('aria-controls')}`).hidden = !selected;
+  });
+  if (focus) active.focus();
+  preference('deviceTab', active.dataset.deviceTab);
+}
+const stackedSidebar = matchMedia('(max-width:900px)');
+const devicesStickyTop = () => stackedSidebar.matches ? $('.sidebar').offsetHeight : 0;
+function syncDevicesSticky() { $('#devices-view').style.setProperty('--devices-sticky-top', `${devicesStickyTop()}px`); }
+function showDeviceTab(tab, options) {
+  const top = devicesStickyTop(), offset = $('#devices-sticky-sentinel').getBoundingClientRect().top - top;
+  selectDeviceTab(tab, options);
+  if (offset < 0) window.scrollTo({ top: window.scrollY + offset, behavior: 'auto' });
+}
+deviceTabs.forEach(button => button.addEventListener('click', () => showDeviceTab(button.dataset.deviceTab)));
+$('#device-tabs').addEventListener('keydown', event => {
+  const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+  if (!step) return;
+  event.preventDefault();
+  const index = deviceTabs.findIndex(button => button.classList.contains('selected'));
+  showDeviceTab(deviceTabs[(index + step + deviceTabs.length) % deviceTabs.length].dataset.deviceTab, { focus: true });
+});
+selectDeviceTab(preference('deviceTab') || 'state');
+window.addEventListener('resize', syncDevicesSticky);
 $$('.nav-item').forEach(button => button.addEventListener('click', () => setView(button.dataset.view)));
 $$('[data-goto]').forEach(button => button.addEventListener('click', () => setView(button.dataset.goto)));
 $('#device-select').addEventListener('change', event => selectDevice(event.target.value));
@@ -397,8 +433,12 @@ $('#refresh').addEventListener('click', async () => {
     scheduleAutoRefresh(nextAutoRefreshDelayMs({ health: state.health.get(state.selected), failStreak: autoRefreshFailStreak }));
     return;
   }
+  if (state.view === 'network') {
+    resetAutoRefreshBackoff(); await refreshSummary(); networkRatesUI.refresh();
+    return;
+  }
   if (state.view === 'devices') {
-    deviceUI.refresh(); resetAutoRefreshBackoff(); await checkDevices(); await refreshSummary(); controlUI.refresh(true); networkRatesUI.refresh();
+    deviceUI.refresh(); resetAutoRefreshBackoff(); await checkDevices(); await refreshSummary(); controlUI.refresh(true);
     return;
   }
   if (state.view === 'records') { state.range = timeRange(state.period, DASHBOARD_TIMEZONE, correctedNow(), state.custom); loadRecordsData(); return; }
@@ -547,14 +587,14 @@ function updateClock() {
 }
 
 // Apply topbar visibility before restoring browser connections, including direct page links.
-$('#overview-topbar').hidden = ['analysis', 'records', 'devices', 'alerts'].includes(location.hash.slice(1));
+$('#overview-topbar').hidden = ['analysis', 'records', 'network', 'devices', 'alerts'].includes(location.hash.slice(1));
 try {
   if (location.protocol === 'file:') throw new Error('请通过普通静态服务器打开看板，例如 http://127.0.0.1:18080；不支持 file:// 运行。');
   connections.load();
   await loadDeviceList(); resetQuery();
   const view = location.hash.slice(1);
   if (view === 'query') { history.replaceState(null, '', '#overview'); setView('overview', { load: false }); }
-  else if (['overview', 'analysis', 'records', 'devices', 'alerts'].includes(view)) setView(view, { load: false });
+  else if (['overview', 'analysis', 'records', 'network', 'devices', 'alerts'].includes(view)) setView(view, { load: false });
   await loadData();
   scheduleAutoRefresh(nextAutoRefreshDelayMs({ health: state.health.get(state.selected), failStreak: 0 }));
 } catch (error) { $('#alerts').innerHTML = `<div class="alert error">${escape(error.message)}</div>`; }
@@ -586,8 +626,12 @@ async function autoRefresh() {
     homeRevenue.refresh();
     return;
   }
+  if (state.view === 'network') {
+    await refreshSummary(); await networkRatesUI.refresh();
+    return;
+  }
   if (state.view === 'devices') {
-    await checkDevices(); await refreshSummary(); networkRatesUI.refresh();
+    await checkDevices(); await refreshSummary();
     return;
   }
   if (state.view === 'records' && state.page === 0) {

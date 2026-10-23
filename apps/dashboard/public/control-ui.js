@@ -3,6 +3,7 @@ import { displayModelName } from './models.js';
 import { isPermanentControlError, isTransientControlError, nextControlPollDelayMs, shouldControlAutoPoll } from './control-poll.js';
 
 const actions = { start: '开启 Darkbloom', stop: '关闭 Darkbloom', restart: '重启 Darkbloom', switch: '切换模型', download: '下载模型' };
+const RECENT_JOB_LIMIT = 5;
 const statuses = { running: '执行中', succeeded: '已完成', failed: '执行失败', unconfirmed: '结果未确认' };
 const reasons = {
   command_failed: '命令未完成。请检查设备端 Darkbloom 状态、版本、账户登录、磁盘空间和模型兼容性。关闭或切换超时后可能仍在等待任务结束，请核对后再操作。',
@@ -78,7 +79,7 @@ export function createControlUI({ submitControl, query, selectedDevice, currentV
     $('#control-catalog-error').textContent = models?.catalog_error ? '官方目录暂不可用；本地模型仍可选择。请检查设备网络后刷新。' : '';
     $('#control-retry').hidden = !pending || demo;
     $('#control-retry').disabled = loading || submitting || Boolean(running) || !status?.available;
-    $('#control-jobs').innerHTML = status?.jobs?.length ? status.jobs.map(job => `<div class="control-job"><span>${escape(actions[job.action] || job.action)}${job.models?.length ? `<small title="${escape(job.models.join('、'))}">${job.models.map(id => escape(displayModelName(id))).join('、')}</small>` : ''}<small>${escape(dateTime(job.created_at))} · ${escape(job.id)}</small>${job.error ? `<small>${escape(reasons[job.error] || '请核对设备端执行结果。')}</small>` : ''}</span><span class="status-tag ${job.status === 'failed' || job.status === 'unconfirmed' ? 'warning' : ''}">${escape(statuses[job.status] || '未知')}</span></div>`).join('') : '<p class="control-note">暂无操作记录</p>';
+    $('#control-jobs').innerHTML = status?.jobs?.length ? status.jobs.slice(0, RECENT_JOB_LIMIT).map(job => `<div class="control-job"><span>${escape(actions[job.action] || job.action)}${job.models?.length ? `<small title="${escape(job.models.join('、'))}">${job.models.map(id => escape(displayModelName(id))).join('、')}</small>` : ''}<small>${escape(dateTime(job.created_at))} · ${escape(job.id)}</small>${job.error ? `<small>${escape(reasons[job.error] || '请核对设备端执行结果。')}</small>` : ''}</span><span class="status-tag ${job.status === 'failed' || job.status === 'unconfirmed' ? 'warning' : ''}">${escape(statuses[job.status] || '未知')}</span></div>`).join('') : '<p class="control-note">暂无操作记录</p>';
   }
   async function refresh(withModels = false) {
     render();
