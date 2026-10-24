@@ -19,6 +19,8 @@ test('homepage running model uses the device-state sample and shortens prefixed 
 test('device detail fields omit unsupported temperatures and include task status row', () => {
   const keys = deviceFields.map(([key]) => key);
   assert.ok(keys.includes('task_status'));
+  assert.ok(keys.includes('provider_version'));
+  assert.equal(keys.indexOf('provider_version'), keys.indexOf('provider_cpu_percent') - 1);
   assert.ok(!keys.includes('cpu_temperature_c'));
   assert.ok(!keys.includes('gpu_temperature_c'));
   assert.ok(!keys.includes('is_idle'));
@@ -26,6 +28,7 @@ test('device detail fields omit unsupported temperatures and include task status
   assert.ok(!keys.includes('memory_total_bytes'));
   assert.ok(sampleFieldKeys().includes('memory_total_bytes'));
   assert.ok(sampleFieldKeys().includes('memory_available_bytes'));
+  assert.ok(sampleFieldKeys().includes('provider_version'));
 });
 
 test('activity displays local task flags and ignores earnings idle verdict', () => {
@@ -67,6 +70,11 @@ test('metric formatting preserves zero and false, respects quality and rejects i
   assert.equal(reading({ ...sample, cpu_percent: 101 }, 'cpu_percent').known, false);
   assert.equal(reading({ ...sample, provider_cpu_percent: 250, quality: { provider_cpu_percent: 'ok' } }, 'provider_cpu_percent').text, '250%');
   assert.equal(reading(null, 'cpu_percent').text, '未提供');
+  assert.equal(reading({ provider_version: '0.9.22' }, 'provider_version').text, '0.9.22');
+  assert.equal(reading({ provider_version: ' 0.9.22 ' }, 'provider_version').known, true);
+  assert.equal(reading({ provider_version: '' }, 'provider_version').text, '未提供');
+  assert.equal(reading({}, 'provider_version').text, '未提供');
+  assert.equal(reading({ provider_version: '0.9.22', quality: { provider_version: 'ok' } }, 'provider_version').text, '0.9.22');
 });
 
 test('demo latest state omits legacy routing fields', () => {
@@ -74,6 +82,7 @@ test('demo latest state omits legacy routing fields', () => {
   const latest = demoQuery('device-state', new URLSearchParams(), clock);
   assert.equal(latest.sample.dispatch_tier, null);
   assert.equal(latest.sample.quality.dispatch_tier, 'unsupported');
+  assert.equal(reading(latest.sample, 'provider_version').text, latest.sample.provider_version);
   assert.equal(typeof latest.sample.inference_active, 'boolean');
   assert.ok(['处理中', '排队', '无任务', '未运行', '未知'].includes(activityStatus(latest, now).label));
   assert.equal(Object.hasOwn(latest.sample, 'routing_state'), false);

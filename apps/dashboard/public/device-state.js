@@ -57,6 +57,7 @@ export const deviceStateSections = [
   {
     title: 'Darkbloom 状态',
     fields: [
+      ['provider_version', 'Darkbloom 版本'],
       ['provider_cpu_percent', 'Darkbloom CPU'],
       ['provider_running', 'Darkbloom 进程'],
       ['current_model', '当前模型'],
@@ -91,6 +92,11 @@ export function memoryReading(sample) {
 
 export function reading(sample, key) {
   const status = sample?.quality?.[key];
+  if (key === 'provider_version' && status == null) {
+    const value = sample?.[key];
+    if (typeof value === 'string' && value.trim()) return { text: value.trim(), known: true, reason: '' };
+    return { text: '未提供', known: false, reason: '状态文件未提供版本' };
+  }
   if (status !== 'ok') return { text: qualityLabels[status] || '未提供', known: false, reason: qualityLabels[status] || '来源未提供有效数据' };
   const value = sample[key];
   if (value === null || value === undefined) return { text: key === 'current_model' ? '无当前模型' : '未知', known: false, reason: '来源未提供具体值' };
