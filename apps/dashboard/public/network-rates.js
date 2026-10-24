@@ -129,7 +129,7 @@ export function renderCandidatesTable(candidates, escape) {
   const rows = candidates.map(candidate => {
     const muted = candidateRowClass(candidate);
     const priceNote = candidate.price_source === 'fallback' ? '（兜底价）' : '';
-    return `<tr${muted ? ` class="${muted}"` : ''}><td title="${escape(candidate.model)}">${escape(labels.get(candidate.model))}${candidate.insufficient ? ' · 样本不足' : ''}</td><td>${candidate.downloaded ? '是' : '否'}</td><td>${escape(String(Math.round(candidate.avg_providers * 10) / 10))}</td><td>${escape(new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(candidate.requests_per_hour))}</td><td>${escape(new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(candidate.tokens_per_hour))}</td><td>${escape(formatUsdPerHourMicro(candidate.usd_per_hour_micro))}</td><td>${escape(priceSourceLabel(candidate.price_source))}${priceNote ? ` ${escape(priceNote)}` : ''}</td></tr>`;
+    return `<tr${muted ? ` class="${muted}"` : ''}><td title="${escape(candidate.model)}">${escape(labels.get(candidate.model))}</td><td>${candidate.downloaded ? '是' : '否'}</td><td>${escape(String(Math.round(candidate.avg_providers * 10) / 10))}</td><td>${escape(new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(candidate.requests_per_hour))}</td><td>${escape(new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(candidate.tokens_per_hour))}</td><td>${escape(formatUsdPerHourMicro(candidate.usd_per_hour_micro))}</td><td>${escape(priceSourceLabel(candidate.price_source))}${priceNote ? ` ${escape(priceNote)}` : ''}</td></tr>`;
   }).join('');
   return `<div class="table-scroll network-rates-table-wrap"><table><thead><tr><th>模型</th><th>已下载</th><th>对照组均台数</th><th>每台每小时接单</th><th>每台每小时输出 token</th><th>估算 $/h</th><th>价格来源</th></tr></thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -144,11 +144,11 @@ export function renderSwitchRecords(switches, escape, dateTime) {
   }).join('');
 }
 
-export function renderNetworkRatesStatus(rates, escape, dateTime) {
+export function renderNetworkRatesHeaderStatus(rates, escape, dateTime) {
   if (!rates) return '';
-  const parts = [`样本 ${escape(String(rates.samples))} / ${escape(String(rates.window_samples))}`];
-  if (rates.switch?.next_eligible_at) parts.push(`下次可切换 ${escape(dateTime(rates.switch.next_eligible_at))}`);
+  const parts = [];
   if (rates.switch?.blocked_reason) parts.push(`阻止原因：${escape(blockedReasonLabel(rates.switch.blocked_reason))}`);
+  if (rates.switch?.next_eligible_at) parts.push(`下次可切换 ${escape(dateTime(rates.switch.next_eligible_at))}`);
   if (rates.switch?.backoff_until) parts.push(`退避至 ${escape(dateTime(rates.switch.backoff_until))}`);
   if (rates.last_error) parts.push(`采集异常：${escape(lastErrorLabel(rates.last_error))}`);
   return parts.join(' · ');
@@ -356,7 +356,7 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
   };
 }
 
-export function createNetworkRatesUI({ query, submitSettings, selectedDevice, deviceChoices, selectDevice, currentView, escape, dateTime }) {
+export function createNetworkRatesUI({ query, submitSettings, selectedDevice, currentView, escape, dateTime }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, rates = null, switches = [], trend = null, trendError = '', loading = false, submitting = false, error = '', unsupported = false, generation = 0, pendingToggle = null;
   let tokenModels = [], tokenSelected = new Set(), tokenRange = null;
@@ -428,7 +428,6 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
     }
     renderTokenPeriodControls();
     const demo = deviceID === 'demo';
-    $('#network-rates-device').innerHTML = deviceChoices().map(item => `<option value="${escape(item.id)}" ${item.id === deviceID ? 'selected' : ''}>${escape(item.name)}</option>`).join('');
     const toggle = $('#network-rates-auto-switch');
     toggle.checked = Boolean(rates?.auto_switch);
     toggle.disabled = demo || loading || submitting || unsupported || !rates?.enabled;
@@ -443,7 +442,8 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
       message.className = `state-message${error ? ' warning' : ''}`;
       message.textContent = error;
     }
-    $('#network-rates-status').textContent = unsupported ? '' : rates ? renderNetworkRatesStatus(rates, escape, dateTime) : loading ? '正在读取全网模型收益…' : '';
+    const headerStatus = $('#network-rates-header-status');
+    headerStatus.textContent = unsupported ? '' : loading && !rates ? '正在读取全网模型收益…' : rates ? renderNetworkRatesHeaderStatus(rates, escape, dateTime) : '';
     $('#network-rates-candidates').innerHTML = unsupported ? '' : rates ? renderCandidatesTable(rates.candidates, escape) : '';
     $('.network-token-card').hidden = unsupported;
     $('#network-token-period').hidden = unsupported;
@@ -608,7 +608,6 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
     }
   }
 
-  $('#network-rates-device')?.addEventListener('change', event => selectDevice(event.target.value));
   $('#network-rates-auto-switch')?.addEventListener('change', event => {
     const input = event.target;
     const next = input.checked;

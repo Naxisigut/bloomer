@@ -12,6 +12,16 @@ const reasons = {
   history_unavailable: '操作记录保存失败，请在设备端核对结果。',
 };
 
+function renderControlJob(job, escape, dateTime) {
+  const time = escape(dateTime(job.created_at));
+  const meta = job.models?.length
+    ? `<span class="control-job-meta"><span class="control-job-time">${time}</span><span class="control-job-model-names" title="${escape(job.models.join('、'))}">${job.models.map(id => escape(displayModelName(id))).join('、')}</span></span>`
+    : `<small>${time}</small>`;
+  const error = job.error ? `<small>${escape(reasons[job.error] || '请核对设备端执行结果。')}</small>` : '';
+  const tagClass = job.status === 'failed' || job.status === 'unconfirmed' ? ' warning' : '';
+  return `<div class="control-job"><span>${escape(actions[job.action] || job.action)}${meta}${error}</span><span class="status-tag${tagClass}">${escape(statuses[job.status] || '未知')}</span></div>`;
+}
+
 export function createControlUI({ submitControl, query, selectedDevice, currentView, escape, dateTime, refreshState }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, status = null, models = null, loading = false, submitting = false, pending = null, confirmation = null, error = '', requestGeneration = 0;
@@ -66,8 +76,6 @@ export function createControlUI({ submitControl, query, selectedDevice, currentV
       if (currentView() === 'devices') queueMicrotask(() => refresh(true));
     }
     const demo = deviceID === 'demo', running = status?.jobs?.some(job => job.status === 'running');
-    $('#control-device-label').textContent = device?.name || '当前设备';
-    $('#control-message').textContent = demo ? '演示设备不执行远程操作。连接真实设备后可使用。' : error || (loading ? '正在读取设备的操作能力与模型…' : !status ? '正在检查远程操作能力…' : !status.enabled ? '设备端已禁用远程操作。' : !status.available ? '远程操作不可用，请检查设备端 Darkbloom 安装与 Agent 配置。' : pending ? '上次提交结果尚未确认。请核对操作记录，或使用相同请求编号重试。' : running ? '设备正在执行操作，完成后可提交下一项。' : '可远程操作此设备的 Darkbloom。');
     $('#control-panel').setAttribute('aria-busy', String(loading || submitting));
     $('#control-refresh').disabled = demo || loading || submitting;
     const disabled = demo || loading || submitting || pending || running || !status?.available;
@@ -79,7 +87,7 @@ export function createControlUI({ submitControl, query, selectedDevice, currentV
     $('#control-catalog-error').textContent = models?.catalog_error ? '官方目录暂不可用；本地模型仍可选择。请检查设备网络后刷新。' : '';
     $('#control-retry').hidden = !pending || demo;
     $('#control-retry').disabled = loading || submitting || Boolean(running) || !status?.available;
-    $('#control-jobs').innerHTML = status?.jobs?.length ? status.jobs.slice(0, RECENT_JOB_LIMIT).map(job => `<div class="control-job"><span>${escape(actions[job.action] || job.action)}${job.models?.length ? `<small title="${escape(job.models.join('、'))}">${job.models.map(id => escape(displayModelName(id))).join('、')}</small>` : ''}<small>${escape(dateTime(job.created_at))} · ${escape(job.id)}</small>${job.error ? `<small>${escape(reasons[job.error] || '请核对设备端执行结果。')}</small>` : ''}</span><span class="status-tag ${job.status === 'failed' || job.status === 'unconfirmed' ? 'warning' : ''}">${escape(statuses[job.status] || '未知')}</span></div>`).join('') : '<p class="control-note">暂无操作记录</p>';
+    $('#control-jobs').innerHTML = status?.jobs?.length ? status.jobs.slice(0, RECENT_JOB_LIMIT).map(job => renderControlJob(job, escape, dateTime)).join('') : '<p class="control-note">暂无操作记录</p>';
   }
   async function refresh(withModels = false) {
     render();

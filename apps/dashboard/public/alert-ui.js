@@ -12,13 +12,12 @@ export function alertRecordHTML(record, escape, dateTime) {
   return `<article class="control-job alert-record"><span><strong>${escape(kinds[record.type] || record.type)} · ${escape(events[record.event] || record.event)}</strong><small>${escape(dateTime(record.created_at))} · ${escape(record.device_name)}</small><small class="alert-body">${escape(record.body)}</small><small>${escape(delivery[record.delivery_status] || '未知推送状态')} · 已尝试 ${escape(record.attempts)} 次${record.next_attempt_at ? ` · 下次重试 ${escape(dateTime(record.next_attempt_at))}` : ''}${record.error_code ? ' · 请在设备端检查 Bark 配置与网络' : ''}</small></span><span class="status-tag ${warning ? 'warning' : ''}">${record.recovered ? '已恢复' : record.level === 'critical' ? '严重' : '提醒'}</span></article>`;
 }
 
-export function createAlertUI({ query, selectedDevice, deviceChoices, selectDevice, currentView, escape, dateTime }) {
+export function createAlertUI({ query, selectedDevice, currentView, escape, dateTime }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, items = [], error = '', message = '', loading = false, testing = false, generation = 0;
   function render() {
     const device = selectedDevice();
     if (deviceID !== device?.id) { deviceID = device?.id; items = []; error = ''; message = ''; loading = false; testing = false; generation++; }
-    $('#alert-device').innerHTML = deviceChoices().map(item => `<option value="${escape(item.id)}" ${item.id === deviceID ? 'selected' : ''}>${escape(item.name)}</option>`).join('');
     $('#alert-test').disabled = !device || device.id === 'demo' || testing;
     $('#alert-refresh').disabled = loading;
     $('#alert-message').textContent = error || message;
@@ -32,7 +31,6 @@ export function createAlertUI({ query, selectedDevice, deviceChoices, selectDevi
     catch (err) { if (request === generation && selectedDevice()?.id === id) error = err.message; }
     finally { if (request === generation) { loading = false; render(); } }
   }
-  $('#alert-device').addEventListener('change', event => selectDevice(event.target.value));
   $('#alert-refresh').addEventListener('click', refresh);
   $('#alert-test').addEventListener('click', async () => {
     const id = deviceID; testing = true; error = ''; message = ''; render();

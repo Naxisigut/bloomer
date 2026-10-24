@@ -25,10 +25,16 @@
         <button class="nav-item" data-view="devices"><span data-icon="devices"></span><span class="nav-label">我的设备</span><span id="nav-device-count" class="nav-count">0</span></button>
         <button class="nav-item" data-view="alerts"><span data-icon="alerts"></span><span class="nav-label">告警记录</span></button>
       </nav>
-      <div class="sidebar-card">
-        <strong>连接新设备</strong>
-        <p>添加家中的 Mac，实时查看收益与运行状态</p>
-        <button type="button" class="button button-soft" data-action="connect">添加设备</button>
+      <div class="sidebar-stack">
+        <div class="sidebar-card sidebar-device-card">
+          <strong id="sidebar-device-label">选择设备</strong>
+          <select id="device-select" aria-labelledby="sidebar-device-label"><option value="demo">演示设备</option></select>
+        </div>
+        <div class="sidebar-card">
+          <strong>连接新设备</strong>
+          <p>添加家中的 Mac，实时查看收益与运行状态</p>
+          <button type="button" class="button button-soft" data-action="connect">添加设备</button>
+        </div>
       </div>
     </aside>
 
@@ -50,7 +56,7 @@
 
         <section class="panel alerts-only" aria-label="告警记录">
           <div class="panel-heading"><div><h2>推送记录</h2><p>最近 10 条 · 北京时间 · 每 60 秒刷新</p></div></div>
-          <div class="alert-controls"><label for="alert-device">选择设备</label><select id="alert-device" aria-label="告警记录设备"></select><span class="toolbar-spacer"></span><button id="alert-refresh" class="button button-white">刷新记录</button><button id="alert-test" class="button button-dark">发送测试推送</button></div>
+          <div class="alert-controls"><span class="toolbar-spacer"></span><button id="alert-refresh" class="button button-white">刷新记录</button><button id="alert-test" class="button button-dark">发送测试推送</button></div>
           <p id="alert-message" class="state-message" role="status" hidden></p>
           <div id="alert-records" aria-live="polite"><p class="control-note">暂无告警记录</p></div>
         </section>
@@ -76,10 +82,7 @@
           <aside class="overview-aside" aria-label="当前设备">
             <section class="device-spot">
               <div class="device-avatar"><span data-icon="devices"></span></div>
-              <div class="device-select-wrap">
-                <label class="sr-only" for="device-select">选择数据来源设备</label>
-                <select id="device-select"><option value="demo">演示设备</option></select>
-              </div>
+              <p class="device-spot-name" id="device-spot-name">演示设备</p>
               <p class="device-spot-hint">数据来源设备</p>
               <div class="device-overview" role="group" aria-label="设备与收益" aria-live="polite">
                 <div class="device-reading"><span class="reading-icon" data-icon="activity"></span><span class="reading-label">工作状态</span><strong id="activity-status" class="status-tag warning">读取状态中</strong></div>
@@ -98,7 +101,6 @@
           <div class="panel analysis-filter-panel">
             <div class="earnings-filters analysis-filters" aria-label="分析筛选">
               <div class="filter-bar">
-                <label class="analysis-field">设备<select id="analysis-device" class="model-filter" aria-label="分析设备"></select></label>
                 <div class="analysis-field"><span>时间范围</span>
                   <div class="range-controls">
                     <div class="period-tabs" id="analysis-period" role="group" aria-label="时间范围">
@@ -155,15 +157,13 @@
           <div class="panel device-tabs-panel">
           <div class="device-tab-pane device-state-panel" id="device-state-panel" role="tabpanel" aria-labelledby="device-tab-state"><p id="device-state-message" class="state-message" role="status" hidden>正在读取设备状态…</p><div id="device-state-details" class="device-state-sections"></div></div>
           <div class="device-tab-pane control-panel" id="control-panel" role="tabpanel" aria-labelledby="device-tab-control" hidden>
-            <div class="panel-heading"><div><p id="control-device-label">当前设备</p></div><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
-            <p id="control-message" class="state-message" role="status">正在检查远程操作能力…</p>
+            <div class="panel-heading control-panel-heading"><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
             <div class="control-content">
               <div class="control-lifecycle"><button type="button" class="button button-white" data-control="stop" disabled>关闭 Darkbloom</button><button type="button" class="button button-white" data-control="restart" disabled>重启 Darkbloom</button></div>
               <div class="control-model-grid">
-                <div class="control-block"><label for="control-local-models">本地模型（可多选）</label><select id="control-local-models" multiple size="5" aria-describedby="control-selection-note"></select><p id="control-selection-note">切换会替换整套托管模型；开启使用所选模型。</p><div class="control-lifecycle"><button type="button" class="button button-dark" data-control="switch" disabled>切换模型</button><button type="button" class="button button-white" data-control="start" disabled>开启 Darkbloom</button></div><p id="control-local-error" class="control-note"></p></div>
-                <div class="control-block"><label for="control-download-model">下载模型</label><select id="control-download-model"><option value="">请先刷新模型目录</option></select><p>从设备的官方模型目录选择，下载完成后可在本地模型中选择。</p><div class="control-lifecycle"><button type="button" class="button button-white" data-control="download" disabled>下载所选模型</button></div><p id="control-catalog-error" class="control-note"></p></div>
+                <div class="control-block"><label for="control-local-models">本地模型（可多选）</label><select id="control-local-models" multiple size="5"></select><div class="control-lifecycle"><button type="button" class="button button-dark" data-control="switch" disabled>切换模型</button><button type="button" class="button button-white" data-control="start" disabled>开启 Darkbloom</button></div><p id="control-local-error" class="control-note"></p></div>
+                <div class="control-block"><label for="control-download-model">下载模型</label><select id="control-download-model"><option value="">请先刷新模型目录</option></select><div class="control-lifecycle"><button type="button" class="button button-white" data-control="download" disabled>下载所选模型</button></div><p id="control-catalog-error" class="control-note"></p></div>
               </div>
-              <p class="control-note">关闭、重启和切换会等待已接收的任务完成。操作期间可离开页面，执行结果保存在设备端；下载可能需要较长时间。</p>
               <h3>最近操作<small class="record-limit-hint">最近 5 条</small></h3><div id="control-jobs" aria-live="polite"></div>
               <button id="control-retry" type="button" class="button button-white" hidden>核对结果并重试提交</button>
             </div>
@@ -174,17 +174,16 @@
 
         <section class="network-only" id="network-rates-panel" aria-label="全网数据">
           <div class="panel">
-            <div class="panel-heading"><div><h2>全网模型收益（估算）</h2><p>对照组统计 · 自动切换与最近记录</p></div></div>
-            <div class="network-rates-toolbar">
-              <label for="network-rates-device">选择设备</label>
-              <select id="network-rates-device" aria-label="全网数据设备"></select>
-              <span class="toolbar-spacer"></span>
-              <button id="network-rates-refresh" type="button" class="button button-white">刷新</button>
+            <div class="panel-heading network-rates-heading">
+              <h2>全网模型收益（估算）</h2>
+              <div class="network-rates-header-actions">
+                <label class="network-rates-toggle"><input id="network-rates-auto-switch" type="checkbox"><span class="switch-track" aria-hidden="true"></span>自动切换最优模型</label>
+                <p id="network-rates-header-status" class="control-note network-rates-header-status" role="status"></p>
+                <button id="network-rates-refresh" type="button" class="button button-white">刷新</button>
+              </div>
             </div>
             <p id="network-rates-message" class="state-message" role="status" hidden></p>
             <div class="network-rates-content">
-              <label class="network-rates-toggle"><input id="network-rates-auto-switch" type="checkbox"><span class="switch-track" aria-hidden="true"></span>自动切换最优模型</label>
-              <p id="network-rates-status" class="control-note" role="status"></p>
               <h3>最近切换</h3>
               <div id="network-rates-switches" aria-live="polite"></div>
             </div>

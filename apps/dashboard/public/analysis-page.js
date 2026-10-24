@@ -12,7 +12,7 @@ echarts.registerTheme('bloomer', chartTheme);
 
 const number = value => new Intl.NumberFormat('en-US').format(value);
 
-export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, correctedNow, currentView, setExporting = () => {} }) {
+export function createAnalysisPage({ query, escape, correctedNow, currentView, setExporting = () => {} }) {
   const $ = selector => document.querySelector(selector);
   const root = $('#analysis');
   const charts = new Map();
@@ -23,12 +23,6 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
   };
   let exportController = null;
   let exportCancelReason = '';
-
-  function renderDeviceOptions() {
-    const select = $('#analysis-device');
-    if (!select) return;
-    select.innerHTML = deviceChoices().map(device => `<option value="${escape(device.id)}" ${device.id === state.device ? 'selected' : ''}>${escape(device.name)}</option>`).join('');
-  }
 
   function syncGranularityControls(range) {
     const allowed = allowedGranularities(range);
@@ -216,13 +210,6 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
   }
 
   function bindFilters() {
-    $('#analysis-device')?.addEventListener('change', event => {
-      const next = event.target.value;
-      if (state.device && next !== state.device) abortExport('设备已切换，本次导出已取消。');
-      state.device = next;
-      syncDevice(state.device, { fromAnalysis: true });
-      renderDeviceOptions();
-    });
     $$('#analysis-period [data-period]').forEach(button => button.addEventListener('click', () => {
       state.period = button.dataset.period;
       $$('#analysis-period [data-period]').forEach(item => { item.classList.toggle('selected', item === button); item.setAttribute('aria-pressed', String(item === button)); });
@@ -281,7 +268,6 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
 
   function onEnter(deviceId) {
     state.device ||= deviceId;
-    renderDeviceOptions();
     syncGranularityControls(currentRange());
     renderStatus();
     if (!state.queried) runQuery();
@@ -292,7 +278,6 @@ export function createAnalysisPage({ query, deviceChoices, syncDevice, escape, c
   function onGlobalDeviceChange(deviceId) {
     if (state.device && state.device !== deviceId) abortExport('设备已切换，本次导出已取消。');
     state.device = deviceId;
-    renderDeviceOptions();
   }
 
   function dispose() {

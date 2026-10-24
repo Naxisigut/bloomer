@@ -93,28 +93,22 @@ async function fetchHealth(id) {
   return enrichHealthTiming(value, started, Date.now());
 }
 const homeRevenue = createHomeRevenueChart({ query, selectedDevice, currentView: () => state.view, escape, correctedNow: () => correctedNow() });
-function syncSelectedDevice(id) {
-  try { connections.select(id); } catch (error) { toast(error.message); return; }
-  state.selected = id;
-  delete state.data.recent;
-  state.recentError = null;
-  analysisPage.onGlobalDeviceChange(id);
-  renderDevices();
-}
 const analysisPage = createAnalysisPage({
-  query, deviceChoices, syncDevice: syncSelectedDevice, escape, correctedNow, currentView: () => state.view,
+  query, escape, correctedNow, currentView: () => state.view,
   setExporting: value => { state.exporting = value; },
 });
 const deviceUI = createDeviceUI({ query, selectedDevice, escape, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
 
-const alertUI = createAlertUI({ query, selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, escape, dateTime });
+const alertUI = createAlertUI({ query, selectedDevice, currentView: () => state.view, escape, dateTime });
 const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
-const networkRatesUI = createNetworkRatesUI({ query, submitSettings: (id, auto_switch) => client.submitNetworkRatesSettings(id, auto_switch), selectedDevice, deviceChoices, selectDevice, currentView: () => state.view, escape, dateTime });
+const networkRatesUI = createNetworkRatesUI({ query, submitSettings: (id, auto_switch) => client.submitNetworkRatesSettings(id, auto_switch), selectedDevice, currentView: () => state.view, escape, dateTime });
 
 function renderDevices() {
   const active = state.selected;
   $('#nav-device-count').textContent = state.devices.length;
-  $('#device-select').innerHTML = deviceChoices().map(device => `<option value="${escape(device.id)}" ${device.id === active ? 'selected' : ''}>${escape(device.name)}</option>`).join('');
+  const choices = deviceChoices();
+  $('#device-select').innerHTML = choices.map(device => `<option value="${escape(device.id)}" ${device.id === active ? 'selected' : ''}>${escape(device.name)}</option>`).join('');
+  $('#device-spot-name').textContent = choices.find(device => device.id === active)?.name || '—';
   $('#demo-banner').hidden = active !== 'demo';
   $('#device-cards').innerHTML = deviceChoices().map(device => {
     const health = state.health.get(device.id);
@@ -402,10 +396,7 @@ $('#device-cards').addEventListener('click', async event => {
 
 function updateClock() {
   $('#today-label').textContent = todayLabel.format(correctedNow());
-  if (state.view === 'devices') {
-    $('#last-refresh').textContent = state.deviceFetchedAt ? `状态更新于 ${dateTime(state.deviceFetchedAt)}` : '';
-    return;
-  }
+  if (state.view === 'devices') return;
   const retry = autoRefreshFailStreak > 0 && nextAutoRefreshAt ? ` · 下次重试 ${dateTime(nextAutoRefreshAt)}` : '';
   const intervalHint = autoRefreshFailStreak > 0 ? '' : ' · 自动更新已对齐采集节奏';
   $('#last-refresh').textContent = state.fetchedAt ? `最近刷新 ${dateTime(state.fetchedAt)}${intervalHint}${retry}` : '等待首次刷新';
