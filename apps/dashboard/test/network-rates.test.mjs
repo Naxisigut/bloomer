@@ -9,6 +9,16 @@ import {
   renderTokenTrendFigure,
   renderTokenTrendModelChoices,
   tokenTrendAxis,
+  clampTokenTrendRange,
+  filterTokenTrendByRange,
+  formatTokenTrendInput,
+  parseTokenTrendInput,
+  tokenTrendRangeFromInputs,
+  tokenTrendRangeLabel,
+  tokenTrendRangeMatches,
+  tokenTrendRecentRange,
+  tokenTrendSeriesEnd,
+  tokenTrendWindow,
   validateNetworkRatesSettings,
   validateNetworkRatesTokenTrendResponse,
 } from '../public/network-rates.js';
@@ -66,6 +76,51 @@ test('switch records show only the five most recent entries', () => {
   assert.doesNotMatch(html, /from-5/);
 });
 
+test('token trend range filter slices within the latest 24h payload', () => {
+  const series = [{
+    model: 'a',
+    points: [
+      { at: '2026-10-23T00:00:00.000Z', tokens: 1 },
+      { at: '2026-10-23T06:00:00.000Z', tokens: 2 },
+      { at: '2026-10-23T06:00:30.000Z', tokens: 4 },
+      { at: '2026-10-23T12:00:00.000Z', tokens: 3 },
+    ],
+  }];
+  const end = Date.parse('2026-10-23T12:00:00.000Z');
+  assert.equal(tokenTrendSeriesEnd(series), end);
+  const window = tokenTrendWindow(series);
+  assert.deepEqual(window, { start: end - 24 * 3_600_000, end });
+  assert.equal(formatTokenTrendInput(end), '2026-10-23T20:00');
+  assert.equal(parseTokenTrendInput('2026-10-23T20:00'), end);
+  assert.equal(tokenTrendRangeLabel(null, window), '前 3 小时');
+  assert.equal(tokenTrendRangeLabel(window, window), '近 24 小时');
+  const outside = clampTokenTrendRange({ start: window.start - 3_600_000, end: window.end + 3_600_000 }, window);
+  assert.deepEqual(outside, window);
+  const swapped = clampTokenTrendRange({ start: end, end: end - 6 * 3_600_000 }, window);
+  assert.equal(swapped.start, end - 6 * 3_600_000);
+  assert.equal(swapped.end, end);
+  const six = filterTokenTrendByRange(series, { start: end - 6 * 3_600_000, end });
+  assert.deepEqual(six[0].points.map(point => point.tokens), [2, 4, 3]);
+  assert.equal(filterTokenTrendByRange(series, window)[0].points.length, 4);
+  const minute = tokenTrendRangeFromInputs('2026-10-23T14:00', '2026-10-23T14:00', window);
+  assert.equal(minute.start, Date.parse('2026-10-23T06:00:00.000Z'));
+  assert.equal(minute.end, Date.parse('2026-10-23T06:00:59.999Z'));
+  assert.deepEqual(filterTokenTrendByRange(series, minute)[0].points.map(point => point.tokens), [2, 4]);
+  const full = tokenTrendRangeFromInputs(formatTokenTrendInput(window.start), formatTokenTrendInput(window.end), window);
+  assert.deepEqual(full, window);
+  assert.equal(tokenTrendRangeLabel(full, window), '近 24 小时');
+  const partial = tokenTrendRangeFromInputs('2026-10-23T14:00', '2026-10-23T18:00', window);
+  assert.match(tokenTrendRangeLabel(partial, window), /14:00/);
+  assert.match(tokenTrendRangeLabel(partial, window), /18:00/);
+  const recent = tokenTrendRecentRange(window);
+  assert.equal(recent.end, window.end);
+  assert.equal(recent.start, window.end - 3 * 3_600_000);
+  assert.equal(tokenTrendRangeLabel(recent, window), '前 3 小时');
+  assert.equal(tokenTrendRangeMatches(recent, tokenTrendRecentRange(window)), true);
+  const shortWindow = { start: end - 3_600_000, end };
+  assert.deepEqual(tokenTrendRecentRange(shortWindow), shortWindow);
+});
+
 test('token trend rejects old points payload and draws escaped multi-series curves', () => {
   assert.equal(validateNetworkRatesTokenTrendResponse({ series: [{ model: 'a', points: [{ at: '2026-10-23T01:00:00Z', tokens: 1200 }] }] }).series.length, 1);
   assert.throws(() => validateNetworkRatesTokenTrendResponse({ points: [{ at: '2026-10-23T01:00:00Z', tokens: 1200 }] }));
@@ -78,7 +133,7 @@ test('token trend rejects old points payload and draws escaped multi-series curv
   const choices = renderTokenTrendModelChoices(models, new Set(models), { escape, insufficient: new Set(['ok']), colorFor: model => ({ '<img onerror=1>': '#5b8def', ok: '#f2994a' }[model]) });
   assert.match(choices, /data-network-token-model/);
   assert.match(choices, /&lt;img onerror=1&gt;/);
-  assert.match(choices, /样本不足/);
+  assert.match(choices, /is-insufficient/);
   assert.doesNotMatch(choices, /<img/);
   const figure = renderTokenTrendFigure([
     { model: '<img onerror=1>', points: [{ at: '2026-10-23T00:00:00Z', tokens: 1000 }, { at: '2026-10-23T01:00:00Z', tokens: 4000 }, { at: '2026-10-23T02:00:00Z', tokens: 2000 }] },

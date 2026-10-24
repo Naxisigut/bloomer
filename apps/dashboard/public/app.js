@@ -290,7 +290,7 @@ function setView(view, { load = true } = {}) {
   renderAlerts(); updateClock();
   history.replaceState(null, '', `#${view}`);
   if (changed) window.scrollTo({ top: 0, behavior: 'auto' });
-  if (view === 'devices') syncDevicesSticky();
+  if (view === 'devices' || view === 'network') syncDevicesSticky();
 }
 
 async function selectDevice(id) {
@@ -319,7 +319,11 @@ function selectDeviceTab(tab, { focus = false } = {}) {
 }
 const stackedSidebar = matchMedia('(max-width:900px)');
 const devicesStickyTop = () => stackedSidebar.matches ? $('.sidebar').offsetHeight : 0;
-function syncDevicesSticky() { $('#devices-view').style.setProperty('--devices-sticky-top', `${devicesStickyTop()}px`); }
+function syncDevicesSticky() {
+  const top = `${devicesStickyTop()}px`;
+  $('#devices-view').style.setProperty('--devices-sticky-top', top);
+  $('#network-rates-panel').style.setProperty('--devices-sticky-top', top);
+}
 function showDeviceTab(tab, options) {
   const top = devicesStickyTop(), offset = $('#devices-sticky-sentinel').getBoundingClientRect().top - top;
   selectDeviceTab(tab, options);

@@ -155,10 +155,100 @@ export function renderNetworkRatesStatus(rates, escape, dateTime) {
 }
 
 const TOKEN_COLORS = ['#5b8def', '#f2994a', '#8b7cf6', '#2bb3a3', '#e5677e', '#9ab843', '#c08a4f', '#d4a72c'];
+export const TOKEN_TREND_WINDOW_MS = 24 * 3_600_000;
+
+export function tokenTrendSeriesEnd(series) {
+  let end = 0;
+  for (const item of series || []) {
+    for (const point of item?.points || []) {
+      const instant = Date.parse(point.at);
+      if (Number.isFinite(instant) && instant > end) end = instant;
+    }
+  }
+  return end;
+}
+
+export function tokenTrendWindow(series) {
+  const end = tokenTrendSeriesEnd(series);
+  if (!end) return null;
+  return { start: end - TOKEN_TREND_WINDOW_MS, end };
+}
+
+export function tokenTrendRecentRange(window, hours = 3) {
+  if (!window) return null;
+  return clampTokenTrendRange({ start: window.end - hours * 3_600_000, end: window.end }, window);
+}
+
+export function clampTokenTrendRange(range, window) {
+  let start = range?.start;
+  let end = range?.end;
+  if (!Number.isFinite(start) || !Number.isFinite(end)) return { start: window.start, end: window.end };
+  if (start > end) [start, end] = [end, start];
+  start = Math.min(Math.max(start, window.start), window.end);
+  end = Math.min(Math.max(end, window.start), window.end);
+  if (start > end) start = end;
+  return { start, end };
+}
+
+export function tokenTrendRangeCoversWindow(range, window) {
+  return Boolean(range && window && range.start <= window.start && range.end >= window.end);
+}
+
+export function filterTokenTrendByRange(series, range) {
+  if (!series?.length) return series;
+  const window = tokenTrendWindow(series);
+  if (!window) return series;
+  const clamped = clampTokenTrendRange(range || window, window);
+  if (tokenTrendRangeCoversWindow(clamped, window)) return series;
+  return series.map(item => ({
+    model: item.model,
+    points: (item.points || []).filter(point => {
+      const instant = Date.parse(point.at);
+      return Number.isFinite(instant) && instant >= clamped.start && instant <= clamped.end;
+    }),
+  })).filter(item => item.points.length);
+}
 const tokenCompact = new Intl.NumberFormat('zh-CN', { notation: 'compact', maximumFractionDigits: 1 });
 const tokenExact = new Intl.NumberFormat('zh-CN');
 const tokenClock = new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
 const tokenAxisClock = new Intl.DateTimeFormat('zh-CN', { timeZone: DASHBOARD_TIMEZONE, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const tokenInputClock = new Intl.DateTimeFormat('en-CA', { timeZone: DASHBOARD_TIMEZONE, year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+
+export function formatTokenTrendInput(instant) {
+  const parts = Object.fromEntries(tokenInputClock.formatToParts(new Date(instant)).map(part => [part.type, part.value]));
+  return `${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}`;
+}
+
+export function parseTokenTrendInput(value) {
+  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(value)) return NaN;
+  return Date.parse(`${value}:00+08:00`);
+}
+
+export function tokenTrendRangeFromInputs(fromValue, toValue, window) {
+  const parsedFrom = parseTokenTrendInput(fromValue);
+  const parsedTo = parseTokenTrendInput(toValue);
+  if (!Number.isFinite(parsedFrom) || !Number.isFinite(parsedTo) || !window) return null;
+  const startValue = parsedFrom <= parsedTo ? fromValue : toValue;
+  const endValue = parsedFrom <= parsedTo ? toValue : fromValue;
+  let start = Math.min(parsedFrom, parsedTo);
+  let end = Math.max(parsedFrom, parsedTo);
+  if (startValue === formatTokenTrendInput(window.start)) start = window.start;
+  if (endValue === formatTokenTrendInput(window.end)) end = window.end;
+  else end += 60_000 - 1;
+  return clampTokenTrendRange({ start, end }, window);
+}
+
+export function tokenTrendRangeMatches(range, target) {
+  if (!range || !target) return false;
+  return formatTokenTrendInput(range.start) === formatTokenTrendInput(target.start)
+    && formatTokenTrendInput(range.end) === formatTokenTrendInput(target.end);
+}
+
+export function tokenTrendRangeLabel(range, window) {
+  if (window && range && tokenTrendRangeCoversWindow(range, window)) return '近 24 小时';
+  if (!range || !window || tokenTrendRangeMatches(range, tokenTrendRecentRange(window))) return '前 3 小时';
+  return `${tokenClock.format(new Date(range.start))} – ${tokenClock.format(new Date(range.end))}`;
+}
 
 export function validateNetworkRatesTokenTrendResponse(body) {
   if (!object(body) || Object.hasOwn(body, 'points') || !Array.isArray(body.series) || body.series.length > 256) throw new Error('invalid');
@@ -203,11 +293,11 @@ export function renderTokenTrendModelChoices(models, selected, { escape, insuffi
   const color = typeof colorFor === 'function' ? colorFor : model => tokenTrendColorFor(model, models);
   return models.map(model => {
     const dashed = insufficient.has(model);
-    return `<label class="home-model-choice${dashed ? ' is-insufficient' : ''}" style="--series-color:${color(model)}" title="${escape(model)}"><input type="checkbox" data-network-token-model value="${escape(model)}" ${selected.has(model) ? 'checked' : ''}><i aria-hidden="true"></i><span>${escape(labels.get(model))}${dashed ? ' · 样本不足' : ''}</span></label>`;
+    return `<label class="home-model-choice${dashed ? ' is-insufficient' : ''}" style="--series-color:${color(model)}" title="${escape(model)}"><input type="checkbox" data-network-token-model value="${escape(model)}" ${selected.has(model) ? 'checked' : ''}><i aria-hidden="true"></i><span>${escape(labels.get(model))}</span></label>`;
   }).join('');
 }
 
-export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set(), colorFor }) {
+export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set(), colorFor, periodLabel = '所选时段' }) {
   const lines = (series || []).map((item, index) => {
     const points = (item?.points || [])
       .map(point => ({ instant: Date.parse(point.at), tokens: point.tokens }))
@@ -229,6 +319,7 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
   const y = value => top + (axis.high - value) / (axis.high - axis.low) * plotHeight;
   const instants = [...new Set(lines.flatMap(line => line.points.map(point => point.instant)))].sort((a, b) => a - b);
   const start = instants[0], end = instants.at(-1), span = Math.max(1, end - start);
+  const axisTime = tokenAxisClock;
   const x = instant => instants.length === 1 ? left + plotWidth / 2 : left + (instant - start) / span * plotWidth;
   const round = value => Math.round(value * 10) / 10;
   const drawn = lines.map(line => ({
@@ -248,7 +339,7 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
     const instant = instants[Math.round(index * (instants.length - 1) / Math.max(1, labelCount - 1))];
     if (instant == null || seen.has(instant)) continue;
     seen.add(instant);
-    svg += `<text class="chart-label" x="${round(x(instant))}" y="${height - 8}" text-anchor="middle">${escape(tokenAxisClock.format(new Date(instant)))}</text>`;
+    svg += `<text class="chart-label" x="${round(x(instant))}" y="${height - 8}" text-anchor="middle">${escape(axisTime.format(new Date(instant)))}</text>`;
   }
   for (const line of drawn) {
     const path = line.coords.length > 1 ? smoothLinePath(line.coords) : '';
@@ -261,17 +352,19 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
   return {
     series: drawn,
     instants: instants.map(instant => ({ instant, x: round(x(instant)), timeLabel: tokenClock.format(new Date(instant)) })),
-    markup: `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="近 24 小时各模型每台每小时输出 token，最低 ${escape(tokenExact.format(low))}，最高 ${escape(tokenExact.format(peak))}">${svg}</svg><div class="chart-crosshair" hidden></div><div class="chart-tooltip home-revenue-tooltip" hidden></div>${drawn.map((_, index) => `<div class="network-token-dot" data-token-dot="${index}" hidden></div>`).join('')}`,
+    markup: `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escape(periodLabel)}各模型每台每小时输出 token，最低 ${escape(tokenExact.format(low))}，最高 ${escape(tokenExact.format(peak))}">${svg}</svg><div class="chart-crosshair" hidden></div><div class="chart-tooltip home-revenue-tooltip" hidden></div>${drawn.map((_, index) => `<div class="network-token-dot" data-token-dot="${index}" hidden></div>`).join('')}`,
   };
 }
 
 export function createNetworkRatesUI({ query, submitSettings, selectedDevice, deviceChoices, selectDevice, currentView, escape, dateTime }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, rates = null, switches = [], trend = null, trendError = '', loading = false, submitting = false, error = '', unsupported = false, generation = 0, pendingToggle = null;
-  let tokenModels = [], tokenSelected = new Set();
+  let tokenModels = [], tokenSelected = new Set(), tokenRange = null;
   const dialog = $('#network-rates-confirm-dialog');
   const chart = $('#network-token-chart');
   const tokenChoices = $('#network-token-models');
+  const tokenFrom = $('#network-token-from');
+  const tokenTo = $('#network-token-to');
   const tokenColorFor = model => tokenTrendColorFor(model, tokenModels);
   const tokenInsufficient = () => new Set((rates?.candidates || []).filter(candidate => candidate.insufficient).map(candidate => candidate.model));
 
@@ -279,6 +372,40 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
     const fromTrend = (series || []).map(item => item.model).filter(Boolean);
     tokenModels = [...new Set([...fromTrend, ...tokenSelected])].sort();
     if (!tokenSelected.size && fromTrend.length) fromTrend.forEach(model => tokenSelected.add(model));
+  }
+
+  function activeTokenWindow() {
+    return tokenTrendWindow(trend);
+  }
+
+  function activeTokenRange() {
+    const window = activeTokenWindow();
+    if (!window) return null;
+    if (!tokenRange) return tokenTrendRecentRange(window);
+    return clampTokenTrendRange(tokenRange, window);
+  }
+
+  function renderTokenPeriodControls() {
+    const window = activeTokenWindow();
+    const range = activeTokenRange();
+    const disabled = !window || loading || submitting;
+    if (!tokenFrom || !tokenTo) return;
+    tokenFrom.disabled = tokenTo.disabled = disabled;
+    if (!window || !range) {
+      tokenFrom.value = '';
+      tokenTo.value = '';
+      tokenFrom.removeAttribute('min');
+      tokenFrom.removeAttribute('max');
+      tokenTo.removeAttribute('min');
+      tokenTo.removeAttribute('max');
+      return;
+    }
+    const min = formatTokenTrendInput(window.start);
+    const max = formatTokenTrendInput(window.end);
+    tokenFrom.min = tokenTo.min = min;
+    tokenFrom.max = tokenTo.max = max;
+    tokenFrom.value = formatTokenTrendInput(range.start);
+    tokenTo.value = formatTokenTrendInput(range.end);
   }
 
   function renderTokenModelChoices() {
@@ -296,9 +423,10 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
     const device = selectedDevice();
     if (device?.id !== deviceID) {
       deviceID = device?.id; rates = null; switches = []; trend = null; trendError = ''; loading = false; submitting = false; error = ''; unsupported = false; generation++;
-      tokenModels = []; tokenSelected = new Set();
+      tokenModels = []; tokenSelected = new Set(); tokenRange = null;
       if (dialog?.open) dialog.close();
     }
+    renderTokenPeriodControls();
     const demo = deviceID === 'demo';
     $('#network-rates-device').innerHTML = deviceChoices().map(item => `<option value="${escape(item.id)}" ${item.id === deviceID ? 'selected' : ''}>${escape(item.name)}</option>`).join('');
     const toggle = $('#network-rates-auto-switch');
@@ -318,6 +446,8 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
     $('#network-rates-status').textContent = unsupported ? '' : rates ? renderNetworkRatesStatus(rates, escape, dateTime) : loading ? '正在读取全网模型收益…' : '';
     $('#network-rates-candidates').innerHTML = unsupported ? '' : rates ? renderCandidatesTable(rates.candidates, escape) : '';
     $('.network-token-card').hidden = unsupported;
+    $('#network-token-period').hidden = unsupported;
+    $('#network-chart-unsupported').hidden = !unsupported;
     renderTokenModelChoices();
     renderTokenChart();
     if (unsupported) $('#network-rates-switches').innerHTML = '';
@@ -327,7 +457,9 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
 
   function renderTokenChart() {
     if (!chart || unsupported || chart.clientWidth < 40) return;
-    const empty = '近 24 小时暂无各模型输出 token 样本';
+    const empty = !trend?.length
+      ? '近 24 小时暂无各模型输出 token 样本'
+      : tokenRange ? '所选时段暂无各模型输出 token 样本' : '前 3 小时暂无各模型输出 token 样本';
     const noneSelected = '勾选模型以查看对应折线。';
     if (trendError) {
       chart.innerHTML = `<div class="empty-state">${escape(trendError)}</div>`;
@@ -345,10 +477,16 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
       chart.innerHTML = `<div class="empty-state">${noneSelected}</div>`;
       return;
     }
-    const visible = trend.filter(item => tokenSelected.has(item.model));
+    const window = activeTokenWindow();
+    const range = activeTokenRange();
+    const windowed = filterTokenTrendByRange(trend, range);
+    const visible = windowed.filter(item => tokenSelected.has(item.model));
     const width = Math.max(560, chart.clientWidth);
     const height = chart.clientHeight || 220;
-    const figure = renderTokenTrendFigure(visible, { width, height, escape, insufficient: tokenInsufficient(), colorFor: tokenColorFor });
+    const figure = renderTokenTrendFigure(visible, {
+      width, height, escape, insufficient: tokenInsufficient(), colorFor: tokenColorFor,
+      periodLabel: tokenTrendRangeLabel(range, window),
+    });
     if (!figure) {
       chart.innerHTML = `<div class="empty-state">${empty}</div>`;
       return;
@@ -487,6 +625,20 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
     else render();
   });
   $('#network-rates-refresh')?.addEventListener('click', refresh);
+  const applyTokenRange = () => {
+    const window = activeTokenWindow();
+    if (!window || loading || submitting) return;
+    const next = tokenTrendRangeFromInputs(tokenFrom.value, tokenTo.value, window);
+    if (!next) {
+      renderTokenPeriodControls();
+      return;
+    }
+    tokenRange = tokenTrendRangeMatches(next, tokenTrendRecentRange(window)) ? null : next;
+    renderTokenPeriodControls();
+    renderTokenChart();
+  };
+  tokenFrom?.addEventListener('change', applyTokenRange);
+  tokenTo?.addEventListener('change', applyTokenRange);
   tokenChoices?.addEventListener('change', event => {
     const input = event.target;
     if (!input.hasAttribute('data-network-token-model')) return;
@@ -495,6 +647,45 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, de
     renderTokenChart();
   });
   if (chart) new ResizeObserver(() => renderTokenChart()).observe(chart);
+
+  const networkTabs = [...document.querySelectorAll('[data-network-tab]')];
+  function storedNetworkTab() {
+    try { return localStorage.getItem('bloomer.networkTab'); } catch { return null; }
+  }
+  function selectNetworkTab(tab, { focus = false } = {}) {
+    if (!networkTabs.length) return;
+    const active = networkTabs.find(button => button.dataset.networkTab === tab) || networkTabs[0];
+    networkTabs.forEach(button => {
+      const selected = button === active;
+      button.classList.toggle('selected', selected);
+      button.setAttribute('aria-selected', String(selected));
+      button.tabIndex = selected ? 0 : -1;
+      const pane = document.getElementById(button.getAttribute('aria-controls'));
+      if (pane) pane.hidden = !selected;
+    });
+    if (focus) active.focus();
+    try { localStorage.setItem('bloomer.networkTab', active.dataset.networkTab); } catch { /* 忽略无法写入的偏好 */ }
+    if (active.dataset.networkTab === 'chart') {
+      renderTokenChart();
+      if (chart && chart.clientWidth < 40) requestAnimationFrame(() => renderTokenChart());
+    }
+  }
+  function showNetworkTab(tab, options) {
+    const sentinel = $('#network-sticky-sentinel');
+    const top = matchMedia('(max-width:900px)').matches ? ($('.sidebar')?.offsetHeight || 0) : 0;
+    const offset = sentinel ? sentinel.getBoundingClientRect().top - top : 0;
+    selectNetworkTab(tab, options);
+    if (offset < 0) window.scrollTo({ top: window.scrollY + offset, behavior: 'auto' });
+  }
+  networkTabs.forEach(button => button.addEventListener('click', () => showNetworkTab(button.dataset.networkTab)));
+  $('#network-tabs')?.addEventListener('keydown', event => {
+    const step = { ArrowRight: 1, ArrowLeft: -1 }[event.key];
+    if (!step) return;
+    event.preventDefault();
+    const index = networkTabs.findIndex(button => button.classList.contains('selected'));
+    showNetworkTab(networkTabs[(index + step + networkTabs.length) % networkTabs.length].dataset.networkTab, { focus: true });
+  });
+  selectNetworkTab(storedNetworkTab() || 'table');
 
   return { render, refresh, refreshIfVisible() { if (currentView() === 'network') return refresh(); } };
 }
