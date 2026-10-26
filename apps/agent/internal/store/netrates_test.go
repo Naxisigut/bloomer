@@ -39,6 +39,58 @@ func TestNetRateBaselineRoundTripAndRetention(t *testing.T) {
 	}
 }
 
+func TestNetRateIntervalDetailAndLegacyRows(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openTest(t)
+	at := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
+	if _, err := s.writer.ExecContext(ctx, `INSERT INTO network_rate_intervals(started_at_us,ended_at_us,model,providers,delta_requests,delta_tokens) VALUES(?,?,?,?,?,?)`,
+		at.UnixMicro(), at.Add(5*time.Minute).UnixMicro(), "legacy", 2, 1, 10); err != nil {
+		t.Fatal(err)
+	}
+	detail := netrates.Interval{
+		StartedAt: at, EndedAt: at.Add(5 * time.Minute), Model: "m1", Scope: netrates.ScopeTier,
+		Providers: 3, BusyProviders: 2, DeltaRequests: 4, DeltaTokens: 900, MaxProviderTokens: 600,
+	}
+	if err := s.SaveNetRateRound(ctx, netrates.Snapshot{At: at.Add(5 * time.Minute)}, []netrates.Interval{detail}, at.Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.NetRateIntervals(ctx, time.Time{})
+	if err != nil || len(rows) != 2 {
+		t.Fatal(rows, err)
+	}
+	if rows[0].Model != "legacy" || rows[0].Scope != "" || rows[0].BusyProviders != -1 || rows[0].MaxProviderTokens != -1 {
+		t.Fatalf("legacy: %+v", rows[0])
+	}
+	if rows[1] != detail {
+		t.Fatalf("detail: %+v", rows[1])
+	}
+}
+
+func TestModelTokenTotalsSkipsAdjustmentsAndOtherAccounts(t *testing.T) {
+	ctx := context.Background()
+	s, _ := openTest(t)
+	at := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
+	for _, row := range []struct {
+		account, id, model string
+		prompt, completion int64
+		at                 time.Time
+	}{
+		{"acct", "1", "m", 800, 100, at},
+		{"acct", "2", "m", 100, 50, at},
+		{"acct", "3", "m", 0, 0, at},
+		{"acct", "4", "m", 9999, 1, at.Add(-8 * 24 * time.Hour)},
+		{"other", "5", "m", 9999, 1, at},
+	} {
+		if _, err := s.writer.ExecContext(ctx, `INSERT INTO earnings VALUES(?,?,'p','pk','job',?,1,?,?,?)`, row.account, row.id, row.model, row.prompt, row.completion, row.at.UnixMicro()); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.ModelTokenTotals(ctx, "acct", at.Add(-7*24*time.Hour))
+	if err != nil || len(got) != 1 || got["m"] != (netrates.TokenTotals{Records: 2, Prompt: 900, Completion: 150}) {
+		t.Fatal(got, err)
+	}
+}
+
 func TestNetRateSwitchRetentionAndSummaryLimit(t *testing.T) {
 	ctx := context.Background()
 	s, _ := openTest(t)

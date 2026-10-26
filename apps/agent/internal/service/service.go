@@ -125,7 +125,10 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 			}
 			return *sample.CurrentModel, true
 		}
-		ratesRunner = netrates.NewRunner(c.NetworkRates, ratesSettings, db, ratesClient, controls, currentModel, clock.Now, logger)
+		ratesRunner = netrates.NewRunner(c.NetworkRates, ratesSettings, db, ratesClient, controls, currentModel, clock.Now, logger).
+			WithOwnTokenTotals(func(ctx context.Context, since time.Time) (map[string]netrates.TokenTotals, error) {
+				return db.ModelTokenTotals(ctx, c.AccountID, since)
+			})
 	}
 	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls).WithAlerts(alerts).WithNetworkRates(ratesRunner).WithLongTask(taskWatch).WithDeviceStateEnabled(c.DeviceStateEnabled)
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError)}

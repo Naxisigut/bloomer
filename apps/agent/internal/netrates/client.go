@@ -58,7 +58,7 @@ func (c *Client) Stats(ctx context.Context, cohort Cohort) (Snapshot, error) {
 	return snap, nil
 }
 
-func (c *Client) Pricing(ctx context.Context) (map[string]int64, error) {
+func (c *Client) Pricing(ctx context.Context) (map[string]Price, error) {
 	u := *c.base
 	u.Path = strings.TrimRight(u.Path, "/") + "/v1/pricing"
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
@@ -85,18 +85,19 @@ func (c *Client) Pricing(ctx context.Context) (map[string]int64, error) {
 	var envelope struct {
 		Prices []struct {
 			Model       string `json:"model"`
+			InputPrice  int64  `json:"input_price"`
 			OutputPrice int64  `json:"output_price"`
 		} `json:"prices"`
 	}
 	if err = json.Unmarshal(data, &envelope); err != nil {
 		return nil, ErrPricingUnavailable
 	}
-	out := make(map[string]int64, len(envelope.Prices))
+	out := make(map[string]Price, len(envelope.Prices))
 	for _, row := range envelope.Prices {
-		if row.Model == "" || row.OutputPrice < 0 {
+		if row.Model == "" || row.OutputPrice < 0 || row.InputPrice < 0 {
 			continue
 		}
-		out[row.Model] = row.OutputPrice
+		out[row.Model] = Price{Input: row.InputPrice, Output: row.OutputPrice}
 	}
 	return out, nil
 }
@@ -138,6 +139,14 @@ func decodeStats(r io.Reader, cohort Cohort) (Snapshot, error) {
 				return Snapshot{}, err
 			}
 			snap.Providers = providers
+		case "last_24h_prompt_tokens":
+			if err = dec.Decode(&snap.Prompt24h); err != nil {
+				return Snapshot{}, err
+			}
+		case "last_24h_completion_tokens":
+			if err = dec.Decode(&snap.Output24h); err != nil {
+				return Snapshot{}, err
+			}
 		default:
 			if err = skipValue(dec); err != nil {
 				return Snapshot{}, err
@@ -209,6 +218,7 @@ func decodeProviders(dec *json.Decoder, families map[string]bool, memoryGB int) 
 		var row struct {
 			ID             string `json:"id"`
 			ChipFamily     string `json:"chip_family"`
+			ChipTier       string `json:"chip_tier"`
 			MemoryGB       int    `json:"memory_gb"`
 			CurrentModel   string `json:"current_model"`
 			RequestsServed int64  `json:"requests_served"`
@@ -224,7 +234,7 @@ func decodeProviders(dec *json.Decoder, families map[string]bool, memoryGB int) 
 			continue
 		}
 		out = append(out, ProviderSnap{
-			ID: row.ID, Model: row.CurrentModel,
+			ID: row.ID, Model: row.CurrentModel, Tier: row.ChipTier,
 			Requests: row.RequestsServed, Tokens: row.TokensGenerated,
 		})
 	}

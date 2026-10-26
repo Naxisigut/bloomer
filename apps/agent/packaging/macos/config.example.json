@@ -20,6 +20,7 @@
     "switch_advantage_ratio": 0.2,
     "fallback_model": "gemma-4-26b-qat-4bit",
     "chip_families": ["M4", "M5", "M6"],
+    "chip_tiers": ["Pro"],
     "memory_gb": 64,
     "min_providers": 3,
     "near_zero_micro_usd_per_hour": 1000

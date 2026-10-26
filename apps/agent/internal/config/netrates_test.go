@@ -16,6 +16,14 @@ func TestDefaultNetworkRates(t *testing.T) {
 	if len(n.ChipFamilies) != 3 || n.ChipFamilies[0] != "M4" {
 		t.Fatal(n.ChipFamilies)
 	}
+	if len(n.ChipTiers) != 1 || n.ChipTiers[0] != "Pro" {
+		t.Fatal(n.ChipTiers)
+	}
+	noTier := n
+	noTier.ChipTiers = []string{}
+	if err := noTier.Validate(); err != nil {
+		t.Fatal(err)
+	}
 	if err := n.Validate(); err != nil {
 		t.Fatal(err)
 	}
@@ -46,6 +54,8 @@ func TestNetworkRatesValidation(t *testing.T) {
 		{func(n *NetworkRates) { n.SwitchAdvantageRatio = -0.1 }},
 		{func(n *NetworkRates) { n.ChipFamilies = nil }},
 		{func(n *NetworkRates) { n.ChipFamilies = []string{"bad family"} }},
+		{func(n *NetworkRates) { n.ChipTiers = []string{"Pro", "Pro"} }},
+		{func(n *NetworkRates) { n.ChipTiers = []string{"bad tier"} }},
 		{func(n *NetworkRates) { n.MemoryGB = 0 }},
 		{func(n *NetworkRates) { n.MinProviders = 0 }},
 		{func(n *NetworkRates) { n.NearZeroMicroUSDPerHour = -1 }},

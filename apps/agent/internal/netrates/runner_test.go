@@ -138,7 +138,7 @@ type seqStats struct {
 	idx      int
 	statsErr error
 	priceErr error
-	prices   map[string]int64
+	prices   map[string]Price
 }
 
 func (s *seqStats) Stats(context.Context, Cohort) (Snapshot, error) {
@@ -159,7 +159,7 @@ func (s *seqStats) Stats(context.Context, Cohort) (Snapshot, error) {
 	return s.snaps[i], nil
 }
 
-func (s *seqStats) Pricing(context.Context) (map[string]int64, error) {
+func (s *seqStats) Pricing(context.Context) (map[string]Price, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.priceErr != nil {
@@ -325,7 +325,7 @@ func TestRunnerFreshStartSamplesAndNoSubmit(t *testing.T) {
 	base := time.Date(2026, 10, 22, 8, 0, 0, 0, time.UTC)
 	clk := &advClock{t: base}
 	store := &memStore{}
-	stats := &seqStats{snaps: buildSnapSeries(base, 7, "model-m1"), prices: map[string]int64{"model-m1": 2200000}}
+	stats := &seqStats{snaps: buildSnapSeries(base, 7, "model-m1"), prices: map[string]Price{"model-m1": {Output: 2200000}}}
 	ctl := &fakeControl{local: []string{"model-m1"}}
 	dir := t.TempDir()
 	r, _ := newTestRunner(t, dir, store, stats, ctl, clk, "model-m1")
@@ -359,6 +359,51 @@ func TestRunnerFreshStartSamplesAndNoSubmit(t *testing.T) {
 	}
 }
 
+func TestRunnerTierCohortAndPromptRatios(t *testing.T) {
+	base := time.Date(2026, 10, 22, 8, 0, 0, 0, time.UTC)
+	clk := &advClock{t: base}
+	snaps := buildSnapSeries(base, 7, "model-m1")
+	for i := range snaps {
+		for j := range snaps[i].Providers {
+			snaps[i].Providers[j].Tier = "Pro"
+		}
+		extra := providers(i, "model-m2", 3)
+		snaps[i].Providers = append(snaps[i].Providers, extra...)
+		snaps[i].Prompt24h, snaps[i].Output24h = 8000, 1000
+	}
+	stats := &seqStats{snaps: snaps, prices: map[string]Price{"model-m1": {Input: 10000, Output: 100000}, "model-m2": {Input: 10000, Output: 100000}}}
+	r, _ := newTestRunner(t, t.TempDir(), &memStore{}, stats, &fakeControl{local: []string{"model-m1"}}, clk, "model-m1")
+	r.WithOwnTokenTotals(func(context.Context, time.Time) (map[string]TokenTotals, error) {
+		return map[string]TokenTotals{"model-m1": {Records: 40, Prompt: 300, Completion: 100}}, nil
+	})
+	ctx := context.Background()
+	for round := 1; round <= 7; round++ {
+		r.runRound(ctx)
+		if round < 7 {
+			clk.Advance(5 * time.Minute)
+		}
+	}
+	st := r.Status()
+	if st.LongWindowMinutes != 60 || len(st.ChipTiers) != 1 || st.ChipTiers[0] != "Pro" || st.SwitchAdvantageRatio != 0.2 || st.MemoryGB != 64 {
+		t.Fatalf("status meta: %+v", st)
+	}
+	got := map[string]CandidateView{}
+	for _, c := range st.Candidates {
+		got[c.Model] = c
+	}
+	m1, m2 := got["model-m1"], got["model-m2"]
+	if m1.Cohort != CohortTier || m1.RatioSource != RatioOwn || m1.EffectivePriceMicro != "130000" || m1.Hour == nil || m1.BusyRatio == nil {
+		t.Fatalf("m1: %+v", m1)
+	}
+	if m2.Cohort != CohortAll || m2.RatioSource != RatioNetwork || m2.EffectivePriceMicro != "180000" {
+		t.Fatalf("m2: %+v", m2)
+	}
+	trend, err := r.TokenTrend(ctx)
+	if err != nil || len(trend.Series) != 2 || len(trend.Series[0].Points) != 6 {
+		t.Fatalf("trend: %+v %v", trend, err)
+	}
+}
+
 func TestRunnerAutoSwitchBetterModelOnce(t *testing.T) {
 	base := time.Date(2026, 10, 22, 10, 0, 0, 0, time.UTC)
 	clk := &advClock{t: base.Add(2 * time.Hour)}
@@ -366,7 +411,7 @@ func TestRunnerAutoSwitchBetterModelOnce(t *testing.T) {
 	seedDualIntervals(store, base, 100_000, 800_000)
 	stats := &seqStats{
 		snaps:  []Snapshot{store.baselineSnap()},
-		prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000},
+		prices: map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}},
 	}
 	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
 	dir := t.TempDir()
@@ -410,7 +455,7 @@ func TestRunnerRestartDoesNotResubmit(t *testing.T) {
 	seedDualIntervals(store, base, 100_000, 800_000)
 	stats := &seqStats{
 		snaps:  []Snapshot{store.baselineSnap()},
-		prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000},
+		prices: map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}},
 	}
 	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
 	dir := t.TempDir()
@@ -440,7 +485,7 @@ func TestRunnerManualSwitchBlocksMinInterval(t *testing.T) {
 	clk := &advClock{t: base}
 	store := &memStore{}
 	seedDualIntervals(store, base.Add(-time.Hour), 100_000, 800_000)
-	stats := &seqStats{snaps: []Snapshot{store.baselineSnap()}, prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000}}
+	stats := &seqStats{snaps: []Snapshot{store.baselineSnap()}, prices: map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}}}
 	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}, lastChange: base.Add(-5 * time.Minute)}
 	dir := t.TempDir()
 	writeSettingsFile(t, dir, true, base.Add(-2*time.Hour), nil)
@@ -460,7 +505,7 @@ func TestRunnerJobReconciliationAndBackoff(t *testing.T) {
 	clk := &advClock{t: base}
 	store := &memStore{}
 	seedDualIntervals(store, base.Add(-time.Hour), 100_000, 800_000)
-	stats := &seqStats{snaps: []Snapshot{store.baselineSnap()}, prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000}}
+	stats := &seqStats{snaps: []Snapshot{store.baselineSnap()}, prices: map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}}}
 	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}, jobs: map[string]control.Job{}}
 	dir := t.TempDir()
 	writeSettingsFile(t, dir, true, base.Add(-3*time.Hour), nil)
@@ -551,7 +596,7 @@ func TestRunnerFallbackGemma(t *testing.T) {
 	clk := &advClock{t: base.Add(2 * time.Hour)}
 	store := &memStore{}
 	seedDualIntervals(store, base, 50, 60)
-	stats := &seqStats{snaps: []Snapshot{store.baselineSnap()}, prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000}}
+	stats := &seqStats{snaps: []Snapshot{store.baselineSnap()}, prices: map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}}}
 	ctl := &fakeControl{local: []string{"model-alpha", fallback}}
 	dir := t.TempDir()
 	writeSettingsFile(t, dir, true, base.Add(-2*time.Hour), nil)
@@ -589,7 +634,7 @@ func TestRunnerStaleRunningWithoutJobID(t *testing.T) {
 	base := time.Date(2026, 10, 22, 18, 0, 0, 0, time.UTC)
 	clk := &advClock{t: base}
 	store := &memStore{}
-	stats := &seqStats{snaps: []Snapshot{{At: base}}, prices: map[string]int64{}}
+	stats := &seqStats{snaps: []Snapshot{{At: base}}, prices: map[string]Price{}}
 	ctl := &fakeControl{}
 	dir := t.TempDir()
 	r, _ := newTestRunner(t, dir, store, stats, ctl, clk, "")
@@ -615,7 +660,7 @@ func TestRunnerStatsAndPricingErrors(t *testing.T) {
 	store := &memStore{}
 	seedDualIntervals(store, base.Add(-time.Hour), 100_000, 800_000)
 	before := store.baselineSnap()
-	stats := &seqStats{statsErr: errors.New("down"), prices: map[string]int64{"model-alpha": 2200000}}
+	stats := &seqStats{statsErr: errors.New("down"), prices: map[string]Price{"model-alpha": {Output: 2200000}}}
 	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
 	dir := t.TempDir()
 	r, _ := newTestRunner(t, dir, store, stats, ctl, clk, "model-alpha")
@@ -635,13 +680,13 @@ func TestRunnerStatsAndPricingErrors(t *testing.T) {
 	stats.statsErr = nil
 	stats.snaps = []Snapshot{before}
 	stats.priceErr = errors.New("price down")
-	r.prices = map[string]int64{"model-alpha": 999, "model-beta": 888}
+	r.prices = map[string]Price{"model-alpha": {Output: 999}, "model-beta": {Output: 888}}
 	r.runRound(context.Background())
 	st = r.Status()
 	if st.LastError == nil || *st.LastError != "pricing_unavailable" {
 		t.Fatalf("pricing last_error=%v", st.LastError)
 	}
-	if r.prices["model-alpha"] != 999 {
+	if r.prices["model-alpha"].Output != 999 {
 		t.Fatalf("prices overwritten: %+v", r.prices)
 	}
 }
@@ -651,13 +696,13 @@ func TestRunnerStatsErrorStillAutoSwitches(t *testing.T) {
 	clk := &advClock{t: base}
 	store := &memStore{}
 	seedDualIntervals(store, base.Add(-time.Hour), 100_000, 800_000)
-	stats := &seqStats{statsErr: errors.New("down"), prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000}}
+	stats := &seqStats{statsErr: errors.New("down"), prices: map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}}}
 	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
 	dir := t.TempDir()
 	writeSettingsFile(t, dir, true, base.Add(-2*time.Hour), nil)
 	r, _ := newTestRunner(t, dir, store, stats, ctl, clk, "model-alpha")
 	r.cfg.AutoSwitch = true
-	r.prices = map[string]int64{"model-alpha": 2200000, "model-beta": 2200000}
+	r.prices = map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}}
 	r.runRound(context.Background())
 	if ctl.submitCount() != 1 {
 		t.Fatalf("expected switch despite stats error, submits=%d", ctl.submitCount())
@@ -675,7 +720,7 @@ func TestRunnerSwitchRefreshesNextEligibleAt(t *testing.T) {
 	seedDualIntervals(store, base, 100_000, 800_000)
 	stats := &seqStats{
 		snaps:  []Snapshot{store.baselineSnap()},
-		prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000},
+		prices: map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}},
 	}
 	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
 	dir := t.TempDir()
@@ -707,7 +752,7 @@ func TestRunnerCollectDoesNotSubmitSwitch(t *testing.T) {
 	seedDualIntervals(store, base, 100_000, 800_000)
 	stats := &seqStats{
 		snaps:  []Snapshot{store.baselineSnap()},
-		prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000},
+		prices: map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}},
 	}
 	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
 	dir := t.TempDir()
@@ -729,7 +774,7 @@ type blockStats struct {
 	started   chan struct{}
 	release   chan struct{}
 	snap      Snapshot
-	prices    map[string]int64
+	prices    map[string]Price
 	statCalls int
 }
 
@@ -752,7 +797,7 @@ func (s *blockStats) Stats(ctx context.Context, _ Cohort) (Snapshot, error) {
 	}
 }
 
-func (s *blockStats) Pricing(context.Context) (map[string]int64, error) {
+func (s *blockStats) Pricing(context.Context) (map[string]Price, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.prices, nil
@@ -778,7 +823,7 @@ func TestRunSwitchesWhileCollectBlocked(t *testing.T) {
 		started: make(chan struct{}, 1),
 		release: make(chan struct{}),
 		snap:    store.baselineSnap(),
-		prices:  map[string]int64{"model-alpha": 2200000, "model-beta": 2200000},
+		prices:  map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}},
 	}
 	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
 	dir := t.TempDir()
@@ -813,7 +858,7 @@ func TestRunSwitchesWhenCooldownExpiresWithoutCollectTick(t *testing.T) {
 	now := time.Now().UTC()
 	store := &memStore{}
 	seedDualIntervals(store, now.Add(-time.Hour), 100_000, 800_000)
-	stats := &seqStats{snaps: []Snapshot{store.baselineSnap()}, prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000}}
+	stats := &seqStats{snaps: []Snapshot{store.baselineSnap()}, prices: map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}}}
 	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
 	dir := t.TempDir()
 	writeSettingsFile(t, dir, true, now.Add(-2*time.Hour), nil)
@@ -854,7 +899,7 @@ func TestRunnerAutoSwitchOffNeverSubmits(t *testing.T) {
 	clk := &advClock{t: base.Add(40 * time.Minute)}
 	store := &memStore{}
 	seedDualIntervals(store, base, 100_000, 800_000)
-	stats := &seqStats{snaps: []Snapshot{store.baselineSnap()}, prices: map[string]int64{"model-alpha": 2200000, "model-beta": 2200000}}
+	stats := &seqStats{snaps: []Snapshot{store.baselineSnap()}, prices: map[string]Price{"model-alpha": {Output: 2200000}, "model-beta": {Output: 2200000}}}
 	ctl := &fakeControl{local: []string{"model-alpha", "model-beta"}}
 	dir := t.TempDir()
 	r, _ := newTestRunner(t, dir, store, stats, ctl, clk, "model-alpha")

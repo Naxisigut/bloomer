@@ -76,14 +76,34 @@ export function validateNetworkRatesSettings(body) {
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const micro = value => typeof value === 'string' && /^-?\d+$/.test(value);
 
+const absent = value => value === undefined || value === null;
+const optionalShare = value => absent(value) || (Number.isFinite(value) && value >= 0 && value <= 1);
+const optionalMicro = value => absent(value) || micro(value);
+
+function validateWindow(window) {
+  return absent(window) || (object(window) && Number.isInteger(window.samples) && Number.isFinite(window.avg_providers)
+    && optionalShare(window.busy_ratio) && Number.isFinite(window.requests_per_hour) && Number.isFinite(window.tokens_per_hour)
+    && micro(window.usd_per_hour_micro) && optionalMicro(window.trimmed_usd_per_hour_micro));
+}
+
 function validateCandidate(candidate) {
   return object(candidate) && typeof candidate.model === 'string' && typeof candidate.downloaded === 'boolean'
     && Number.isFinite(candidate.avg_providers) && Number.isFinite(candidate.requests_per_hour)
     && Number.isFinite(candidate.tokens_per_hour) && micro(candidate.usd_per_hour_micro)
-    && ['official', 'fallback'].includes(candidate.price_source) && typeof candidate.insufficient === 'boolean';
+    && ['official', 'fallback'].includes(candidate.price_source) && typeof candidate.insufficient === 'boolean'
+    && optionalShare(candidate.busy_ratio) && optionalMicro(candidate.trimmed_usd_per_hour_micro) && validateWindow(candidate.hour)
+    && optionalMicro(candidate.effective_price_micro) && (absent(candidate.input_ratio) || (Number.isFinite(candidate.input_ratio) && candidate.input_ratio >= 0))
+    && (absent(candidate.ratio_source) || ['own', 'network', 'none'].includes(candidate.ratio_source))
+    && (absent(candidate.cohort) || ['tier', 'all'].includes(candidate.cohort));
 }
 
 export function validateNetworkRatesResponse(body) {
+  if (object(body) && (!(absent(body.long_window_minutes) || Number.isInteger(body.long_window_minutes))
+    || !(absent(body.switch_advantage_ratio) || Number.isFinite(body.switch_advantage_ratio))
+    || !(absent(body.chip_tiers) || (Array.isArray(body.chip_tiers) && body.chip_tiers.every(tier => typeof tier === 'string')))
+    || !(absent(body.memory_gb) || Number.isInteger(body.memory_gb)))) {
+    throw new Error('invalid');
+  }
   if (!object(body) || typeof body.enabled !== 'boolean' || typeof body.auto_switch !== 'boolean'
     || !(body.auto_switch_since === null || Number.isFinite(Date.parse(body.auto_switch_since)))
     || !Number.isInteger(body.window_samples) || !Number.isInteger(body.samples)
@@ -123,15 +143,113 @@ function candidateRowClass(candidate) {
   return '';
 }
 
-export function renderCandidatesTable(candidates, escape) {
+export function formatUsdPerMillionMicro(microStr) {
+  if (absent(microStr)) return '—';
+  const amount = Number(BigInt(microStr)) / 1e6;
+  if (!Number.isFinite(amount)) return '—';
+  return `$${amount.toFixed(amount >= 1 ? 2 : 3)}/M`;
+}
+
+export function formatShare(value) {
+  return absent(value) ? '—' : `${Math.round(value * 100)}%`;
+}
+
+export function relativeToCurrent(usdMicro, currentMicro) {
+  if (absent(usdMicro) || absent(currentMicro)) return null;
+  const current = Number(currentMicro);
+  if (!(current > 0)) return null;
+  return Number(usdMicro) / current - 1;
+}
+
+function formatRelative(ratio) {
+  const percent = Math.round(ratio * 100);
+  return `${percent > 0 ? '+' : percent < 0 ? '−' : '±'}${Math.abs(percent)}%`;
+}
+
+function windowLabel(minutes) {
+  if (!(minutes > 0)) return '';
+  return minutes % 60 === 0 ? `近 ${minutes / 60} 小时` : `近 ${minutes} 分钟`;
+}
+
+export function candidateTableOptions(rates) {
+  return {
+    currentModel: rates?.current_model ?? null,
+    advantageRatio: Number.isFinite(rates?.switch_advantage_ratio) ? rates.switch_advantage_ratio : 0.2,
+    chipTiers: Array.isArray(rates?.chip_tiers) ? rates.chip_tiers : [],
+    shortLabel: windowLabel((rates?.window_samples || 0) * (rates?.interval_minutes || 0)) || '短窗口',
+    longLabel: windowLabel(rates?.long_window_minutes) || '近 1 小时',
+  };
+}
+
+function shortWindow(candidate) {
+  return {
+    busy_ratio: candidate.busy_ratio, requests_per_hour: candidate.requests_per_hour, tokens_per_hour: candidate.tokens_per_hour,
+    usd_per_hour_micro: candidate.usd_per_hour_micro, trimmed_usd_per_hour_micro: candidate.trimmed_usd_per_hour_micro,
+  };
+}
+
+const tokenRate = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 });
+const requestRate = new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 });
+
+function windowCells(window, current, isCurrent, advantageRatio, escape) {
+  if (!window) return '<td>—</td><td>—</td><td>—</td><td>—</td>';
+  const perRequest = window.requests_per_hour > 0 ? `，平均每单 ${tokenRate.format(window.tokens_per_hour / window.requests_per_hour)} token` : '';
+  const tokenTitle = `每台每小时接单 ${requestRate.format(window.requests_per_hour)}${perRequest}`;
+  let relative = '';
+  if (!isCurrent) {
+    const ratio = relativeToCurrent(window.usd_per_hour_micro, current?.usd_per_hour_micro);
+    if (ratio !== null) {
+      const tone = ratio >= advantageRatio ? ' network-rates-gain' : ratio < 0 ? ' network-rates-loss' : '';
+      relative = `<small class="network-rates-sub${tone}" title="相对当前模型">${escape(formatRelative(ratio))}</small>`;
+    }
+  }
+  return `<td>${escape(formatShare(window.busy_ratio))}</td>`
+    + `<td title="${escape(tokenTitle)}">${escape(tokenRate.format(window.tokens_per_hour))}</td>`
+    + `<td>${escape(formatUsdPerHourMicro(window.usd_per_hour_micro))}${relative}</td>`
+    + `<td>${escape(formatUsdPerHourMicro(window.trimmed_usd_per_hour_micro))}</td>`;
+}
+
+function cohortLabel(candidate, chipTiers) {
+  if (candidate.cohort === 'tier') return `同档 ${chipTiers.join('/')}`.trim();
+  if (candidate.cohort === 'all') return chipTiers.length ? '全组（同档不足）' : '全组';
+  return '';
+}
+
+function priceNote(candidate) {
+  const ratio = Number.isFinite(candidate.input_ratio) ? candidate.input_ratio.toFixed(1) : '';
+  const parts = [];
+  if (candidate.ratio_source === 'own') parts.push(`本机输入比 ${ratio}`);
+  else if (candidate.ratio_source === 'network') parts.push(`全网输入比 ${ratio}`);
+  else if (candidate.ratio_source === 'none') parts.push('仅输出价');
+  if (candidate.price_source === 'fallback') parts.push(priceSourceLabel('fallback'));
+  return parts.join(' · ');
+}
+
+export function renderCandidatesTable(candidates, escape, options = {}) {
   if (!candidates?.length) return '<p class="control-note">暂无候选模型数据</p>';
+  const { currentModel = null, advantageRatio = 0.2, chipTiers = [], shortLabel = '短窗口', longLabel = '近 1 小时' } = options;
   const labels = displayModelNames(candidates.map(candidate => candidate.model));
+  const current = candidates.find(candidate => candidate.model === currentModel);
   const rows = candidates.map(candidate => {
     const muted = candidateRowClass(candidate);
-    const priceNote = candidate.price_source === 'fallback' ? '（兜底价）' : '';
-    return `<tr${muted ? ` class="${muted}"` : ''}><td title="${escape(candidate.model)}">${escape(labels.get(candidate.model))}</td><td>${candidate.downloaded ? '是' : '否'}</td><td>${escape(String(Math.round(candidate.avg_providers * 10) / 10))}</td><td>${escape(new Intl.NumberFormat('en-US', { maximumFractionDigits: 1 }).format(candidate.requests_per_hour))}</td><td>${escape(new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(candidate.tokens_per_hour))}</td><td>${escape(formatUsdPerHourMicro(candidate.usd_per_hour_micro))}</td><td>${escape(priceSourceLabel(candidate.price_source))}${priceNote ? ` ${escape(priceNote)}` : ''}</td></tr>`;
+    const isCurrent = candidate.model === currentModel;
+    const tags = (isCurrent ? ' <span class="network-rates-tag">当前</span>' : '') + (candidate.downloaded ? '' : ' <span class="network-rates-tag">未下载</span>');
+    const cohort = cohortLabel(candidate, chipTiers);
+    const note = priceNote(candidate);
+    const hourProviders = candidate.hour ? `；${longLabel}均 ${Math.round(candidate.hour.avg_providers * 10) / 10} 台` : '';
+    return `<tr${muted ? ` class="${muted}"` : ''}>`
+      + `<td title="${escape(candidate.model)}">${escape(labels.get(candidate.model))}${tags}</td>`
+      + `<td title="${escape(`${shortLabel}均 ${Math.round(candidate.avg_providers * 10) / 10} 台${hourProviders}`)}">${escape(String(Math.round(candidate.avg_providers * 10) / 10))}${cohort ? `<small class="network-rates-sub">${escape(cohort)}</small>` : ''}</td>`
+      + `<td title="输出价 + 输入比 × 输入价（每百万输出 token）">${escape(formatUsdPerMillionMicro(candidate.effective_price_micro))}${note ? `<small class="network-rates-sub">${escape(note)}</small>` : ''}</td>`
+      + windowCells(shortWindow(candidate), current && shortWindow(current), isCurrent, advantageRatio, escape)
+      + windowCells(candidate.hour, current?.hour, isCurrent, advantageRatio, escape)
+      + '</tr>';
   }).join('');
-  return `<div class="table-scroll network-rates-table-wrap"><table><thead><tr><th>模型</th><th>已下载</th><th>对照组均台数</th><th>每台每小时接单</th><th>每台每小时输出 token</th><th>估算 $/h</th><th>价格来源</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  const windowHead = '<th>有单率</th><th>每台输出 token/h</th><th>估算 $/h</th><th title="每轮去掉输出最多的一台后再平均">去头 $/h</th>';
+  return `<div class="table-scroll network-rates-table-wrap"><table><thead>`
+    + `<tr><th rowspan="2">模型</th><th rowspan="2">台数</th><th rowspan="2">综合单价</th><th colspan="4" class="network-rates-window">${escape(shortLabel)}</th><th colspan="4" class="network-rates-window">${escape(longLabel)}</th></tr>`
+    + `<tr>${windowHead}${windowHead}</tr>`
+    + `</thead><tbody>${rows}</tbody></table></div>`;
 }
 
 export function renderSwitchRecords(switches, escape, dateTime) {
@@ -444,7 +562,7 @@ export function createNetworkRatesUI({ query, submitSettings, selectedDevice, cu
     }
     const headerStatus = $('#network-rates-header-status');
     headerStatus.textContent = unsupported ? '' : loading && !rates ? '正在读取全网模型收益…' : rates ? renderNetworkRatesHeaderStatus(rates, escape, dateTime) : '';
-    $('#network-rates-candidates').innerHTML = unsupported ? '' : rates ? renderCandidatesTable(rates.candidates, escape) : '';
+    $('#network-rates-candidates').innerHTML = unsupported ? '' : rates ? renderCandidatesTable(rates.candidates, escape, candidateTableOptions(rates)) : '';
     $('.network-token-card').hidden = unsupported;
     $('#network-token-period').hidden = unsupported;
     $('#network-chart-unsupported').hidden = !unsupported;

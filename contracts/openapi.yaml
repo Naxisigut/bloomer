@@ -1329,6 +1329,19 @@ components:
           type: string
           nullable: true
           enum: [stats_unavailable, pricing_unavailable, models_unavailable]
+        long_window_minutes:
+          type: integer
+          description: Span of each candidate's `hour` figures. Zero when the collector is not running.
+        switch_advantage_ratio:
+          type: number
+          description: Minimum gain over the current model's estimate before auto switch moves.
+        chip_tiers:
+          type: array
+          items:
+            type: string
+          description: Chip tiers (for example Pro) preferred as the same-tier cohort. Empty means the whole cohort.
+        memory_gb:
+          type: integer
     NetworkRatesRecommendation:
       type: object
       required: [model, usd_per_hour_micro, fallback]
@@ -1342,6 +1355,7 @@ components:
           type: boolean
     NetworkRatesCandidate:
       type: object
+      description: Top-level figures cover the latest `window_samples` intervals and drive recommendations; `hour` covers `long_window_minutes`.
       required: [model, downloaded, avg_providers, requests_per_hour, tokens_per_hour, usd_per_hour_micro, price_source, insufficient]
       properties:
         model:
@@ -1350,6 +1364,64 @@ components:
           type: boolean
         avg_providers:
           type: number
+        busy_ratio:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
+          description: Share of machine-intervals with any output tokens. Null when only legacy rows exist.
+        requests_per_hour:
+          type: number
+        tokens_per_hour:
+          type: number
+          description: Output tokens per machine per hour
+        usd_per_hour_micro:
+          type: string
+          pattern: '^-?\d+$'
+          description: tokens_per_hour × effective_price_micro / 1e6
+        trimmed_usd_per_hour_micro:
+          type: string
+          nullable: true
+          pattern: '^-?\d+$'
+          description: Same estimate after dropping the top-output machine in every interval. Null with fewer than two machines.
+        hour:
+          nullable: true
+          allOf:
+            - $ref: '#/components/schemas/NetworkRatesCandidateWindow'
+        price_source:
+          type: string
+          enum: [official, fallback]
+        effective_price_micro:
+          type: string
+          pattern: '^-?\d+$'
+          description: Micro-USD per million output tokens, output_price + input_ratio × input_price.
+        input_ratio:
+          type: number
+          minimum: 0
+          description: Prompt tokens per output token used for the input part of the price.
+        ratio_source:
+          type: string
+          enum: [own, network, none]
+          description: own = this account's billed history for the model (7 days, ≥30 records); network = network-wide last 24 hours; none = output price only.
+        cohort:
+          type: string
+          enum: [tier, all]
+          description: tier = same chip tier machines; all = whole family+memory cohort (no tier configured or fewer than min_providers same-tier machines).
+        insufficient:
+          type: boolean
+    NetworkRatesCandidateWindow:
+      type: object
+      required: [samples, avg_providers, busy_ratio, requests_per_hour, tokens_per_hour, usd_per_hour_micro, trimmed_usd_per_hour_micro]
+      properties:
+        samples:
+          type: integer
+        avg_providers:
+          type: number
+        busy_ratio:
+          type: number
+          nullable: true
+          minimum: 0
+          maximum: 1
         requests_per_hour:
           type: number
         tokens_per_hour:
@@ -1357,11 +1429,10 @@ components:
         usd_per_hour_micro:
           type: string
           pattern: '^-?\d+$'
-        price_source:
+        trimmed_usd_per_hour_micro:
           type: string
-          enum: [official, fallback]
-        insufficient:
-          type: boolean
+          nullable: true
+          pattern: '^-?\d+$'
     NetworkRateTokenTrend:
       type: object
       required: [series]

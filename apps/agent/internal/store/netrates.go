@@ -64,13 +64,14 @@ func (s *Store) SaveNetRateRound(ctx context.Context, snap netrates.Snapshot, in
 				return err
 			}
 		}
-		ins, err := tx.PrepareContext(ctx, "INSERT INTO network_rate_intervals(started_at_us,ended_at_us,model,providers,delta_requests,delta_tokens) VALUES(?,?,?,?,?,?)")
+		ins, err := tx.PrepareContext(ctx, `INSERT INTO network_rate_intervals(started_at_us,ended_at_us,model,scope,providers,busy_providers,delta_requests,delta_tokens,max_provider_tokens)
+VALUES(?,?,?,?,?,?,?,?,?)`)
 		if err != nil {
 			return err
 		}
 		defer ins.Close()
 		for _, iv := range intervals {
-			if _, err = ins.ExecContext(ctx, iv.StartedAt.UTC().UnixMicro(), iv.EndedAt.UTC().UnixMicro(), iv.Model, iv.Providers, iv.DeltaRequests, iv.DeltaTokens); err != nil {
+			if _, err = ins.ExecContext(ctx, iv.StartedAt.UTC().UnixMicro(), iv.EndedAt.UTC().UnixMicro(), iv.Model, iv.Scope, iv.Providers, iv.BusyProviders, iv.DeltaRequests, iv.DeltaTokens, iv.MaxProviderTokens); err != nil {
 				return err
 			}
 		}
@@ -80,8 +81,8 @@ func (s *Store) SaveNetRateRound(ctx context.Context, snap netrates.Snapshot, in
 }
 
 func (s *Store) NetRateIntervals(ctx context.Context, since time.Time) ([]netrates.Interval, error) {
-	rows, err := s.reader.QueryContext(ctx, `SELECT started_at_us,ended_at_us,model,providers,delta_requests,delta_tokens
-FROM network_rate_intervals WHERE ended_at_us>=? ORDER BY ended_at_us ASC, model ASC`, since.UTC().UnixMicro())
+	rows, err := s.reader.QueryContext(ctx, `SELECT started_at_us,ended_at_us,model,scope,providers,busy_providers,delta_requests,delta_tokens,max_provider_tokens
+FROM network_rate_intervals WHERE ended_at_us>=? ORDER BY ended_at_us ASC, model ASC, scope ASC`, since.UTC().UnixMicro())
 	if err != nil {
 		return nil, err
 	}
@@ -90,12 +91,32 @@ FROM network_rate_intervals WHERE ended_at_us>=? ORDER BY ended_at_us ASC, model
 	for rows.Next() {
 		var iv netrates.Interval
 		var started, ended int64
-		if err = rows.Scan(&started, &ended, &iv.Model, &iv.Providers, &iv.DeltaRequests, &iv.DeltaTokens); err != nil {
+		if err = rows.Scan(&started, &ended, &iv.Model, &iv.Scope, &iv.Providers, &iv.BusyProviders, &iv.DeltaRequests, &iv.DeltaTokens, &iv.MaxProviderTokens); err != nil {
 			return nil, err
 		}
 		iv.StartedAt = time.UnixMicro(started).UTC()
 		iv.EndedAt = time.UnixMicro(ended).UTC()
 		out = append(out, iv)
+	}
+	return out, rows.Err()
+}
+
+// ModelTokenTotals sums the account's billed prompt and completion tokens per model since a time.
+func (s *Store) ModelTokenTotals(ctx context.Context, accountID string, since time.Time) (map[string]netrates.TokenTotals, error) {
+	rows, err := s.reader.QueryContext(ctx, `SELECT model,count(*),coalesce(sum(prompt_tokens),0),coalesce(sum(completion_tokens),0)
+FROM earnings WHERE account_id=? AND created_at_us>=? AND completion_tokens>0 GROUP BY model`, accountID, since.UTC().UnixMicro())
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]netrates.TokenTotals{}
+	for rows.Next() {
+		var model string
+		var t netrates.TokenTotals
+		if err = rows.Scan(&model, &t.Records, &t.Prompt, &t.Completion); err != nil {
+			return nil, err
+		}
+		out[model] = t
 	}
 	return out, rows.Err()
 }

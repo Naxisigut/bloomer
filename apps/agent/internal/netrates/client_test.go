@@ -12,8 +12,10 @@ func TestClientStatsFiltersAndStreams(t *testing.T) {
 	fixture := `{
   "snapshot_at":"2026-10-22T10:00:00Z",
   "ignored_top_level":[1,2,3],
+  "last_24h_prompt_tokens":8300,
+  "last_24h_completion_tokens":1000,
   "providers":[
-    {"id":"a","chip_family":"M4","memory_gb":64,"current_model":"model-a","requests_served":10,"tokens_generated":100,"extra":{"nested":true}},
+    {"id":"a","chip_family":"M4","chip_tier":"Pro","memory_gb":64,"current_model":"model-a","requests_served":10,"tokens_generated":100,"extra":{"nested":true}},
     {"id":"b","chip_family":"M3","memory_gb":64,"current_model":"skip","requests_served":1,"tokens_generated":1},
     {"id":"c","chip_family":"M4","memory_gb":32,"current_model":"skip","requests_served":1,"tokens_generated":1},
     {"id":"","chip_family":"M4","memory_gb":64,"current_model":"x","requests_served":1,"tokens_generated":1},
@@ -37,7 +39,10 @@ func TestClientStatsFiltersAndStreams(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if snap.At.UTC().Format("2006-01-02T15:04:05Z") != "2026-10-22T10:00:00Z" || len(snap.Providers) != 1 || snap.Providers[0].ID != "a" {
+	if snap.At.UTC().Format("2006-01-02T15:04:05Z") != "2026-10-22T10:00:00Z" || len(snap.Providers) != 1 || snap.Providers[0].ID != "a" || snap.Providers[0].Tier != "Pro" {
+		t.Fatalf("unexpected snapshot %+v", snap)
+	}
+	if snap.Prompt24h != 8300 || snap.Output24h != 1000 || NetworkRatio(snap) != 8.3 {
 		t.Fatalf("unexpected snapshot %+v", snap)
 	}
 }
@@ -63,7 +68,7 @@ func TestClientPricing(t *testing.T) {
 		if r.URL.Path != "/v1/pricing" {
 			t.Fatalf("unexpected path %s", r.URL.Path)
 		}
-		w.Write([]byte(`{"prices":[{"model":"a","output_price":100},{"model":"","output_price":1},{"model":"b","output_price":-1},{"model":"c","output_price":2000000}]}`))
+		w.Write([]byte(`{"prices":[{"model":"a","input_price":20,"output_price":100},{"model":"","output_price":1},{"model":"b","output_price":-1},{"model":"d","input_price":-1,"output_price":1},{"model":"c","output_price":2000000}]}`))
 	}))
 	defer srv.Close()
 	c, err := NewClient(srv.URL, srv.Client())
@@ -74,7 +79,7 @@ func TestClientPricing(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(prices) != 2 || prices["a"] != 100 || prices["c"] != 2000000 {
+	if len(prices) != 2 || prices["a"] != (Price{Input: 20, Output: 100}) || prices["c"] != (Price{Output: 2000000}) {
 		t.Fatal(prices)
 	}
 }

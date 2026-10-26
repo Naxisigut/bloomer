@@ -34,7 +34,7 @@ func TestSchemaConnectionsAndAtomicWrites(t *testing.T) {
 	ctx := context.Background()
 	s, path := openTest(t)
 	version, err := s.SchemaVersion(ctx)
-	if err != nil || version != 8 {
+	if err != nil || version != 9 {
 		t.Fatalf("schema: %d %v", version, err)
 	}
 	st, _ := os.Stat(path)

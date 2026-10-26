@@ -1912,6 +1912,36 @@ tbody tr:nth-child(3n) .row-badge {
   color: var(--faint)
 }
 
+.network-rates-table-wrap th.network-rates-window {
+  border-bottom-color: var(--line-strong);
+  color: var(--ink-2);
+  text-align: center
+}
+
+.network-rates-sub {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px
+}
+
+.network-rates-sub.network-rates-gain {
+  color: var(--green)
+}
+
+.network-rates-sub.network-rates-loss {
+  color: var(--red)
+}
+
+.network-rates-tag {
+  margin-left: 6px;
+  padding: 1px 6px;
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--muted);
+  font-size: 11px
+}
+
 .network-token-card {
   min-width: 0;
   max-width: 100%;

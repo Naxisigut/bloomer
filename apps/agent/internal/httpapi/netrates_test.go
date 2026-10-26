@@ -83,7 +83,7 @@ func (fakeStatsClient) Stats(context.Context, netrates.Cohort) (netrates.Snapsho
 	return netrates.Snapshot{}, errStats
 }
 
-func (fakeStatsClient) Pricing(context.Context) (map[string]int64, error) {
+func (fakeStatsClient) Pricing(context.Context) (map[string]netrates.Price, error) {
 	return nil, errStats
 }
 

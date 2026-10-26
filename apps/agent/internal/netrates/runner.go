@@ -19,6 +19,8 @@ import (
 const roundTimeout = 90 * time.Second
 const sampleMaxAge = 10 * time.Minute
 const tokenTrendWindow = 24 * time.Hour
+const longWindow = time.Hour
+const ownRatioLookback = 7 * 24 * time.Hour
 
 type netRateStore interface {
 	LoadNetRateBaseline(ctx context.Context) (Snapshot, bool, error)
@@ -32,8 +34,11 @@ type netRateStore interface {
 
 type statsClient interface {
 	Stats(ctx context.Context, cohort Cohort) (Snapshot, error)
-	Pricing(ctx context.Context) (map[string]int64, error)
+	Pricing(ctx context.Context) (map[string]Price, error)
 }
+
+// OwnTokenTotals reads this account's billed prompt and completion tokens per model since a time.
+type OwnTokenTotals func(ctx context.Context, since time.Time) (map[string]TokenTotals, error)
 
 type controlBridge interface {
 	Models(ctx context.Context) (control.Models, error)
@@ -44,14 +49,31 @@ type controlBridge interface {
 }
 
 type CandidateView struct {
-	Model           string  `json:"model"`
-	Downloaded      bool    `json:"downloaded"`
-	AvgProviders    float64 `json:"avg_providers"`
-	RequestsPerHour float64 `json:"requests_per_hour"`
-	TokensPerHour   float64 `json:"tokens_per_hour"`
-	USDPerHourMicro string  `json:"usd_per_hour_micro"`
-	PriceSource     string  `json:"price_source"`
-	Insufficient    bool    `json:"insufficient"`
+	Model                  string             `json:"model"`
+	Downloaded             bool               `json:"downloaded"`
+	AvgProviders           float64            `json:"avg_providers"`
+	BusyRatio              *float64           `json:"busy_ratio"`
+	RequestsPerHour        float64            `json:"requests_per_hour"`
+	TokensPerHour          float64            `json:"tokens_per_hour"`
+	USDPerHourMicro        string             `json:"usd_per_hour_micro"`
+	TrimmedUSDPerHourMicro *string            `json:"trimmed_usd_per_hour_micro"`
+	Hour                   *CandidateHourView `json:"hour"`
+	PriceSource            string             `json:"price_source"`
+	EffectivePriceMicro    string             `json:"effective_price_micro"`
+	InputRatio             float64            `json:"input_ratio"`
+	RatioSource            string             `json:"ratio_source"`
+	Cohort                 string             `json:"cohort"`
+	Insufficient           bool               `json:"insufficient"`
+}
+
+type CandidateHourView struct {
+	Samples                int      `json:"samples"`
+	AvgProviders           float64  `json:"avg_providers"`
+	BusyRatio              *float64 `json:"busy_ratio"`
+	RequestsPerHour        float64  `json:"requests_per_hour"`
+	TokensPerHour          float64  `json:"tokens_per_hour"`
+	USDPerHourMicro        string   `json:"usd_per_hour_micro"`
+	TrimmedUSDPerHourMicro *string  `json:"trimmed_usd_per_hour_micro"`
 }
 
 type RecommendationView struct {
@@ -80,6 +102,11 @@ type StatusView struct {
 	Switch          SwitchGateView      `json:"switch"`
 	LastError       *string             `json:"last_error"`
 	IntervalMinutes int                 `json:"interval_minutes"`
+
+	LongWindowMinutes    int      `json:"long_window_minutes"`
+	SwitchAdvantageRatio float64  `json:"switch_advantage_ratio"`
+	ChipTiers            []string `json:"chip_tiers"`
+	MemoryGB             int      `json:"memory_gb"`
 }
 
 type TokenTrendPointView struct {
@@ -127,7 +154,9 @@ type Runner struct {
 	interval       time.Duration
 	minSwitch      time.Duration
 	wakeSwitch     chan struct{}
-	prices         map[string]int64
+	prices         map[string]Price
+	networkRatio   float64
+	ownTotals      OwnTokenTotals
 	lastSnapshotAt time.Time
 	view           StatusView
 }
@@ -157,8 +186,18 @@ func NewRunner(cfg config.NetworkRates, settings *Settings, store netRateStore, 
 		interval:   time.Duration(cfg.IntervalMinutes) * time.Minute,
 		minSwitch:  time.Duration(cfg.SwitchMinIntervalMinutes) * time.Minute,
 		wakeSwitch: make(chan struct{}, 1),
-		view:       StatusView{Enabled: true, WindowSamples: cfg.WindowSamples, IntervalMinutes: cfg.IntervalMinutes, Candidates: []CandidateView{}},
+		view: StatusView{
+			Enabled: true, WindowSamples: cfg.WindowSamples, IntervalMinutes: cfg.IntervalMinutes, Candidates: []CandidateView{},
+			LongWindowMinutes: int(longWindow / time.Minute), SwitchAdvantageRatio: cfg.SwitchAdvantageRatio,
+			ChipTiers: append([]string{}, cfg.ChipTiers...), MemoryGB: cfg.MemoryGB,
+		},
 	}
+}
+
+// WithOwnTokenTotals lets estimates use this account's own prompt/completion ratio per model.
+func (r *Runner) WithOwnTokenTotals(fn OwnTokenTotals) *Runner {
+	r.ownTotals = fn
+	return r
 }
 
 func (r *Runner) Run(ctx context.Context) {
@@ -281,8 +320,12 @@ func (r *Runner) SetAutoSwitch(on bool) (StatusView, error) {
 func (r *Runner) TokenTrend(ctx context.Context) (TokenTrendView, error) {
 	r.mu.RLock()
 	models := make([]string, 0, len(r.view.Candidates))
+	tierModels := map[string]bool{}
 	for _, candidate := range r.view.Candidates {
 		models = append(models, candidate.Model)
+		if candidate.Cohort == CohortTier {
+			tierModels[candidate.Model] = true
+		}
 	}
 	since := r.now().Add(-tokenTrendWindow)
 	r.mu.RUnlock()
@@ -290,7 +333,13 @@ func (r *Runner) TokenTrend(ctx context.Context) (TokenTrendView, error) {
 	if err != nil {
 		return TokenTrendView{}, err
 	}
-	computed := OutputTokenTrend(intervals, models)
+	scoped := intervals[:0:0]
+	for _, iv := range intervals {
+		if (iv.Scope == ScopeTier) == tierModels[iv.Model] {
+			scoped = append(scoped, iv)
+		}
+	}
+	computed := OutputTokenTrend(scoped, models)
 	view := TokenTrendView{Series: make([]TokenTrendSeriesView, 0, len(computed))}
 	for _, series := range computed {
 		points := make([]TokenTrendPointView, 0, len(series.Points))
@@ -353,6 +402,11 @@ func (r *Runner) runCollect(parent context.Context) {
 			r.prices = prices
 			r.mu.Unlock()
 		}
+		if ratio := NetworkRatio(statsSnap); ratio > 0 {
+			r.mu.Lock()
+			r.networkRatio = ratio
+			r.mu.Unlock()
+		}
 		if err := r.persistSnapshot(ctx, statsSnap, now); err != nil {
 			r.log.Warn("network rates persist failed", "error", err)
 		} else {
@@ -394,7 +448,15 @@ func (r *Runner) loadEstimateState(ctx context.Context, now time.Time) (estimate
 		return estimateState{}, err
 	}
 	downloaded, modelsUnavailable := r.downloadedModels(ctx)
-	cands, samples := Estimate(intervals, r.cfg.WindowSamples, r.priceMap(), r.cfg.FallbackModel, downloaded, r.cfg.MinProviders)
+	r.mu.RLock()
+	networkRatio := r.networkRatio
+	r.mu.RUnlock()
+	cands, samples := Estimate(EstimateInput{
+		Intervals: intervals, Now: now, Window: r.cfg.WindowSamples, LongWindow: longWindow,
+		Prices: r.priceMap(), FallbackModel: r.cfg.FallbackModel, Downloaded: downloaded,
+		MinProviders: r.cfg.MinProviders, TierScope: len(r.cfg.ChipTiers) > 0,
+		OwnRatios: r.ownRatios(ctx, now), NetworkRatio: networkRatio,
+	})
 	rec := Recommend(cands, samples, r.cfg.WindowSamples, r.cfg.NearZeroMicroUSDPerHour, r.cfg.FallbackModel)
 	current, currentOK := r.readCurrentModel(ctx, now)
 	autoSwitch, autoSince, lastSwitchAt, backoffUntil, _ := r.settings.Snapshot()
@@ -422,6 +484,10 @@ func (r *Runner) applyEstimateViewLocked(st estimateState) {
 	r.view.AutoSwitchSince = formatTimePtr(st.autoSince)
 	r.view.WindowSamples = r.cfg.WindowSamples
 	r.view.IntervalMinutes = r.cfg.IntervalMinutes
+	r.view.LongWindowMinutes = int(longWindow / time.Minute)
+	r.view.SwitchAdvantageRatio = r.cfg.SwitchAdvantageRatio
+	r.view.ChipTiers = append([]string{}, r.cfg.ChipTiers...)
+	r.view.MemoryGB = r.cfg.MemoryGB
 	r.view.Samples = st.samples
 	r.view.UpdatedAt = formatTime(st.now)
 	r.view.CurrentModel = optionalString(st.current, st.currentOK)
@@ -445,17 +511,29 @@ func (r *Runner) publishSwitchView(st estimateState) StatusView {
 	return cloneStatus(r.view)
 }
 
-func (r *Runner) priceMap() map[string]int64 {
+func (r *Runner) priceMap() map[string]Price {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	if len(r.prices) == 0 {
 		return nil
 	}
-	out := make(map[string]int64, len(r.prices))
+	out := make(map[string]Price, len(r.prices))
 	for k, v := range r.prices {
 		out[k] = v
 	}
 	return out
+}
+
+func (r *Runner) ownRatios(ctx context.Context, now time.Time) map[string]float64 {
+	if r.ownTotals == nil {
+		return nil
+	}
+	totals, err := r.ownTotals(ctx, now.Add(-ownRatioLookback))
+	if err != nil {
+		r.log.Warn("network rates own token totals unavailable", "error", err)
+		return nil
+	}
+	return OwnRatios(totals)
 }
 
 func (r *Runner) persistSnapshot(ctx context.Context, snap Snapshot, now time.Time) error {
@@ -469,7 +547,7 @@ func (r *Runner) persistSnapshot(ctx context.Context, snap Snapshot, now time.Ti
 	var intervals []Interval
 	valid := false
 	if ok {
-		intervals, valid = Diff(prev, snap, r.interval)
+		intervals, valid = Diff(prev, snap, r.interval, r.cfg.ChipTiers)
 		if !valid {
 			intervals = nil
 		}
@@ -827,12 +905,33 @@ func candidateViews(cands []Candidate) []CandidateView {
 	out := make([]CandidateView, len(cands))
 	for i, c := range cands {
 		out[i] = CandidateView{
-			Model: c.Model, Downloaded: c.Downloaded, AvgProviders: c.AvgProviders,
+			Model: c.Model, Downloaded: c.Downloaded, AvgProviders: c.AvgProviders, BusyRatio: c.BusyRatio,
 			RequestsPerHour: c.RequestsPerHour, TokensPerHour: c.TokensPerHour,
-			USDPerHourMicro: strconv.FormatInt(c.USDPerHourMicro, 10), PriceSource: c.PriceSource, Insufficient: c.Insufficient,
+			USDPerHourMicro: strconv.FormatInt(c.USDPerHourMicro, 10), TrimmedUSDPerHourMicro: microString(c.TrimmedUSDPerHourMicro),
+			Hour: hourView(c.Hour), PriceSource: c.PriceSource, EffectivePriceMicro: strconv.FormatInt(c.EffectivePriceMicro, 10),
+			InputRatio: c.InputRatio, RatioSource: c.RatioSource, Cohort: c.Cohort, Insufficient: c.Insufficient,
 		}
 	}
 	return out
+}
+
+func hourView(w *WindowStats) *CandidateHourView {
+	if w == nil {
+		return nil
+	}
+	return &CandidateHourView{
+		Samples: w.Samples, AvgProviders: w.AvgProviders, BusyRatio: w.BusyRatio,
+		RequestsPerHour: w.RequestsPerHour, TokensPerHour: w.TokensPerHour,
+		USDPerHourMicro: strconv.FormatInt(w.USDPerHourMicro, 10), TrimmedUSDPerHourMicro: microString(w.TrimmedUSDPerHourMicro),
+	}
+}
+
+func microString(v *int64) *string {
+	if v == nil {
+		return nil
+	}
+	s := strconv.FormatInt(*v, 10)
+	return &s
 }
 
 func recommendationView(rec *Recommendation) *RecommendationView {
@@ -884,6 +983,7 @@ func optionalString(v string, ok bool) *string {
 func cloneStatus(v StatusView) StatusView {
 	cp := v
 	cp.Candidates = append([]CandidateView{}, v.Candidates...)
+	cp.ChipTiers = append([]string{}, v.ChipTiers...)
 	if v.Recommendation != nil {
 		rec := *v.Recommendation
 		cp.Recommendation = &rec

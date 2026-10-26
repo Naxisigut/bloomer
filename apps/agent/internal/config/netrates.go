@@ -19,6 +19,7 @@ type NetworkRates struct {
 	SwitchAdvantageRatio     float64  `json:"switch_advantage_ratio"`
 	FallbackModel            string   `json:"fallback_model"`
 	ChipFamilies             []string `json:"chip_families"`
+	ChipTiers                []string `json:"chip_tiers"`
 	MemoryGB                 int      `json:"memory_gb"`
 	MinProviders             int      `json:"min_providers"`
 	NearZeroMicroUSDPerHour  int64    `json:"near_zero_micro_usd_per_hour"`
@@ -34,6 +35,7 @@ func DefaultNetworkRates() NetworkRates {
 		SwitchAdvantageRatio:     0.2,
 		FallbackModel:            "gemma-4-26b-qat-4bit",
 		ChipFamilies:             []string{"M4", "M5", "M6"},
+		ChipTiers:                []string{"Pro"},
 		MemoryGB:                 64,
 		MinProviders:             3,
 		NearZeroMicroUSDPerHour:  1000,
@@ -65,6 +67,19 @@ func (n NetworkRates) Validate() error {
 			return fmt.Errorf("network_rates.chip_families contains duplicate %q", f)
 		}
 		seen[f] = true
+	}
+	if len(n.ChipTiers) > 8 {
+		return errors.New("network_rates.chip_tiers must contain at most 8 entries")
+	}
+	seenTier := map[string]bool{}
+	for _, tier := range n.ChipTiers {
+		if !chipFamilyID.MatchString(tier) {
+			return errors.New("network_rates.chip_tiers entries must be 1 to 16 alphanumeric characters")
+		}
+		if seenTier[tier] {
+			return fmt.Errorf("network_rates.chip_tiers contains duplicate %q", tier)
+		}
+		seenTier[tier] = true
 	}
 	if n.MemoryGB < 1 || n.MemoryGB > 1024 {
 		return errors.New("network_rates.memory_gb must be between 1 and 1024")

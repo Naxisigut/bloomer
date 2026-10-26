@@ -115,5 +115,6 @@ func disabledNetworkRates() netrates.StatusView {
 		Enabled: false, AutoSwitch: false, AutoSwitchSince: nil, WindowSamples: 6, Samples: 0, IntervalMinutes: 0,
 		UpdatedAt: nil, SnapshotAt: nil, CurrentModel: nil, Recommendation: nil,
 		Candidates: []netrates.CandidateView{}, Switch: netrates.SwitchGateView{}, LastError: nil,
+		ChipTiers: []string{},
 	}
 }
