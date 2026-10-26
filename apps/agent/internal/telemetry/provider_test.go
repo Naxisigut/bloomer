@@ -14,7 +14,7 @@ import (
 
 func TestProviderFreshStaleMissingAndProcessIdentity(t *testing.T) {
 	now := time.Date(2026, 10, 19, 2, 0, 0, 0, time.UTC)
-	base := map[string]any{"schema": 1, "pid": 42, "version": "0.9.22", "written_at": now.Unix(), "current_model": "model-a", "warm_models": []string{"model-a"}, "process_identity": map[string]any{"pid": 42, "start_time_micros": 12345}, "trust": map[string]any{"status": "online", "trust_level": "hardware", "reason": "secret error"}, "auth_token": "secret-token"}
+	base := map[string]any{"schema": 1, "pid": 42, "version": "0.9.22", "written_at": now.Unix(), "current_model": "model-a", "warm_models": []string{"model-a"}, "process_identity": map[string]any{"pid": 42, "start_time_micros": 12345}, "stats": map[string]any{"requests_served": 7}, "trust": map[string]any{"status": "online", "trust_level": "hardware", "reason": "secret error"}, "auth_token": "secret-token"}
 	for _, tc := range []struct {
 		name   string
 		change func(map[string]any)
@@ -65,8 +65,11 @@ func TestProviderFreshStaleMissingAndProcessIdentity(t *testing.T) {
 				}
 			}
 			encoded, _ := json.Marshal(s)
-			if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "private error") {
+			if strings.Contains(string(encoded), "secret") || strings.Contains(string(encoded), "private error") || strings.Contains(string(encoded), "requests_served") || strings.Contains(string(encoded), "process_start") {
 				t.Fatal("non-whitelisted provider data leaked")
+			}
+			if tc.name == "fresh" && (s.ProcessStartMicros == nil || *s.ProcessStartMicros != 12345 || s.RequestsServed == nil || *s.RequestsServed != 7) {
+				t.Fatal("fresh state did not keep process and request identity")
 			}
 		})
 	}

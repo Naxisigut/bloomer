@@ -34,6 +34,7 @@ type daemonState struct {
 		KVBackend *string `json:"kv_backend"`
 		LoadError *string `json:"load_error"`
 	} `json:"slots"`
+	Stats json.RawMessage `json:"stats"`
 }
 
 func (p *Sampler) provider(ctx context.Context, s *Sample) {
@@ -81,6 +82,9 @@ func (p *Sampler) provider(ctx context.Context, s *Sample) {
 	s.ProviderPID = d.PID
 	s.ProviderRunning = &alive
 	s.Quality["provider_running"] = OK
+	if identity != nil {
+		s.ProcessStartMicros = Ptr(*identity)
+	}
 	seconds, fraction := math.Modf(*d.WrittenAt)
 	at := time.Unix(int64(seconds), int64(fraction*1e9)).UTC().Truncate(time.Microsecond)
 	s.ProviderStateAt = &at
@@ -113,6 +117,7 @@ func (p *Sampler) provider(ctx context.Context, s *Sample) {
 		s.InferenceActive = d.InferenceActive
 		s.Quality["inference_active"] = OK
 	}
+	s.RequestsServed = requestsServed(d.Stats)
 	if d.RequestWorkPending != nil {
 		s.RequestWorkPending = d.RequestWorkPending
 		s.Quality["request_work_pending"] = OK
@@ -154,6 +159,19 @@ func (p *Sampler) provider(ctx context.Context, s *Sample) {
 	s.Quality["model_ready"] = OK
 	// Schema 1 has no authoritative connected flag or dispatch tier. In
 	// particular, trust.status=online is a trust verdict, not a socket probe.
+}
+
+func requestsServed(raw json.RawMessage) *uint64 {
+	if len(raw) == 0 || string(raw) == "null" {
+		return nil
+	}
+	var stats struct {
+		RequestsServed *uint64 `json:"requests_served"`
+	}
+	if json.Unmarshal(raw, &stats) != nil {
+		return nil
+	}
+	return stats.RequestsServed
 }
 
 // Optional alert evidence must not invalidate the existing process/model fields.

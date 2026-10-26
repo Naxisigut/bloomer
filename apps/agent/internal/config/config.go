@@ -35,17 +35,18 @@ type Config struct {
 	Alert                  Alert        `json:"alert"`
 	NetworkRates           NetworkRates `json:"network_rates"`
 	RemoteControlEnabled   bool         `json:"remote_control_enabled"`
-	DarkbloomBinary        string `json:"darkbloom_binary"`
-	CollectionEnabled      bool   `json:"collection_enabled"`
-	DeviceStateEnabled     bool   `json:"device_state_enabled"`
-	ProviderStateFile      string `json:"provider_state_file"`
-	DataDir                string `json:"data_dir"`
-	LogDir                 string `json:"log_dir"`
-	Listen                 string `json:"listen"`
-	UpstreamURL            string `json:"upstream_url"`
-	UpstreamCredentialFile string `json:"upstream_credential_file"`
-	AccessTokenFile        string `json:"access_token_file"`
-	AccountID              string `json:"account_id,omitempty"`
+	LongTaskRestartEnabled bool         `json:"long_task_restart_enabled"`
+	DarkbloomBinary        string       `json:"darkbloom_binary"`
+	CollectionEnabled      bool         `json:"collection_enabled"`
+	DeviceStateEnabled     bool         `json:"device_state_enabled"`
+	ProviderStateFile      string       `json:"provider_state_file"`
+	DataDir                string       `json:"data_dir"`
+	LogDir                 string       `json:"log_dir"`
+	Listen                 string       `json:"listen"`
+	UpstreamURL            string       `json:"upstream_url"`
+	UpstreamCredentialFile string       `json:"upstream_credential_file"`
+	AccessTokenFile        string       `json:"access_token_file"`
+	AccountID              string       `json:"account_id,omitempty"`
 }
 
 func Defaults() (Config, error) {
@@ -55,14 +56,15 @@ func Defaults() (Config, error) {
 	}
 	data := filepath.Join(home, "Library", "Application Support", "Bloomer", "agent")
 	return Config{
-		Alert:                DefaultAlert(filepath.Join(data, "bark.key")),
-		NetworkRates:         DefaultNetworkRates(),
-		RemoteControlEnabled: true,
-		DarkbloomBinary:      filepath.Join(home, ".darkbloom", "bin", "darkbloom"),
-		CollectionEnabled:    true,
-		DeviceStateEnabled:   true,
-		ProviderStateFile:    filepath.Join(home, ".darkbloom", "daemon-state.json"),
-		DataDir:              data, LogDir: filepath.Join(home, "Library", "Logs", "Bloomer", "agent"),
+		Alert:                  DefaultAlert(filepath.Join(data, "bark.key")),
+		NetworkRates:           DefaultNetworkRates(),
+		RemoteControlEnabled:   true,
+		LongTaskRestartEnabled: false,
+		DarkbloomBinary:        filepath.Join(home, ".darkbloom", "bin", "darkbloom"),
+		CollectionEnabled:      true,
+		DeviceStateEnabled:     true,
+		ProviderStateFile:      filepath.Join(home, ".darkbloom", "daemon-state.json"),
+		DataDir:                data, LogDir: filepath.Join(home, "Library", "Logs", "Bloomer", "agent"),
 		Listen: "127.0.0.1:17890", UpstreamURL: "https://api.darkbloom.dev/v1/provider/account-earnings",
 		UpstreamCredentialFile: filepath.Join(home, ".darkbloom", "auth_token"),
 	}, nil

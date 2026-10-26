@@ -1,5 +1,6 @@
 {
   "remote_control_enabled": true,
+  "long_task_restart_enabled": false,
   "darkbloom_binary": "~/.darkbloom/bin/darkbloom",
   "collection_enabled": true,
   "device_state_enabled": true,

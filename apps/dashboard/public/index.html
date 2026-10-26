@@ -157,8 +157,9 @@
           <div class="panel device-tabs-panel">
           <div class="device-tab-pane device-state-panel" id="device-state-panel" role="tabpanel" aria-labelledby="device-tab-state"><p id="device-state-message" class="state-message" role="status" hidden>正在读取设备状态…</p><div id="device-state-details" class="device-state-sections"></div></div>
           <div class="device-tab-pane control-panel" id="control-panel" role="tabpanel" aria-labelledby="device-tab-control" hidden>
-            <div class="panel-heading control-panel-heading"><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
+            <div class="panel-heading control-panel-heading"><label class="network-rates-toggle" for="long-task-restart"><input id="long-task-restart" type="checkbox"><span class="switch-track" aria-hidden="true"></span>Qwen3.5 9B 超过 10 分钟强制重启</label><button id="control-refresh" type="button" class="button button-white">刷新模型与记录</button></div>
             <div class="control-content">
+              <p id="long-task-restart-note" class="control-note"></p>
               <div class="control-lifecycle"><button type="button" class="button button-white" data-control="stop" disabled>关闭 Darkbloom</button><button type="button" class="button button-white" data-control="restart" disabled>重启 Darkbloom</button></div>
               <div class="control-model-grid">
                 <div class="control-block"><label for="control-local-models">本地模型（可多选）</label><select id="control-local-models" multiple size="5"></select><div class="control-lifecycle"><button type="button" class="button button-dark" data-control="switch" disabled>切换模型</button><button type="button" class="button button-white" data-control="start" disabled>开启 Darkbloom</button></div><p id="control-local-error" class="control-note"></p></div>
@@ -220,6 +221,9 @@
 
   <dialog id="network-rates-confirm-dialog">
     <form method="dialog"><div class="dialog-header"><h2>确认自动切换设置</h2><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><p id="network-rates-confirm-message"></p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-dark" value="confirm">确认</button></div></form>
+  </dialog>
+  <dialog id="long-task-restart-dialog">
+    <form method="dialog"><div class="dialog-header"><h2>确认强制重启开关</h2><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><p id="long-task-restart-confirm-message"></p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-dark" value="confirm">确认</button></div></form>
   </dialog>
   <dialog id="control-confirm-dialog">
     <form method="dialog"><div class="dialog-header"><h2>确认远程操作</h2><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><p id="control-confirm-message"></p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-dark" value="confirm" id="control-confirm-submit">确认执行</button></div></form>

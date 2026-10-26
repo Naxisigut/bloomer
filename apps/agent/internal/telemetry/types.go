@@ -71,6 +71,10 @@ type Sample struct {
 	ProviderVersion      *string           `json:"provider_version"`
 	ProviderStateAt      *time.Time        `json:"provider_state_at"`
 	Quality              map[string]string `json:"quality"`
+	// Process identity and the completed-request counter stay in memory so a
+	// watchdog can tell one task from the next. They are not device-state API fields.
+	ProcessStartMicros *int64  `json:"-"`
+	RequestsServed     *uint64 `json:"-"`
 }
 
 func NewSample(at time.Time) Sample {

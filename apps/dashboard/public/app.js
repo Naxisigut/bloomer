@@ -100,7 +100,7 @@ const analysisPage = createAnalysisPage({
 const deviceUI = createDeviceUI({ query, selectedDevice, escape, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
 
 const alertUI = createAlertUI({ query, selectedDevice, currentView: () => state.view, escape, dateTime });
-const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
+const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), submitLongTaskRestart: (id, enabled) => client.submitLongTaskRestart(id, enabled), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
 const networkRatesUI = createNetworkRatesUI({ query, submitSettings: (id, auto_switch) => client.submitNetworkRatesSettings(id, auto_switch), selectedDevice, currentView: () => state.view, escape, dateTime });
 
 function renderDevices() {

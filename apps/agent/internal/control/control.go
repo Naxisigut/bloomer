@@ -4,10 +4,12 @@ package control
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -214,6 +216,21 @@ func (m *Manager) Submit(r Request) (Job, error) {
 	if err != nil {
 		return Job{}, err
 	}
+	return m.enqueue(r, args)
+}
+
+// ForceRestart interrupts an in-flight task. It is not reachable from the
+// public control API; callers must already have decided the restart is required.
+func (m *Manager) ForceRestart() (Job, error) {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return Job{}, fail("control_unavailable", 503)
+	}
+	id := fmt.Sprintf("q35-%d-%s", time.Now().UnixNano(), hex.EncodeToString(buf))
+	return m.enqueue(Request{RequestID: id, Action: "force_restart"}, []string{"restart", "--force", "--timeout", "600", "--startup-timeout", "180"})
+}
+
+func (m *Manager) enqueue(r Request, args []string) (Job, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if !m.enabled {

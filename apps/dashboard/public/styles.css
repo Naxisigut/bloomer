@@ -1777,7 +1777,7 @@ tbody tr:nth-child(3n) .row-badge {
 }
 
 .control-panel-heading {
-  justify-content: flex-end;
+  justify-content: space-between;
   padding-bottom: 16px
 }
 
@@ -1828,7 +1828,8 @@ tbody tr:nth-child(3n) .row-badge {
 }
 
 #control-confirm-message,
-#network-rates-confirm-message {
+#network-rates-confirm-message,
+#long-task-restart-confirm-message {
   margin-top: 12px;
   color: var(--ink-2);
   line-height: 1.8;
