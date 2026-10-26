@@ -8,7 +8,7 @@ import (
 
 func TestDefaultNetworkRates(t *testing.T) {
 	n := DefaultNetworkRates()
-	if !n.Enabled || n.IntervalMinutes != 5 || n.WindowSamples != 6 || n.AutoSwitch || n.SwitchMinIntervalMinutes != 30 ||
+	if !n.Enabled || n.IntervalMinutes != 2 || n.WindowSamples != 6 || n.AutoSwitch || n.SwitchMinIntervalMinutes != 30 ||
 		n.SwitchAdvantageRatio != 0.2 || n.FallbackModel != "gemma-4-26b-qat-4bit" || n.MemoryGB != 64 ||
 		n.MinProviders != 3 || n.NearZeroMicroUSDPerHour != 1000 {
 		t.Fatal(n)

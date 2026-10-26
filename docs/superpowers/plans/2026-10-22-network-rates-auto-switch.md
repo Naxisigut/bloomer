@@ -2,7 +2,7 @@
 
 > 规格：`docs/superpowers/specs/2026-10-22-network-rates-auto-switch-design.md`（以规格为准）。代码由子代理编写，本计划只锁定任务边界与接口。
 
-**Goal：** Agent 每 5 分钟采集对照组差值，估算各已下载模型每台每小时收益并推荐，可选自动切换；看板展示推荐、开关与切换记录。
+**Goal：** Agent 每 2 分钟采集对照组差值，估算各已下载模型每台每小时收益并推荐，可选自动切换；看板展示推荐、开关与切换记录。
 
 **Architecture：** 新包 `apps/agent/internal/netrates` 负责拉取、计算与切换决策；SQLite migration 008 存基线、间隔汇总和切换记录；`control.Manager` 作为唯一切换通道；新 HTTP 接口位于 `/v1/device/network-rates`；看板为原生 ES 模块。
 

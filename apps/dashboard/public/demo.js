@@ -48,7 +48,7 @@ function demoNetworkRates(clock) {
       backoff_until: null,
     },
     last_error: null,
-    interval_minutes: 5,
+    interval_minutes: 2,
   };
 }
 

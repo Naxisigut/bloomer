@@ -1,4 +1,4 @@
-const DEFAULT_NETWORK_INTERVAL_MINUTES = 5;
+const DEFAULT_NETWORK_INTERVAL_MINUTES = 2;
 
 function leg(participate, ok, detail) {
   return { participate, ok, detail };

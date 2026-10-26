@@ -4,7 +4,7 @@
 
 ## 目标
 
-Agent 每 5 分钟拉取公开 `GET https://api.darkbloom.dev/v1/stats`，只把「对照组相邻快照差值」按模型汇总入库；用最近 6 个有效间隔估算各已下载模型「同配置机器每台每小时」的接单量、输出 token 与估算 $/h，给出推荐。开关打开时由 Agent 进程内按规则自动 `darkbloom switch`，不依赖看板。关闭时仍采集、展示推荐。
+Agent 每 2 分钟拉取公开 `GET https://api.darkbloom.dev/v1/stats`，只把「对照组相邻快照差值」按模型汇总入库；用最近 6 个有效间隔估算各已下载模型「同配置机器每台每小时」的接单量、输出 token 与估算 $/h，给出推荐。开关打开时由 Agent 进程内按规则自动 `darkbloom switch`，不依赖看板。关闭时仍采集、展示推荐。
 
 ## 已确认的决策
 
@@ -61,7 +61,7 @@ Agent 每 5 分钟拉取公开 `GET https://api.darkbloom.dev/v1/stats`，只把
 {
   "network_rates": {
     "enabled": true,
-    "interval_minutes": 5,
+    "interval_minutes": 2,
     "window_samples": 6,
     "auto_switch": false,
     "switch_min_interval_minutes": 30,

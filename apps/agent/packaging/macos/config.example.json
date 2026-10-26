@@ -13,7 +13,7 @@
   "access_token_file": "~/Library/Application Support/Bloomer/agent/access.token",
   "network_rates": {
     "enabled": true,
-    "interval_minutes": 5,
+    "interval_minutes": 2,
     "window_samples": 6,
     "auto_switch": false,
     "switch_min_interval_minutes": 30,

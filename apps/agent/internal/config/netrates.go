@@ -27,7 +27,7 @@ type NetworkRates struct {
 func DefaultNetworkRates() NetworkRates {
 	return NetworkRates{
 		Enabled:                  true,
-		IntervalMinutes:          5,
+		IntervalMinutes:          2,
 		WindowSamples:            6,
 		AutoSwitch:               false,
 		SwitchMinIntervalMinutes: 30,

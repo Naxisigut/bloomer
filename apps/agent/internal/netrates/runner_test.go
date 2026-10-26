@@ -252,6 +252,8 @@ func (s *seqStats) statsCalls() int {
 func testCfg() config.NetworkRates {
 	c := config.DefaultNetworkRates()
 	c.AutoSwitch = false
+	// Fixtures are spaced 5 minutes apart, so this stays 5 even when the product default changes.
+	c.IntervalMinutes = 5
 	return c
 }
 
