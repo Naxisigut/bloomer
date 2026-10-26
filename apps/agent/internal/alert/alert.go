@@ -56,6 +56,7 @@ type engineState struct {
 	Rules        map[string]*ruleState `json:"rules"`
 	LastSampleAt time.Time             `json:"last_sample_at"`
 	LastSession  string                `json:"last_session"`
+	LastProcess  string                `json:"last_process"`
 	Changes      []time.Time           `json:"changes"`
 }
 type Sender interface {
@@ -240,11 +241,17 @@ func (m *Manager) verdicts(s telemetry.Sample, state *engineState) map[string]ve
 	}
 	state.Changes = changes
 	if running && fresh && s.SessionID != nil && *s.SessionID != "" && s.Quality["session_id"] == telemetry.OK {
-		if state.LastSession != "" && state.LastSession != *s.SessionID {
+		// Restarts replace the process. Only a session change inside the same process is a reconnect.
+		// A sample with no process identity updates the session and is not counted.
+		process := processIdentity(s)
+		if process != "" && state.LastProcess != "" && state.LastSession != "" && state.LastSession != *s.SessionID && state.LastProcess == process {
 			state.Changes = append(state.Changes, s.CollectedAt)
 		}
 		state.LastSession = *s.SessionID
-		v["connection_flapping"] = known(len(state.Changes) >= p.FlapChanges, 1, fmt.Sprintf("过去 %d 分钟会话变化 %d 次", p.FlapWindowMinutes, len(state.Changes)))
+		if process != "" {
+			state.LastProcess = process
+		}
+		v["connection_flapping"] = known(len(state.Changes) >= p.FlapChanges, 1, fmt.Sprintf("过去 %d 分钟断线重连 %d 次（进程重启导致的会话变化不计入）", p.FlapWindowMinutes, len(state.Changes)))
 	}
 	if connected && s.LastDeviceEarningAt != nil && !s.LastDeviceEarningAt.After(s.CollectedAt) {
 		threshold := p.NoEarningsMinutes
@@ -260,6 +267,12 @@ func (m *Manager) verdicts(s telemetry.Sample, state *engineState) map[string]ve
 		v["no_earnings"] = known(gap > time.Duration(threshold)*time.Minute, 1, fmt.Sprintf("本机设备已有 %s无收益，当前阈值 %d 分钟", duration(gap), threshold))
 	}
 	return v
+}
+func processIdentity(s telemetry.Sample) string {
+	if s.ProviderPID == nil || s.ProcessStartMicros == nil {
+		return ""
+	}
+	return fmt.Sprintf("%d:%d", *s.ProviderPID, *s.ProcessStartMicros)
 }
 func duration(d time.Duration) string {
 	if d < 0 {

@@ -3,6 +3,7 @@ package alert
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -52,6 +53,8 @@ func sample(at time.Time) telemetry.Sample {
 	s.ModelReady = telemetry.Ptr(true)
 	s.TrustReceivedAt = telemetry.Ptr(float64(at.Unix()) - 20)
 	s.SessionID = telemetry.Ptr("session-a")
+	s.ProviderPID = telemetry.Ptr(4242)
+	s.ProcessStartMicros = telemetry.Ptr(int64(1_700_000_000_000_000))
 	s.LastDeviceEarningAt = telemetry.Ptr(at.Add(-time.Minute))
 	for _, key := range []string{"provider_running", "model_ready", "trust_received_at", "session_id"} {
 		s.Quality[key] = telemetry.OK
@@ -194,7 +197,7 @@ func TestConnectionFlappingWindowSurvivesRestart(t *testing.T) {
 	s.SessionID = telemetry.Ptr("5")
 	evaluate(t, m, s)
 	rows := history(t, m)
-	if len(rows) != 1 || rows[0].Type != "connection_flapping" || rows[0].Level != "active" || !strings.Contains(rows[0].Body, "5 次") {
+	if len(rows) != 1 || rows[0].Type != "connection_flapping" || rows[0].Level != "active" || !strings.Contains(rows[0].Title, "连接频繁重连") || !strings.Contains(rows[0].Body, "过去 60 分钟断线重连 5 次（进程重启导致的会话变化不计入）") {
 		t.Fatalf("flapping: %+v", rows)
 	}
 	s = sample(base.Add(65 * time.Minute))
@@ -203,6 +206,135 @@ func TestConnectionFlappingWindowSurvivesRestart(t *testing.T) {
 	rows = history(t, m)
 	if len(rows) != 2 || rows[0].Event != "recovered" {
 		t.Fatalf("window did not expire: %+v", rows)
+	}
+}
+func setProcess(s *telemetry.Sample, pid int, start int64) {
+	s.ProviderPID = telemetry.Ptr(pid)
+	s.ProcessStartMicros = telemetry.Ptr(start)
+}
+func flapState(t *testing.T, m *Manager) (session, process string, changes int) {
+	t.Helper()
+	var body string
+	if err := m.db.ReadDB().QueryRow("SELECT state_json FROM alert_state WHERE id=1").Scan(&body); err != nil {
+		t.Fatal(err)
+	}
+	var state struct {
+		LastSession string      `json:"last_session"`
+		LastProcess string      `json:"last_process"`
+		Changes     []time.Time `json:"changes"`
+	}
+	if err := json.Unmarshal([]byte(body), &state); err != nil {
+		t.Fatal(err)
+	}
+	return state.LastSession, state.LastProcess, len(state.Changes)
+}
+func TestProcessRestartsDoNotCountAsFlapping(t *testing.T) {
+	m, _, _ := setup(t)
+	pid, start := 100, int64(1000)
+	for i := 0; i <= 8; i++ {
+		s := sample(base.Add(time.Duration(i) * time.Minute))
+		if i > 0 {
+			if i%2 == 1 {
+				pid++
+			} else {
+				start++
+			}
+		}
+		setProcess(&s, pid, start)
+		s.SessionID = telemetry.Ptr(fmt.Sprintf("restart-%d", i))
+		evaluate(t, m, s)
+	}
+	if len(history(t, m)) != 0 {
+		t.Fatal("process restarts counted as reconnects")
+	}
+	if _, process, changes := flapState(t, m); process != fmt.Sprintf("%d:%d", pid, start) || changes != 0 {
+		t.Fatalf("restart state: process=%s changes=%d", process, changes)
+	}
+}
+func TestMixedReconnectsAndRestartsCountOnlyReconnects(t *testing.T) {
+	m, _, _ := setup(t)
+	type step struct {
+		pid   int
+		start int64
+	}
+	// Three in-process reconnects and three restarts. Only reconnects count.
+	steps := []step{{1, 1000}, {1, 1000}, {2, 1000}, {2, 1000}, {2, 2000}, {2, 2000}, {3, 2000}}
+	for i, step := range steps {
+		s := sample(base.Add(time.Duration(i) * time.Minute))
+		setProcess(&s, step.pid, step.start)
+		s.SessionID = telemetry.Ptr(fmt.Sprintf("mix-%d", i))
+		evaluate(t, m, s)
+	}
+	if len(history(t, m)) != 0 {
+		t.Fatal("three reconnects and three restarts triggered flapping")
+	}
+	if _, _, changes := flapState(t, m); changes != 3 {
+		t.Fatalf("counted %d, want 3 reconnects", changes)
+	}
+	for i := 7; i <= 8; i++ {
+		s := sample(base.Add(time.Duration(i) * time.Minute))
+		setProcess(&s, 3, 2000)
+		s.SessionID = telemetry.Ptr(fmt.Sprintf("mix-%d", i))
+		evaluate(t, m, s)
+	}
+	rows := history(t, m)
+	if len(rows) != 1 || rows[0].Type != "connection_flapping" || !strings.Contains(rows[0].Body, "过去 60 分钟断线重连 5 次（进程重启导致的会话变化不计入）") || strings.Contains(rows[0].Body, "8 次") {
+		t.Fatalf("detail counted restarts: %+v", rows)
+	}
+}
+func TestMissingProcessIdentityDoesNotCount(t *testing.T) {
+	m, _, _ := setup(t)
+	first := sample(base)
+	setProcess(&first, 4, 400)
+	first.SessionID = telemetry.Ptr("known")
+	evaluate(t, m, first)
+	for i := 1; i <= 6; i++ {
+		s := sample(base.Add(time.Duration(i) * time.Minute))
+		s.SessionID = telemetry.Ptr(fmt.Sprintf("missing-%d", i))
+		switch i % 3 {
+		case 1:
+			s.ProviderPID = nil
+			s.ProcessStartMicros = telemetry.Ptr(int64(400))
+		case 2:
+			s.ProviderPID = telemetry.Ptr(4)
+			s.ProcessStartMicros = nil
+		default:
+			s.ProviderPID = nil
+			s.ProcessStartMicros = nil
+		}
+		evaluate(t, m, s)
+		session, process, changes := flapState(t, m)
+		if session != *s.SessionID || process != "4:400" || changes != 0 {
+			t.Fatalf("missing identity counted: session=%s process=%s changes=%d", session, process, changes)
+		}
+	}
+	if len(history(t, m)) != 0 {
+		t.Fatal("missing process identity triggered flapping")
+	}
+}
+func TestLegacyStateWithoutProcessIdentityLoads(t *testing.T) {
+	m, _, _ := setup(t)
+	raw := `{"rules":{},"last_sample_at":"2026-10-21T01:59:00Z","last_session":"old-session","changes":[]}`
+	if err := m.db.Write(context.Background(), func(tx *sql.Tx) error {
+		_, err := tx.ExecContext(context.Background(), "INSERT INTO alert_state VALUES(1,?) ON CONFLICT(id) DO UPDATE SET state_json=excluded.state_json", raw)
+		return err
+	}); err != nil {
+		t.Fatal(err)
+	}
+	s := sample(base)
+	setProcess(&s, 9, 900)
+	s.SessionID = telemetry.Ptr("new-session")
+	evaluate(t, m, s)
+	session, process, changes := flapState(t, m)
+	if session != "new-session" || process != "9:900" || changes != 0 || len(history(t, m)) != 0 {
+		t.Fatalf("legacy first change counted: session=%s process=%s changes=%d history=%d", session, process, changes, len(history(t, m)))
+	}
+	s = sample(base.Add(time.Minute))
+	setProcess(&s, 9, 900)
+	s.SessionID = telemetry.Ptr("reconnected")
+	evaluate(t, m, s)
+	if _, _, changes = flapState(t, m); changes != 1 || len(history(t, m)) != 0 {
+		t.Fatalf("later reconnect not counted once: changes=%d", changes)
 	}
 }
 func TestEarningsNightThresholdAndPrerequisites(t *testing.T) {
