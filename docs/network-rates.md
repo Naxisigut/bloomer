@@ -28,7 +28,7 @@ Agent 定期拉取公开统计与官方价格，按对照组差值估算各模�
 
 以下条件**全部**满足才会提交切换：
 
-1. 看板开关 `auto_switch` 为开（持久化在数据目录 `network-rates.json`）。
+1. Agent 开关 `auto_switch` 为开（持久化在数据目录 `network-rates.json`）。看板不再提供此开关。
 2. 开启时间距今满 `switch_min_interval_minutes`（默认 30 分钟），且已有 6 个有效间隔。
 3. 距上次切换满 30 分钟：取控制记录中最近 `switch` / `start` 的 `created_at` 与自动切换检查点中的较晚者。
 4. 无执行中的控制任务；本机最新设备状态（10 分钟内）能读到 `current_model`。
@@ -39,7 +39,7 @@ Agent 定期拉取公开统计与官方价格，按对照组差值估算各模�
 
 ## 配置
 
-合并进 Agent 配置 `network_rates`；`enabled: false` 时不采集，接口返回 `enabled: false`。`auto_switch` 仅为首次创建 `network-rates.json` 的默认值，运行中由看板开关覆盖。
+合并进 Agent 配置 `network_rates`；`enabled: false` 时不采集，接口返回 `enabled: false`。`auto_switch` 仅为首次创建 `network-rates.json` 的默认值，运行中由该文件或 Agent 的 `POST /v1/device/network-rates/settings` 覆盖；看板不再提交此设置。
 
 示例见 `apps/agent/packaging/macos/config.example.json`。
 
@@ -47,9 +47,9 @@ Agent 定期拉取公开统计与官方价格，按对照组差值估算各模�
 
 Bearer 认证，无查询参数：
 
-- `GET /v1/device/network-rates`：推荐、候选、样本数、`interval_minutes`、切换门控（`next_eligible_at`、`blocked_reason`、`backoff_until`）、`last_error`（`stats_unavailable` / `pricing_unavailable` / `models_unavailable`）。另含 `long_window_minutes`（60）、`switch_advantage_ratio`、`chip_tiers`、`memory_gb`，看板据此标注窗口、对照组与「相对当前模型」的涨跌。采集未运行时 `enabled` 为 false，`interval_minutes` 为 0。
+- `GET /v1/device/network-rates`：推荐、候选、样本数、`interval_minutes`、切换门控（`next_eligible_at`、`blocked_reason`、`backoff_until`）、`last_error`（`stats_unavailable` / `pricing_unavailable` / `models_unavailable`）。另含 `long_window_minutes`（60）、`switch_advantage_ratio`、`chip_tiers`、`memory_gb`，看板据此标注窗口、对照组与「相对当前模型」的涨跌。看板不展示切换门控与阻止原因。采集未运行时 `enabled` 为 false，`interval_minutes` 为 0。
 - `POST /v1/device/network-rates/settings`：`{"auto_switch": true|false}`，返回与 GET 相同结构。
-- `GET /v1/device/network-rates/switches`：`{ "switches": [...] }`，最新在前，最多 50 条。
+- `GET /v1/device/network-rates/switches`：`{ "switches": [...] }`，最新在前，最多 50 条。看板不请求此接口。
 - `GET /v1/device/network-rates/token-trend`：`{ "series": [{ "model", "points": [{ "at", "tokens" }] }] }`，最近 24 小时。每个模型一条序列，点从旧到新。`tokens` 与候选表「每台每小时输出 token」相同：`round(delta_tokens / (providers * hours))`，不是各模型合计；每个模型使用与候选相同的对照组（同档或全组）。有候选时只返回这些模型且顺序一致；候选为空时返回间隔中出现过的全部模型，按名称排序。跳过 `providers<=0`、`hours<=0` 或 `delta_tokens<0` 的间隔，不补 0。没有样本时 `series` 为空数组。
 
 契约细节见 `contracts/openapi.yaml`。

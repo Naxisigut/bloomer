@@ -1,9 +1,9 @@
 import { AppError } from './errors.js';
 import { validateDevice } from './connections.js';
 import { demoQuery } from './demo.js';
-import { validateNetworkRatesResponse, validateNetworkRatesSettings, validateNetworkRatesSwitchesResponse, validateNetworkRatesTokenTrendResponse } from './network-rates.js';
+import { validateNetworkRatesResponse, validateNetworkRatesTokenTrendResponse } from './network-rates.js';
 
-const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs', 'long-task-restart': '/v1/device/long-task-restart', 'network-rates': '/v1/device/network-rates', 'network-rates-settings': '/v1/device/network-rates/settings', 'network-rates-switches': '/v1/device/network-rates/switches', 'network-rates-token-trend': '/v1/device/network-rates/token-trend' };
+const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs', 'long-task-restart': '/v1/device/long-task-restart', 'network-rates': '/v1/device/network-rates', 'network-rates-token-trend': '/v1/device/network-rates/token-trend' };
 const messages = {
   analysis_unsupported: '该设备 Agent 尚不支持收益分析，请升级 Agent。',
   device_identity_unavailable: '设备身份尚未识别，暂时无法统计本机收益。',
@@ -55,11 +55,8 @@ function validateResponse(route, body, operation) {
   if (route === 'control-models' && (!Array.isArray(body.local) || !Array.isArray(body.catalog))) throw invalidResponse();
   if (route === 'control-jobs' && (operation ? typeof body.id !== 'string' || typeof body.status !== 'string' : !Array.isArray(body.jobs))) throw invalidResponse();
   if (route === 'long-task-restart' && (Object.keys(body).some(key => key !== 'enabled') || typeof body.enabled !== 'boolean')) throw invalidResponse();
-  if (route === 'network-rates' || route === 'network-rates-settings') {
+  if (route === 'network-rates') {
     try { return validateNetworkRatesResponse(body); } catch { throw invalidResponse(); }
-  }
-  if (route === 'network-rates-switches') {
-    try { return validateNetworkRatesSwitchesResponse(body); } catch { throw invalidResponse(); }
   }
   if (route === 'network-rates-token-trend') {
     try { return validateNetworkRatesTokenTrendResponse(body); } catch { throw invalidResponse(); }
@@ -148,15 +145,11 @@ export function validateLongTaskRestartSettings(body) {
 export function submitLongTaskRestart(device, enabled, options) {
   return queryAgent(device, 'long-task-restart', new URLSearchParams(), options, validateLongTaskRestartSettings({ enabled }));
 }
-export function submitNetworkRatesSettings(device, auto_switch, options) {
-  return queryAgent(device, 'network-rates-settings', new URLSearchParams(), options, validateNetworkRatesSettings({ auto_switch }));
-}
-
 export function createAgentClient(store, options = {}) {
   return {
     query(route, params, id = store.selected, signal) {
       if (id === 'demo') {
-        if (route.startsWith('control') || route === 'alert-test' || route === 'network-rates-settings') return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));
+        if (route.startsWith('control') || route === 'alert-test') return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));
         signal?.throwIfAborted();
         return Promise.resolve(demoQuery(route, params instanceof URLSearchParams ? params : new URLSearchParams(params || {})));
       }
@@ -171,10 +164,6 @@ export function createAgentClient(store, options = {}) {
     submitLongTaskRestart(id, enabled) {
       if (id === 'demo') return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));
       return submitLongTaskRestart(store.get(id), enabled, options);
-    },
-    submitNetworkRatesSettings(id, auto_switch) {
-      if (id === 'demo') return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));
-      return submitNetworkRatesSettings(store.get(id), auto_switch, options);
     },
     async connect(input, save = false) {
       const device = validateDevice(input);

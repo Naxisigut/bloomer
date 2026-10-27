@@ -26,7 +26,7 @@ python3 -m http.server 18080 --bind 127.0.0.1 --directory apps/dashboard/public
 
 ## 全网模型收益（估算）
 
-Agent 可估算对照组模型每台每小时收益并给出推荐；可选按规则自动切换模型。看板展示推荐、开关与切换记录。配置与接口见 [全网模型收益说明](docs/network-rates.md)。
+Agent 可估算对照组模型每台每小时收益并给出推荐；可选按规则自动切换模型。看板展示推荐，不提供自动切换开关、阻止原因或切换记录。配置与接口见 [全网模型收益说明](docs/network-rates.md)。
 
 ## Bark 设备告警
 

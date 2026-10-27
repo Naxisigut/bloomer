@@ -178,16 +178,10 @@
             <div class="panel-heading network-rates-heading">
               <h2>全网模型收益（估算）</h2>
               <div class="network-rates-header-actions">
-                <label class="network-rates-toggle"><input id="network-rates-auto-switch" type="checkbox"><span class="switch-track" aria-hidden="true"></span>自动切换最优模型</label>
-                <p id="network-rates-header-status" class="control-note network-rates-header-status" role="status"></p>
                 <button id="network-rates-refresh" type="button" class="button button-white">刷新</button>
               </div>
             </div>
             <p id="network-rates-message" class="state-message" role="status" hidden></p>
-            <div class="network-rates-content">
-              <h3>最近切换</h3>
-              <div id="network-rates-switches" aria-live="polite"></div>
-            </div>
           </div>
           <div id="network-sticky-sentinel" aria-hidden="true"></div>
           <div class="devices-sticky">
@@ -219,9 +213,6 @@
     </div>
   </div>
 
-  <dialog id="network-rates-confirm-dialog">
-    <form method="dialog"><div class="dialog-header"><h2>确认自动切换设置</h2><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><p id="network-rates-confirm-message"></p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-dark" value="confirm">确认</button></div></form>
-  </dialog>
   <dialog id="long-task-restart-dialog">
     <form method="dialog"><div class="dialog-header"><h2>确认强制重启开关</h2><button class="icon-button" value="cancel" aria-label="关闭">×</button></div><p id="long-task-restart-confirm-message"></p><div class="dialog-actions"><button class="button button-white" value="cancel">取消</button><button class="button button-dark" value="confirm">确认</button></div></form>
   </dialog>

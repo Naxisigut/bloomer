@@ -1,8 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { queryAgent, submitNetworkRatesSettings } from '../public/agent-client.js';
+import { queryAgent } from '../public/agent-client.js';
 import {
-  blockedReasonLabel,
   candidateTableOptions,
   formatShare,
   formatUsdPerHourMicro,
@@ -10,7 +9,6 @@ import {
   relativeToCurrent,
   validateNetworkRatesResponse,
   renderCandidatesTable,
-  renderSwitchRecords,
   renderTokenTrendFigure,
   renderTokenTrendModelChoices,
   tokenTrendAxis,
@@ -24,7 +22,6 @@ import {
   tokenTrendRecentRange,
   tokenTrendSeriesEnd,
   tokenTrendWindow,
-  validateNetworkRatesSettings,
   validateNetworkRatesTokenTrendResponse,
 } from '../public/network-rates.js';
 
@@ -51,26 +48,11 @@ test('hourly micro formatting uses two decimals or finer below one cent', () => 
   assert.equal(formatUsdPerHourMicro('500'), '$0.0005/h');
 });
 
-test('settings payload only accepts auto_switch boolean', () => {
-  assert.deepEqual(validateNetworkRatesSettings({ auto_switch: true }), { auto_switch: true });
-  assert.throws(() => validateNetworkRatesSettings({ auto_switch: 'yes' }), { code: 'invalid_request' });
-  assert.throws(() => validateNetworkRatesSettings({ auto_switch: true, force: true }), { code: 'invalid_request' });
-});
-
-test('blocked reasons map to Chinese labels', () => {
-  assert.equal(blockedReasonLabel('warming_up'), '开启后观察期');
-  assert.equal(blockedReasonLabel('below_threshold'), '优势不足 20%');
-  assert.equal(blockedReasonLabel('custom_code'), 'custom_code');
-});
-
-test('switch records and candidates escape server strings', () => {
+test('candidates escape server strings', () => {
   const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);
   const html = renderCandidatesTable([{ model: '<img onerror=1>', downloaded: false, avg_providers: 1, requests_per_hour: 1, tokens_per_hour: 1, usd_per_hour_micro: '1', price_source: 'fallback', insufficient: true }], escape);
   assert.match(html, /&lt;img onerror=1&gt;/);
   assert.doesNotMatch(html, /<img/);
-  const switches = renderSwitchRecords([{ id: 1, at: '2026-10-22T08:00:00Z', from_model: 'a&b', to_model: 'c', reason: 'better_model', status: 'failed', error: 'command_failed', job_id: 'j', summary: [{ model: 'x<script>', usd_per_hour_micro: '1000', avg_providers: 2 }] }], escape, () => '2026-10-22');
-  assert.match(switches, /a&amp;b/);
-  assert.match(switches, /x&lt;script&gt;/);
 });
 
 test('candidate table shows both windows, cohort, combined price and gain over current model', () => {
@@ -106,14 +88,6 @@ test('candidate table shows both windows, cohort, combined price and gain over c
   assert.equal(formatShare(null), '—');
   assert.equal(formatUsdPerMillionMicro('220000'), '$0.220/M');
   assert.equal(relativeToCurrent('120000', '0'), null);
-});
-
-test('switch records show only the five most recent entries', () => {
-  const items = Array.from({ length: 8 }, (_, index) => ({ id: index, at: '2026-10-22T08:00:00Z', from_model: `from-${index}`, to_model: 'to', reason: 'better_model', status: 'succeeded', error: null, job_id: 'j', summary: [] }));
-  const html = renderSwitchRecords(items, String, () => '2026-10-22');
-  assert.equal(html.match(/<details/g).length, 5);
-  assert.match(html, /from-0/);
-  assert.doesNotMatch(html, /from-5/);
 });
 
 test('token trend range filter slices within the latest 24h payload', () => {
@@ -191,19 +165,7 @@ test('token trend rejects old points payload and draws escaped multi-series curv
 
 test('old agents return network_rates_unsupported for network rates routes', async () => {
   const failure = async (response, route = 'network-rates') => queryAgent(device, route, undefined, { fetcher: async () => response });
-  for (const route of ['network-rates', 'network-rates-switches', 'network-rates-settings', 'network-rates-token-trend']) {
+  for (const route of ['network-rates', 'network-rates-token-trend']) {
     await assert.rejects(failure(new Response('old', { status: 404 }), route), { code: 'network_rates_unsupported' });
   }
-});
-
-test('submitNetworkRatesSettings posts JSON auto_switch body', async () => {
-  let sent;
-  const fetcher = async (url, options) => {
-    sent = { url: url.href, ...options };
-    return Response.json({ ...ratesBody, auto_switch: true });
-  };
-  await submitNetworkRatesSettings(device, true, { fetcher });
-  assert.equal(sent.url, device.url + '/v1/device/network-rates/settings');
-  assert.equal(sent.method, 'POST');
-  assert.deepEqual(JSON.parse(sent.body), { auto_switch: true });
 });

@@ -1623,12 +1623,6 @@ tbody tr:nth-child(3n) .row-badge {
   max-width: 100%
 }
 
-.network-rates-header-status {
-  margin: 0;
-  max-width: min(420px, 100%);
-  text-align: right
-}
-
 .device-tab-pane>.panel-heading {
   padding-top: 18px
 }
@@ -1828,7 +1822,6 @@ tbody tr:nth-child(3n) .row-badge {
 }
 
 #control-confirm-message,
-#network-rates-confirm-message,
 #long-task-restart-confirm-message {
   margin-top: 12px;
   color: var(--ink-2);
@@ -2035,35 +2028,6 @@ tbody tr:nth-child(3n) .row-badge {
   border-radius: 50%;
   background: var(--blue);
   pointer-events: none
-}
-
-.network-rates-switch {
-  padding: 12px 0;
-  border-bottom: 1px solid var(--line);
-  font-size: 14px
-}
-
-.network-rates-switch summary {
-  list-style: none;
-  cursor: pointer
-}
-
-.network-rates-switch summary::-webkit-details-marker {
-  display: none
-}
-
-.network-rates-switch-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px 16px
-}
-
-.network-rates-summary {
-  margin: 10px 0 0;
-  padding-left: 18px;
-  color: var(--muted);
-  line-height: 1.8
 }
 
 /* Alerts */
@@ -2584,11 +2548,6 @@ dialog input::placeholder {
 
   .alert-controls {
     padding: 14px 16px
-  }
-
-  .network-rates-header-status {
-    flex-basis: 100%;
-    text-align: left
   }
 
   .state-message {

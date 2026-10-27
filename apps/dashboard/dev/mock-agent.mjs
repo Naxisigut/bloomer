@@ -3,7 +3,6 @@
 import http from 'node:http';
 import { demoQuery } from '../public/demo.js';
 import { validateControl, validateLongTaskRestartSettings } from '../public/agent-client.js';
-import { validateNetworkRatesSettings } from '../public/network-rates.js';
 
 function mockNetworkRates(autoSwitch) {
   const now = new Date();
@@ -28,8 +27,7 @@ function mockNetworkRates(autoSwitch) {
 }
 
 for (const port of [18190, 18191]) {
-  const jobs = []; let loseFirstResponse = true; let networkRatesAutoSwitch = false; let longTaskRestart = false;
-  const switches = [{ id: 1, at: new Date(Date.now() - 7200_000).toISOString(), from_model: 'mock/model-a', to_model: 'mock/model-b', reason: 'better_model', status: 'succeeded', error: null, job_id: 'mock-switch-1', summary: [{ model: 'mock/model-b', usd_per_hour_micro: '86000', avg_providers: 33.1 }] }];
+  const jobs = []; let loseFirstResponse = true; let longTaskRestart = false;
   const server = http.createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
@@ -44,18 +42,8 @@ for (const port of [18190, 18191]) {
     // Log method/path only; no headers, bodies or tokens.
     console.log(`${port} ${req.method} ${url.pathname}`);
     if (url.pathname.startsWith('/v1/device/network-rates')) {
-      if (req.method === 'POST' && url.pathname === '/v1/device/network-rates/settings') {
-        try {
-          const chunks = []; for await (const chunk of req) chunks.push(chunk);
-          const input = validateNetworkRatesSettings(JSON.parse(Buffer.concat(chunks).toString()));
-          networkRatesAutoSwitch = input.auto_switch;
-          send(200, mockNetworkRates(networkRatesAutoSwitch));
-        } catch { send(400, { code: 'invalid_request' }); }
-        return;
-      }
-      if (req.method === 'GET' && url.pathname === '/v1/device/network-rates/switches') { send(200, { switches }); return; }
       if (req.method === 'GET' && url.pathname === '/v1/device/network-rates/token-trend') { send(200, demoQuery('network-rates-token-trend')); return; }
-      if (req.method === 'GET' && url.pathname === '/v1/device/network-rates') { send(200, mockNetworkRates(networkRatesAutoSwitch)); return; }
+      if (req.method === 'GET' && url.pathname === '/v1/device/network-rates') { send(200, mockNetworkRates(false)); return; }
       send(404, { code: 'not_found' }); return;
     }
     if (url.pathname === '/v1/device/long-task-restart') {

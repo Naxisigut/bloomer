@@ -22,14 +22,13 @@ const encodeCursor = value => btoa(String.fromCharCode(...new TextEncoder().enco
 const decodeCursor = value => JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Uint8Array.from(atob(value.replace(/-/g, '+').replace(/_/g, '/')), character => character.charCodeAt(0))));
 
 const demoHardware = { device_id: 'demo-device', hardware: { os: 'darwin', architecture: 'arm64', chip: 'Apple M4 Max', model: '演示 Mac', logical_cpus: 16, memory_total_bytes: 64 * 2 ** 30 } };
-let demoNetworkRatesAutoSwitch = false;
 
 function demoNetworkRates(clock) {
   const stamp = clock.toISOString();
   return {
     enabled: true,
-    auto_switch: demoNetworkRatesAutoSwitch,
-    auto_switch_since: demoNetworkRatesAutoSwitch ? new Date(+clock - 45 * 60_000).toISOString() : null,
+    auto_switch: false,
+    auto_switch_since: null,
     window_samples: 6,
     samples: 6,
     updated_at: stamp,
@@ -60,7 +59,7 @@ function demoNetworkRates(clock) {
     ],
     switch: {
       next_eligible_at: new Date(+clock + 12 * 60_000).toISOString(),
-      blocked_reason: demoNetworkRatesAutoSwitch ? 'already_optimal' : 'auto_switch_off',
+      blocked_reason: 'auto_switch_off',
       backoff_until: null,
     },
     last_error: null,
@@ -94,24 +93,6 @@ function demoTokenTrend(clock) {
   };
 }
 
-function demoNetworkRatesSwitches(clock) {
-  return {
-    switches: [{
-      id: 1,
-      at: new Date(+clock - 3 * 3600_000).toISOString(),
-      from_model: 'Qwen3-32B',
-      to_model: 'DeepSeek-R1-Distill-Qwen-32B',
-      reason: 'better_model',
-      status: 'succeeded',
-      error: null,
-      job_id: 'demo-switch-1',
-      summary: [
-        { model: 'DeepSeek-R1-Distill-Qwen-32B', usd_per_hour_micro: '139000', avg_providers: 36.2 },
-        { model: 'Qwen3-32B', usd_per_hour_micro: '110000', avg_providers: 39.8 },
-      ],
-    }],
-  };
-}
 function stateSample(id) {
   const quality = Object.fromEntries(sampleFieldKeys().map(key => [key, 'ok']));
   quality.dispatch_tier = 'unsupported';
@@ -217,12 +198,11 @@ export function demoQuery(route, params = new URLSearchParams(), clock = new Dat
   if (route === 'alert-test') throw new AppError(403, 'demo_read_only', '演示设备不发送测试推送。');
   if (route === 'alerts') return { items: [{ id: 1, type: 'coordinator_disconnected', event: 'recovered', level: 'active', device_name: '演示 Mac', title: '演示 Mac · 协调器连接已恢复', body: '设备：演示 Mac\n告警：协调器连接中断\n已恢复，持续 4 小时 21 分钟。', created_at: clock.toISOString(), first_triggered_at: new Date(+clock - 261 * 60_000).toISOString(), last_push_at: clock.toISOString(), recovered: true, duration_seconds: 261 * 60, delivery_status: 'sent', attempts: 1, last_attempt_at: clock.toISOString(), next_attempt_at: null }] };
 
-  if (route.startsWith('control') || route === 'network-rates-settings') throw new AppError(403, 'demo_read_only', '演示设备不执行远程操作。');
+  if (route.startsWith('control')) throw new AppError(403, 'demo_read_only', '演示设备不执行远程操作。');
   if (route === 'long-task-restart') return { enabled: false };
-  if (!['health', 'overview', 'earnings', 'stats', 'analysis', 'device-state', 'network-rates', 'network-rates-switches', 'network-rates-token-trend'].includes(route)) throw new AppError(404, 'not_found', '接口不存在。');
+  if (!['health', 'overview', 'earnings', 'stats', 'analysis', 'device-state', 'network-rates', 'network-rates-token-trend'].includes(route)) throw new AppError(404, 'not_found', '接口不存在。');
   if (route === 'device-state') return demoState(clock);
   if (route === 'network-rates') return demoNetworkRates(clock);
-  if (route === 'network-rates-switches') return demoNetworkRatesSwitches(clock);
   if (route === 'network-rates-token-trend') return demoTokenTrend(clock);
   if (route === 'analysis') return demoAnalysis(params, clock);
   const timezone = params.get('timezone') || 'Asia/Shanghai';

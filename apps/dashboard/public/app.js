@@ -37,7 +37,7 @@ const icons = {
 const pageCopy = {
   overview: ['今日概览', '实时查看设备状态与 Darkbloom 收益'],
   analysis: ['收益分析', '按时间与模型多维度分析收益，点击「查询」后更新，可导出明细'],
-  network: ['全网数据', '对照组模型收益估算、推荐与自动切换'],
+  network: ['全网数据', '对照组模型收益估算与推荐'],
   devices: ['我的设备', '管理连接、查看运行状态与远程操作 Darkbloom'],
   alerts: ['告警记录', '设备告警与推送历史，可发送测试推送'],
 };
@@ -101,7 +101,7 @@ const deviceUI = createDeviceUI({ query, selectedDevice, escape, onRefresh: () =
 
 const alertUI = createAlertUI({ query, selectedDevice, currentView: () => state.view, escape, dateTime });
 const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), submitLongTaskRestart: (id, enabled) => client.submitLongTaskRestart(id, enabled), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
-const networkRatesUI = createNetworkRatesUI({ query, submitSettings: (id, auto_switch) => client.submitNetworkRatesSettings(id, auto_switch), selectedDevice, currentView: () => state.view, escape, dateTime });
+const networkRatesUI = createNetworkRatesUI({ query, selectedDevice, currentView: () => state.view, escape });
 
 function renderDevices() {
   const active = state.selected;
@@ -427,7 +427,7 @@ async function runAutoRefreshCycle() {
 }
 async function autoRefresh() {
   updateClock();
-  if (document.hidden || state.exporting || $('#connect-dialog').open || $('#control-confirm-dialog').open || $('#network-rates-confirm-dialog').open || $('#remove-dialog').open) return;
+  if (document.hidden || state.exporting || $('#connect-dialog').open || $('#control-confirm-dialog').open || $('#remove-dialog').open) return;
   if (state.view === 'alerts') { await alertUI.refresh(); return; }
   deviceUI.refresh();
   if (state.view === 'overview') {
