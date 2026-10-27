@@ -26,7 +26,7 @@
 | `total_usd` / 两种 `*_balance_usd` | string | 仅官方显示值；不参与金额换算或入账 |
 | `email` | string | 丢弃，不入库、不写日志 |
 | `earnings[].id` | integer | 直接从 JSON 原文转文本，不经过浮点；也接受非空字符串 ID |
-| `provider_id` / `provider_key` / `job_id` / `model` | string | 保留源值；Provider 标识不能直接视为物理设备 ID |
+| `provider_id` / `provider_key` / `job_id` / `model` | string | 保留源值；Provider 标识不能直接视为物理设备 ID。`model` 为 `base_reward` 时表示奖励而非模型 |
 | `amount_micro_usd` | integer | int64，允许负调整与合法零值，溢出或小数失败 |
 | `prompt_tokens` / `completion_tokens` | integer | 非负 int64，映射输入和输出 Token |
 | `created_at` | string | 本次为 UTC RFC3339、`Z` 结尾，小数秒有 3/4/5/6 位；存为 UTC 微秒 |
@@ -51,6 +51,8 @@
 本次只触发了 401。403、429、5xx、重定向、超时和异常响应使用合成契约样本/测试，**没有通过压测触发真实限流**。`Retry-After` 的真实服务端形式和限流配额仍待自然出现时核验。
 
 未验证：游标、since、按时间分页、按更新时间读取、账户汇总与明细的原子快照、修正的历史范围、窗口外补回能力、Provider 与设备的可靠映射。不添加这些请求参数，不承诺窗口外历史完整。
+
+奖励记录只在 `model` 字段上可识别（如 `base_reward`），没有独立类别或奖励类型字段。除 `base_reward` 外的其他奖励命名尚未观测，看板识别白名单需按实际数据扩展。
 
 ## 样本与复验
 

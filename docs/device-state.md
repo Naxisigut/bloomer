@@ -84,7 +84,7 @@ schema 3 新增 `device_identity`、`device_state_samples`，schema 4 的路由�
 | `from` / `to` | RFC3339 UTC 半开区间，**必填**；跨度 ≤ 366 天，并受 365 天保留期截取（`meta.range_truncated`） |
 | `timezone` | IANA 时区，**必填** |
 | `granularity` | `hour` / `day` / `month`，默认 `day`；`hour` 时跨度 ≤ 31 天 |
-| `model` | 可重复 0～8 次、不可重复；省略表示全部模型 |
+| `model` | 可重复 0～12 次、不可重复；省略表示全部模型 |
 
 响应含 `timezone`、`granularity`、有效 `from`/`to`（UTC RFC3339Nano）、`totals`、`models`、`series`、`hour_of_day`、`weekday_hour` 与与其他查询接口相同的 `meta`。`models` 列出范围内本机全部模型（**不受** `model` 筛选影响），按金额降序，含 `active_buckets`（该模型在所选粒度下有收益的分桶数）。`totals`、`series`、`hour_of_day`、`weekday_hour` 受 `model` 筛选影响；`weekday_hour` 为所选模型合计，`weekday` 1=周一 … 7=周日（按请求时区）。`series` 仅含有数据的分桶，空数组为 `[]`。金额均为微美元整数字符串；分组过多返回 422，其余错误映射与 `/v1/earnings/stats` 一致。
 

@@ -1,9 +1,10 @@
 import { dateKey, zonedMidnight, shiftDate, sumMoney } from './data.js';
 import { AppError } from './errors.js';
 import { sampleFieldKeys } from './device-state.js';
+import { MAX_MODELS } from './palette.js';
 
 const now = new Date();
-const models = ['Qwen3-32B', 'DeepSeek-R1-Distill-Qwen-32B', 'Qwen3-8B', 'EigenLabs/Qwen3.8-27B-4bit-mtpt'];
+const models = ['Qwen3-32B', 'DeepSeek-R1-Distill-Qwen-32B', 'Qwen3-8B', 'EigenLabs/Qwen3.8-27B-4bit-mtpt', 'Qwen3.5-9B', 'gemma-4-26b-qat-4bit', 'Llama-3.3-70B-Instruct-4bit', 'Mistral-Small-3.2-24B', 'Qwen3-4B'];
 let seed = 427;
 const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
 const records = [];
@@ -12,9 +13,13 @@ for (let day = 89; day >= 0; day--) {
   for (let index = 0; index < count; index++) {
     const created = new Date(+zonedMidnight(shiftDate(dateKey(now, 'Asia/Shanghai'), -day), 'Asia/Shanghai') + (index + random()) / count * 86_400_000);
     if (created > now) continue;
-    const modelIndex = random() < 0.48 ? 0 : random() < 0.50 ? 1 : random() < 0.66 ? 2 : 3;
-    records.push({ account_id: 'demo-account', record_id: `demo-${day}-${index}`, provider_id: 'demo-provider', provider_key: 'demo-provider', job_id: `task-${Math.floor(random() * 10000000)}`, model: models[modelIndex], amount_micro_usd: String(Math.floor((9000 + random() * 195000) * (modelIndex === 2 ? 0.3 : 1))), prompt_tokens: 120 + Math.floor(random() * 16000), completion_tokens: 60 + Math.floor(random() * 4000), created_at: created.toISOString() });
+    // Skewed towards the first models so the demo shows a realistic long tail.
+    const modelIndex = Math.min(models.length - 1, Math.floor(-Math.log(1 - random()) * 2.1));
+    records.push({ account_id: 'demo-account', record_id: `demo-${day}-${index}`, provider_id: 'demo-provider', provider_key: 'demo-provider', job_id: `task-${Math.floor(random() * 10000000)}`, model: models[modelIndex], amount_micro_usd: String(Math.floor((9000 + random() * 195000) * (modelIndex >= 4 ? 0.25 : modelIndex === 2 ? 0.3 : 1))), prompt_tokens: 120 + Math.floor(random() * 16000), completion_tokens: 60 + Math.floor(random() * 4000), created_at: created.toISOString() });
   }
+  // Upstream also emits reward payouts as ordinary rows whose `model` is a pseudo id.
+  const rewardAt = new Date(+zonedMidnight(shiftDate(dateKey(now, 'Asia/Shanghai'), -day), 'Asia/Shanghai') + 4 * 3_600_000);
+  if (rewardAt <= now) records.push({ account_id: 'demo-account', record_id: `demo-${day}-reward`, provider_id: 'demo-provider', provider_key: 'demo-provider', job_id: `reward-${day}`, model: 'base_reward', amount_micro_usd: String(30000 + Math.floor(random() * 260000)), prompt_tokens: 0, completion_tokens: 0, created_at: rewardAt.toISOString() });
 }
 records.sort((a, b) => b.created_at.localeCompare(a.created_at) || b.record_id.localeCompare(a.record_id));
 
@@ -123,7 +128,7 @@ function demoState(clock) {
 
 function demoAnalysis(params, clock) {
   const allowed = ['from', 'to', 'timezone', 'granularity', 'model'];
-  for (const key of params.keys()) if (!allowed.includes(key) || (key !== 'model' && params.getAll(key).length !== 1) || (key === 'model' && params.getAll(key).length > 8)) throw new AppError(400, 'invalid_request', '演示分析参数无效。');
+  for (const key of params.keys()) if (!allowed.includes(key) || (key !== 'model' && params.getAll(key).length !== 1) || (key === 'model' && params.getAll(key).length > MAX_MODELS)) throw new AppError(400, 'invalid_request', '演示分析参数无效。');
   const timezone = params.get('timezone') || 'Asia/Shanghai';
   const from = params.get('from'), to = params.get('to'), granularity = params.get('granularity');
   if (!from || !to || !granularity || !['hour', 'day', 'month'].includes(granularity)) throw new AppError(400, 'invalid_request', '演示分析条件无效。');

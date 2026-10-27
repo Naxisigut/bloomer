@@ -2,6 +2,7 @@ import { AppError } from './errors.js';
 import { validateDevice } from './connections.js';
 import { demoQuery } from './demo.js';
 import { validateNetworkRatesResponse, validateNetworkRatesTokenTrendResponse } from './network-rates.js';
+import { MAX_MODELS } from './palette.js';
 
 const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs', 'long-task-restart': '/v1/device/long-task-restart', 'network-rates': '/v1/device/network-rates', 'network-rates-token-trend': '/v1/device/network-rates/token-trend' };
 const messages = {
@@ -73,7 +74,7 @@ export async function queryAgent(device, route, params = new URLSearchParams(), 
     if (!allowed.includes(key)) throw new AppError(400, 'invalid_request', '查询参数无效。');
     const values = search.getAll(key);
     if (key !== 'model' && values.length !== 1) throw new AppError(400, 'invalid_request', '查询参数无效。');
-    if (key === 'model' && values.length > 8) throw new AppError(400, 'invalid_request', '查询参数无效。');
+    if (key === 'model' && values.length > MAX_MODELS) throw new AppError(400, 'invalid_request', '查询参数无效。');
     for (const value of values) url.searchParams.append(key, value);
   }
   const controller = new AbortController();

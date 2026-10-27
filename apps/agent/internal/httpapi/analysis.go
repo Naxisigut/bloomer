@@ -12,8 +12,12 @@ import (
 const maxAnalysisSpan = 366 * 24 * time.Hour
 const maxAnalysisHourSpan = 31 * 24 * time.Hour
 
+// maxModelFilters matches the dashboard palette size: every selected model still gets
+// its own colour, and each is just one extra map key in the aggregation.
+const maxModelFilters = 12
+
 func validateAnalysisParams(q url.Values) ([]string, error) {
-	allowed := map[string]int{"from": 1, "to": 1, "timezone": 1, "granularity": 1, "model": 8}
+	allowed := map[string]int{"from": 1, "to": 1, "timezone": 1, "granularity": 1, "model": maxModelFilters}
 	for key, values := range q {
 		limit, ok := allowed[key]
 		if !ok || len(values) > limit || len(values) == 0 {

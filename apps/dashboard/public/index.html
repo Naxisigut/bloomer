@@ -121,14 +121,14 @@
                 </div>
               </div>
               <form id="analysis-date-form" class="date-form" hidden><label>开始日期<input type="date" name="from" required></label><span>至</span><label>结束日期<input type="date" name="to" required></label><button class="button button-dark" type="submit">应用日期</button><span id="analysis-date-error" role="alert"></span></form>
-              <fieldset class="analysis-models" aria-label="模型筛选"><legend>模型（最多 8 个）</legend><div id="analysis-model-tags" class="model-tag-list"></div></fieldset>
+              <fieldset class="analysis-models" aria-label="模型筛选"><legend>模型（最多 12 个）</legend><div id="analysis-model-tags" class="model-tag-list"></div></fieldset>
               <p id="analysis-status" class="state-message" role="status" hidden></p>
               <p id="analysis-export-status" class="analysis-export-status" role="status" hidden></p>
               <p id="analysis-truncated" class="state-message warning" role="status" hidden>部分查询时间超出明细保留范围，已按滚动 365 天截取。</p>
             </div>
           </div>
           <div class="analysis-metrics" aria-label="分析指标">
-            <article class="analysis-metric"><span class="stat-icon" data-icon="wallet"></span><div><span>总收益</span><strong id="analysis-metric-total">—</strong></div></article>
+            <article class="analysis-metric"><span class="stat-icon" data-icon="wallet"></span><div><span>总收益</span><strong id="analysis-metric-total">—</strong><small id="analysis-metric-reward" class="metric-note" hidden></small></div></article>
             <article class="analysis-metric"><span class="stat-icon" data-icon="records"></span><div><span>任务数</span><strong id="analysis-metric-count">—</strong></div></article>
             <article class="analysis-metric"><span class="stat-icon" data-icon="spark"></span><div><span>单笔平均</span><strong id="analysis-metric-avg">—</strong></div></article>
             <article class="analysis-metric"><span class="stat-icon" data-icon="day"></span><div><span>日均收益</span><strong id="analysis-metric-daily">—</strong></div></article>
@@ -144,7 +144,7 @@
             <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>模型 × 小时热力图</h2></div><div id="analysis-chart-model-hour" class="analysis-chart"></div></section>
             <section class="panel chart-panel analysis-chart-wide"><div class="panel-heading"><h2>模型平均收益对比</h2></div><div id="analysis-chart-model-compare" class="analysis-chart"></div></section>
           </div>
-          <section class="data-note"><p>收益分析只统计所选设备本机产生的收益；点击「查询」后更新，页面不会自动刷新。「导出明细」按当前设备、时间范围和模型筛选下载逐笔记录。金额单位为 USD，时区为中国标准时间（UTC+8）。</p><span id="coverage-tag" class="subtle-tag">等待历史信息</span></section>
+          <section class="data-note"><p>收益分析只统计所选设备本机产生的收益；点击「查询」后更新，页面不会自动刷新。「导出明细」按当前设备、时间范围和模型筛选下载逐笔记录。基础奖励等非任务收入计入总收益与趋势，但不计入任务数、单笔平均和按模型比较的图表。金额单位为 USD，时区为中国标准时间（UTC+8）。</p><span id="coverage-tag" class="subtle-tag">等待历史信息</span></section>
         </section>
 
         <section id="devices-view" class="devices-only">

@@ -66,15 +66,15 @@ func TestAnalysisValidationAndIdentity(t *testing.T) {
 		analysisPath(from, from.Add(367*24*time.Hour), "granularity=day"),
 		analysisPath(from, from.Add(32*24*time.Hour), "granularity=hour"),
 		base + "&model=a&model=a",
-		base + "&" + repeatModels(9),
+		base + "&" + repeatModels(maxModelFilters+1),
 	} {
 		status, body := callAPI(t, h, path)
 		if status != 400 || body["code"] != "invalid_request" {
 			t.Fatalf("expected invalid_request for %s: %d %+v", path, status, body)
 		}
 	}
-	if status, body := callAPI(t, h, base+"&"+repeatModels(8)); status != 200 {
-		t.Fatalf("eight distinct models allowed: %d %+v", status, body)
+	if status, body := callAPI(t, h, base+"&"+repeatModels(maxModelFilters)); status != 200 {
+		t.Fatalf("%d distinct models allowed: %d %+v", maxModelFilters, status, body)
 	}
 	h2, _ := queryAPI(t, &now, []upstream.Earning{
 		earningProvider("r1", "alpha", "other", now.Add(-time.Hour), 100),

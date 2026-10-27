@@ -1,4 +1,6 @@
 import { DASHBOARD_TIMEZONE, dateKey, shiftDate, zonedMidnight } from './data.js';
+import { isRewardModel } from './models.js';
+import { MAX_MODELS } from './palette.js';
 
 const HOUR = 3_600_000;
 const DAY = 86_400_000;
@@ -52,7 +54,7 @@ export function allowedGranularities(range, timezone = DASHBOARD_TIMEZONE) {
 
 export function buildAnalysisParams({ range, granularity, models = [], timezone = DASHBOARD_TIMEZONE }) {
   const params = new URLSearchParams({ from: range.from, to: range.to, timezone, granularity });
-  for (const model of models.slice(0, 8)) params.append('model', model);
+  for (const model of models.slice(0, MAX_MODELS)) params.append('model', model);
   return params;
 }
 
@@ -132,7 +134,16 @@ export function fillSeriesBuckets(response, now = new Date()) {
     const items = saved.get(start) || (past ? [] : null);
     if (items === null) return null;
     const normalized = mergeBucketItems(items);
-    return { from: new Date(start).toISOString(), to: new Date(end).toISOString(), items: normalized, total_micro_usd: normalized.reduce((sum, item) => sum + BigInt(item.amount_micro_usd), 0n).toString(), record_count: normalized.reduce((sum, item) => sum + item.record_count, 0) };
+    const taskItems = normalized.filter(item => !isRewardModel(item.model));
+    return {
+      from: new Date(start).toISOString(),
+      to: new Date(end).toISOString(),
+      items: normalized,
+      total_micro_usd: normalized.reduce((sum, item) => sum + BigInt(item.amount_micro_usd), 0n).toString(),
+      record_count: normalized.reduce((sum, item) => sum + item.record_count, 0),
+      task_micro_usd: taskItems.reduce((sum, item) => sum + BigInt(item.amount_micro_usd), 0n).toString(),
+      task_record_count: taskItems.reduce((sum, item) => sum + item.record_count, 0),
+    };
   }).filter(Boolean);
   return filled;
 }
@@ -155,25 +166,39 @@ export function cumulativeSeries(buckets, models) {
 
 export function deriveMetrics(response, filledBuckets, now = new Date()) {
   const totalAmount = BigInt(response.totals.amount_micro_usd);
-  const recordCount = response.totals.record_count;
+  // Reward rows follow the same model filter as totals, so derive both sums from the series.
+  let rewardAmount = 0n, rewardRecordCount = 0;
+  for (const bucket of response.series) {
+    for (const item of bucket.items) {
+      if (!isRewardModel(item.model)) continue;
+      rewardAmount += BigInt(item.amount_micro_usd);
+      rewardRecordCount += item.record_count;
+    }
+  }
+  const taskAmount = totalAmount - rewardAmount;
+  const recordCount = response.totals.record_count - rewardRecordCount;
   const spanDays = Math.max(1, rangeSpanDays({ from: response.from, to: response.to }, response.timezone));
-  const avgPerRecord = recordCount ? totalAmount / BigInt(recordCount) : 0n;
+  const avgPerRecord = recordCount > 0 ? taskAmount / BigInt(recordCount) : 0n;
   const dailyAvg = totalAmount / BigInt(spanDays);
-  const activeBuckets = filledBuckets.filter(bucket => bucket.record_count > 0);
+  const activeBuckets = filledBuckets.filter(bucket => bucket.task_record_count > 0);
   const activeHours = response.granularity === 'hour' ? activeBuckets.length : activeBuckets.length * (response.granularity === 'day' ? 24 : 24 * 30);
-  const perActiveHour = activeHours ? totalAmount / BigInt(activeHours) : 0n;
+  const perActiveHour = activeHours ? taskAmount / BigInt(activeHours) : 0n;
   let peak = null;
   for (const bucket of filledBuckets) {
     const amount = BigInt(bucket.total_micro_usd);
     if (!peak || amount > peak.amount) peak = { from: bucket.from, to: bucket.to, amount_micro_usd: bucket.total_micro_usd };
   }
-  const hourTotals = aggregateHourOfDay(response.hour_of_day, spanDays);
+  // A lump-sum reward is not tied to a working hour, so the peak hour reflects task revenue only.
+  const hourTotals = aggregateHourOfDay(response.hour_of_day.filter(item => !isRewardModel(item.model)), spanDays);
   let peakHour = null;
   for (const [hour, amount] of hourTotals.entries()) {
     if (!peakHour || amount > peakHour.amount) peakHour = { hour, amount_micro_usd: amount.toString(), daily_avg_micro_usd: (amount / BigInt(spanDays)).toString() };
   }
   return {
     totalAmount: totalAmount.toString(),
+    taskAmount: taskAmount.toString(),
+    rewardAmount: rewardAmount.toString(),
+    rewardRecordCount,
     recordCount,
     avgPerRecord: avgPerRecord.toString(),
     dailyAvg: dailyAvg.toString(),
@@ -196,6 +221,7 @@ export function aggregateHourOfDay(hourOfDay, spanDays) {
 export function hourOfDayDailyAverage(hourOfDay, spanDays, models) {
   const byHourModel = new Map();
   for (const item of hourOfDay) {
+    if (isRewardModel(item.model)) continue;
     if (models?.length && !models.includes(item.model)) continue;
     const key = `${item.hour}\0${item.model}`;
     byHourModel.set(key, (byHourModel.get(key) || 0n) + BigInt(item.amount_micro_usd));
@@ -209,15 +235,22 @@ export function hourOfDayDailyAverage(hourOfDay, spanDays, models) {
   return rows.sort((a, b) => a.hour - b.hour || a.model.localeCompare(b.model));
 }
 
-export function modelShareRows(models, totalAmount) {
-  const total = BigInt(totalAmount);
-  return models.map(item => ({
-    model: item.model,
-    amount_micro_usd: item.amount_micro_usd,
-    record_count: item.record_count,
-    share: total > 0n ? Number((BigInt(item.amount_micro_usd) * 10000n) / total) / 100 : 0,
-    avgPerRecord: item.record_count ? (BigInt(item.amount_micro_usd) / BigInt(item.record_count)).toString() : '0',
-  }));
+export function modelShareRows(models) {
+  // `models` always covers the whole range, so shares use its own sum. Dividing by a
+  // filtered total would push the percentages far past 100% when one model is selected.
+  const total = models.reduce((sum, item) => sum + BigInt(item.amount_micro_usd), 0n);
+  return models.map(item => {
+    const reward = isRewardModel(item.model);
+    return {
+      model: item.model,
+      isReward: reward,
+      amount_micro_usd: item.amount_micro_usd,
+      record_count: item.record_count,
+      share: total > 0n ? Number((BigInt(item.amount_micro_usd) * 10000n) / total) / 100 : 0,
+      // Rewards are lump sums rather than task payouts, so a per-record average is meaningless.
+      avgPerRecord: !reward && item.record_count ? (BigInt(item.amount_micro_usd) / BigInt(item.record_count)).toString() : null,
+    };
+  });
 }
 
 export function deriveAnalysisView(response, { now = new Date(), selectedModels = [] } = {}) {
@@ -228,7 +261,7 @@ export function deriveAnalysisView(response, { now = new Date(), selectedModels 
     filledBuckets,
     cumulative: cumulativeSeries(filledBuckets, modelOrder),
     metrics,
-    modelShares: modelShareRows(response.models, response.totals.amount_micro_usd),
+    modelShares: modelShareRows(response.models),
     hourDaily: hourOfDayDailyAverage(response.hour_of_day, metrics.spanDays, selectedModels.length ? selectedModels : null),
     selectedModels,
     modelOrder,

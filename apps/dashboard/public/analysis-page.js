@@ -4,13 +4,20 @@ import {
   analysisPeriodRange, allowedGranularities, defaultGranularity, buildAnalysisParams, deriveAnalysisView,
 } from './analysis-data.js';
 import {
-  trendOption, cumulativeOption, modelShareOption, taskAvgOption, hourDistributionOption, weekdayHourHeatmap, modelHourHeatmap, modelCompareOption, chartTheme,
+  trendOption, cumulativeOption, modelShareOption, taskAvgOption, hourDistributionOption, weekdayHourHeatmap, modelHourHeatmap, modelCompareOption, chartTheme, legendExtraHeight,
 } from './analysis-charts.js';
-import { displayModelNames } from './models.js';
+import { displayModelNames, isRewardModel, REWARD_LABEL } from './models.js';
+import { MAX_MODELS } from './palette.js';
 
 echarts.registerTheme('bloomer', chartTheme);
 
 const number = value => new Intl.NumberFormat('en-US').format(value);
+
+// Series labels as they appear in legends, so the layout can measure real text widths.
+function modelLabels(models) {
+  const labels = displayModelNames(models);
+  return models.map(model => labels.get(model) ?? model);
+}
 
 export function createAnalysisPage({ query, escape, correctedNow, currentView, setExporting = () => {} }) {
   const $ = selector => document.querySelector(selector);
@@ -41,8 +48,13 @@ export function createAnalysisPage({ query, escape, correctedNow, currentView, s
     if (!host) return;
     const list = state.response?.models?.map(item => item.model) || [];
     const choices = [...new Set([...list, ...state.models])];
-    const labels = displayModelNames(choices);
-    host.innerHTML = `<button type="button" class="model-tag ${state.allModels ? 'selected' : ''}" data-all-models aria-pressed="${state.allModels}">全部模型</button>` + choices.map(model => {
+    const rewardModels = choices.filter(isRewardModel);
+    const models = choices.filter(model => !isRewardModel(model));
+    const labels = displayModelNames(models);
+    // Rewards are their own revenue stream rather than a model, so they are listed but not selectable.
+    const rewardNote = state.allModels ? '已计入' : '仅全部模型';
+    const rewardChips = rewardModels.map(model => `<span class="model-tag locked" title="${escape(model)}"><span class="model-tag-label">${escape(REWARD_LABEL)}</span><span class="tag-note">${rewardNote}</span></span>`).join('');
+    host.innerHTML = `<button type="button" class="model-tag ${state.allModels ? 'selected' : ''}" data-all-models aria-pressed="${state.allModels}">全部模型</button>` + rewardChips + models.map(model => {
       const selected = !state.allModels && state.models.has(model);
       const missing = state.response && !list.includes(model);
       return `<button type="button" class="model-tag ${selected ? 'selected' : ''}" data-model="${escape(model)}" title="${escape(model)}" aria-pressed="${selected}"><span class="model-tag-label">${escape(labels.get(model))}</span>${missing ? '<span class="tag-note">无数据</span>' : ''}</button>`;
@@ -57,6 +69,12 @@ export function createAnalysisPage({ query, escape, correctedNow, currentView, s
     $('#analysis-metric-daily').textContent = metrics ? money(metrics.dailyAvg, 4) : '—';
     const peak = metrics?.peakHour;
     $('#analysis-metric-peak').textContent = peak ? `${String(peak.hour).padStart(2, '0')}:00 · ${money(peak.daily_avg_micro_usd, 4)}/日` : '—';
+    const reward = $('#analysis-metric-reward');
+    if (reward) {
+      const hasReward = metrics && BigInt(metrics.rewardAmount) !== 0n;
+      reward.hidden = !hasReward;
+      reward.textContent = hasReward ? `含${REWARD_LABEL} ${money(metrics.rewardAmount, 4)}` : '';
+    }
   }
 
   function renderShareTable() {
@@ -64,7 +82,12 @@ export function createAnalysisPage({ query, escape, correctedNow, currentView, s
     if (!body) return;
     const rows = state.derived?.modelShares || [];
     const labels = displayModelNames(rows.map(row => row.model));
-    body.innerHTML = rows.length ? rows.map(row => `<tr><td title="${escape(row.model)}">${escape(labels.get(row.model))}</td><td class="amount-cell">${escape(money(row.amount_micro_usd))}</td><td>${row.share.toFixed(1)}%</td><td>${new Intl.NumberFormat('zh-CN').format(row.record_count)}</td><td class="amount-cell">${escape(money(row.avgPerRecord, 4))}</td></tr>`).join('') : `<tr><td colspan="5"><div class="empty-state">暂无模型数据</div></td></tr>`;
+    // When only specific models are queried the Agent drops reward rows, so label that row.
+    const rewardCounted = BigInt(state.derived?.metrics?.rewardAmount || '0') !== 0n;
+    body.innerHTML = rows.length ? rows.map(row => {
+      const excluded = row.isReward && !rewardCounted;
+      return `<tr${row.isReward ? ' class="reward-row"' : ''}><td title="${escape(row.model)}">${escape(labels.get(row.model))}${excluded ? '<span class="tag-note">未计入本次筛选</span>' : ''}</td><td class="amount-cell">${escape(money(row.amount_micro_usd))}</td><td>${row.share.toFixed(1)}%</td><td>${row.isReward ? '—' : new Intl.NumberFormat('zh-CN').format(row.record_count)}</td><td class="amount-cell">${row.avgPerRecord === null ? '—' : escape(money(row.avgPerRecord, 4))}</td></tr>`;
+    }).join('') : `<tr><td colspan="5"><div class="empty-state">暂无模型数据</div></td></tr>`;
   }
 
   function setChart(name, option) {
@@ -75,6 +98,23 @@ export function createAnalysisPage({ query, escape, correctedNow, currentView, s
     chart.setOption(option, true);
   }
 
+  function chartWidth(name) {
+    const element = $(`#analysis-chart-${name}`);
+    return element ? Math.max(320, element.clientWidth) : 640;
+  }
+
+  // Wrapped legends and per-model heatmap rows need more room than the fixed 300px
+  // default. Growing the canvas by exactly the extra legend rows keeps the plot area
+  // the same height whether two models or twelve are selected.
+  function sizeChart(name, height) {
+    const element = $(`#analysis-chart-${name}`);
+    if (!element) return;
+    const next = `${Math.max(300, Math.round(height))}px`;
+    if (element.style.height === next) return;
+    element.style.height = next;
+    charts.get(name)?.resize();
+  }
+
   function renderCharts() {
     if (!state.derived || !state.response) {
       for (const name of charts.keys()) charts.get(name)?.clear();
@@ -83,15 +123,27 @@ export function createAnalysisPage({ query, escape, correctedNow, currentView, s
     const { filledBuckets, cumulative, modelShares, hourDaily } = state.derived;
     const filter = state.queriedModels || [];
     const modelOrder = filter.length ? state.derived.modelOrder.filter(model => filter.includes(model)) : state.derived.modelOrder;
+    // Reward rows carry a pseudo model id and no task, so per-model comparisons leave them out.
+    const taskOrder = modelOrder.filter(model => !isRewardModel(model));
+    const heatModels = taskOrder.length ? taskOrder : [...new Set(state.response.hour_of_day.filter(item => !isRewardModel(item.model)).map(item => item.model))];
+    const labels = modelLabels(modelOrder);
+    const hourLabels = modelLabels(heatModels);
+    // Legend rows depend on the real label widths, so size each canvas from the wrap
+    // result instead of from the series count alone.
+    sizeChart('trend', 300 + legendExtraHeight(labels, chartWidth('trend')));
+    sizeChart('cumulative', 300 + legendExtraHeight([...labels, '合计'], chartWidth('cumulative')));
+    sizeChart('hour', 300 + legendExtraHeight(hourLabels, chartWidth('hour')));
+    sizeChart('model-hour', Math.max(300, heatModels.length * 26 + 88));
+    const width = { trend: chartWidth('trend'), cumulative: chartWidth('cumulative'), hour: chartWidth('hour') };
     const hasData = state.response.totals.record_count > 0;
-    setChart('trend', hasData ? trendOption({ filledBuckets, modelOrder, mode: state.trendMode }) : { title: { text: '暂无收益数据', left: 'center', top: 'middle', textStyle: { color: '#8a8f98', fontSize: 13, fontWeight: 400 } }, series: [] });
-    setChart('cumulative', hasData ? cumulativeOption({ cumulative, modelOrder }) : { series: [] });
+    setChart('trend', hasData ? trendOption({ filledBuckets, modelOrder, mode: state.trendMode, chartWidth: width.trend }) : { title: { text: '暂无收益数据', left: 'center', top: 'middle', textStyle: { color: '#8a8f98', fontSize: 13, fontWeight: 400 } }, series: [] });
+    setChart('cumulative', hasData ? cumulativeOption({ cumulative, modelOrder, chartWidth: width.cumulative }) : { series: [] });
     setChart('share', modelShareOption(modelShares));
     setChart('task-avg', hasData ? taskAvgOption(filledBuckets) : { series: [] });
-    setChart('hour', hourDistributionOption(hourDaily, modelOrder));
+    setChart('hour', hourDistributionOption(hourDaily, taskOrder, width.hour));
     setChart('weekday', weekdayHourHeatmap(state.response.weekday_hour));
-    setChart('model-hour', modelHourHeatmap(state.response.hour_of_day, modelOrder));
-    setChart('model-compare', modelCompareOption(state.response.models.filter(item => modelOrder.includes(item.model)), state.derived.metrics.spanDays, state.response.granularity));
+    setChart('model-hour', modelHourHeatmap(state.response.hour_of_day.filter(item => !isRewardModel(item.model)), heatModels));
+    setChart('model-compare', modelCompareOption(state.response.models.filter(item => taskOrder.includes(item.model)), state.derived.metrics.spanDays, state.response.granularity));
     renderShareTable();
   }
 
@@ -125,7 +177,7 @@ export function createAnalysisPage({ query, escape, correctedNow, currentView, s
     try {
       const range = currentRange();
       syncGranularityControls(range);
-      const models = state.allModels ? [] : [...state.models].slice(0, 8);
+      const models = state.allModels ? [] : [...state.models].slice(0, MAX_MODELS);
       const params = buildAnalysisParams({ range, granularity: state.granularity, models });
       const response = await query('analysis', params, state.device, controller.signal);
       if (generation !== state.generation) return;
@@ -165,7 +217,7 @@ export function createAnalysisPage({ query, escape, correctedNow, currentView, s
     try { range = currentRange(); } catch (error) { showExportStatus(error.message); return; }
     const device = state.device;
     if (!device) { showExportStatus('请先选择设备。'); return; }
-    const models = state.allModels ? [] : [...state.models].slice(0, 8);
+    const models = state.allModels ? [] : [...state.models].slice(0, MAX_MODELS);
     const targets = models.length ? models : [''];
     exportController?.abort();
     const controller = new AbortController();
@@ -247,7 +299,7 @@ export function createAnalysisPage({ query, escape, correctedNow, currentView, s
       if (!tag) return;
       state.allModels = false;
       const model = tag.dataset.model;
-      if (state.models.has(model)) state.models.delete(model); else if (state.models.size < 8) state.models.add(model);
+      if (state.models.has(model)) state.models.delete(model); else if (state.models.size < MAX_MODELS) state.models.add(model);
       if (!state.models.size) state.allModels = true;
       renderModelTags();
     });

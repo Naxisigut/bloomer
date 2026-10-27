@@ -26,7 +26,7 @@
 | `from` / `to` | RFC3339，UTC 半开区间，必填，跨度 ≤ 366 天 |
 | `timezone` | IANA 时区，必填 |
 | `granularity` | `hour` / `day` / `month`；`hour` 仅允许跨度 ≤ 31 天 |
-| `model` | 可重复 0～8 次；为空表示全部模型 |
+| `model` | 可重复 0～12 次；为空表示全部模型。上限等于看板调色板颜色数（`public/palette.js` 的 `MAX_MODELS`），保证每个选中模型都有自己的颜色；后端只按模型名多几个分组，不构成性能约束 |
 
 响应：
 

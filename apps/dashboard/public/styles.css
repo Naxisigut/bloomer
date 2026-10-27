@@ -1386,6 +1386,28 @@ tbody tr:nth-child(3n) .row-badge {
   font-variant-numeric: tabular-nums
 }
 
+.analysis-metric .metric-note {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 12px
+}
+
+.model-tag.locked {
+  border-style: dashed;
+  background: var(--surface);
+  color: var(--muted);
+  cursor: default
+}
+
+.model-tag.locked:hover {
+  border-color: var(--line-strong)
+}
+
+tbody tr.reward-row td {
+  color: var(--muted)
+}
+
 .analysis-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

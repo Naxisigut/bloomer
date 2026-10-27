@@ -1,9 +1,8 @@
 import { DASHBOARD_TIMEZONE, dateKey, money, sumMoney, timeRange } from './data.js';
 import { displayModelNames } from './models.js';
+import { TOTAL_COLOR, HOME_MODEL_COLORS as colors } from './palette.js';
 
 const HOUR = 3_600_000;
-const TOTAL_COLOR = '#5b8def';
-const colors = ['#f2994a', '#8b7cf6', '#2bb3a3', '#e5677e', '#9ab843', '#c08a4f', '#3f6fd8', '#d4a72c'];
 
 // Choose exact 1/2/5 monetary steps before computing labels or drawing coordinates.
 export function revenueAxis(amounts) {

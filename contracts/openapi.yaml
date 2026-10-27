@@ -593,8 +593,9 @@ paths:
         the range (ignores `model` filters); `totals`, `series`, `hour_of_day`, and
         `weekday_hour` honor filters. Series omits empty buckets; bucket boundaries
         follow the same IANA calendar rules as `/v1/earnings/stats`. Amounts are
-        exact integer micro-USD strings. At most eight distinct `model` values.
-        Hour granularity requires span ≤ 31 days; overall span ≤ 366 days.
+        exact integer micro-USD strings. At most twelve distinct `model` values, one
+        per dashboard series colour. Hour granularity requires span ≤ 31 days;
+        overall span ≤ 366 days.
       parameters:
         - name: from
           in: query
@@ -625,10 +626,10 @@ paths:
             default: day
         - name: model
           in: query
-          description: Repeat up to eight times; omit for all models
+          description: Repeat up to twelve times; omit for all models
           schema:
             type: array
-            maxItems: 8
+            maxItems: 12
             items:
               type: string
           style: form
