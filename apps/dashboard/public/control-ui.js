@@ -11,6 +11,7 @@ const reasons = {
   agent_interrupted: 'Agent 中途退出，实际状态可能已经改变，请核对后再操作。',
   history_unavailable: '操作记录保存失败，请在设备端核对结果。',
 };
+const localErrorText = code => code === 'control_busy' ? '设备正在读取模型，请稍后点击「获取最新」重试。' : '本地模型读取失败，可点击「获取最新」重试。';
 
 function renderControlJob(job, escape, dateTime) {
   const time = escape(dateTime(job.created_at));
@@ -22,9 +23,9 @@ function renderControlJob(job, escape, dateTime) {
   return `<div class="control-job"><span>${escape(actions[job.action] || job.action)}${meta}${error}</span><span class="status-tag${tagClass}">${escape(statuses[job.status] || '未知')}</span></div>`;
 }
 
-export function createControlUI({ submitControl, submitLongTaskRestart, query, selectedDevice, currentView, escape, dateTime, refreshState }) {
+export function createControlUI({ submitControl, submitLongTaskRestart, models: modelsStore, query, selectedDevice, currentView, escape, dateTime, refreshState }) {
   const $ = selector => document.querySelector(selector);
-  let deviceID, status = null, models = null, loading = false, submitting = false, pending = null, confirmation = null, error = '', requestGeneration = 0;
+  let deviceID, status = null, modelsLoading = false, loading = false, submitting = false, pending = null, confirmation = null, error = '', requestGeneration = 0;
   let lastFailure = null, autoPollStopped = false, networkFailStreak = 0, runningSinceMs = null, pendingSinceMs = null, pollTimer = null;
   let longTaskEnabled = false, longTaskUnsupported = false, longTaskError = '', longTaskSubmitting = false, pendingLongTask = null;
   const dialog = $('#control-confirm-dialog');
@@ -58,26 +59,43 @@ export function createControlUI({ submitControl, submitLongTaskRestart, query, s
     if (!shouldControlAutoPoll({ autoPollStopped, pending: Boolean(pending), running, awaitingStatus: !status && !autoPollStopped, transientError: !status && lastFailure && isTransientControlError(lastFailure) })) return;
     schedulePoll(pollDelayMs());
   }
+  // Polling refreshes the job list only. Model discovery is global data and is
+  // never re-fetched on a timer; the block buttons and the panel refresh do that.
+  // A successful download is the one exception: it changes the local list.
   async function tickPoll() {
     if (currentView() !== 'devices' || document.hidden || dialog.open) return;
-    const wasRunning = status?.jobs?.some(job => job.status === 'running');
+    const running = status?.jobs?.find(job => job.status === 'running');
     await refresh();
-    if (wasRunning && status && !status.jobs?.some(job => job.status === 'running')) { await refresh(true); refreshState(); }
+    const finished = running && status?.jobs?.find(job => job.request_id === running.request_id);
+    if (running && status && !status.jobs?.some(job => job.status === 'running')) {
+      if (finished?.action === 'download' && finished.status === 'succeeded') await refreshModels();
+      refreshState();
+    }
     maybeSchedulePoll();
+  }
+  function renderModels() {
+    const local = $('#control-local-models'), catalog = $('#control-download-model');
+    const chosen = new Set([...local.selectedOptions].map(option => option.value));
+    const snapshot = modelsStore?.get(deviceID) || null;
+    local.innerHTML = snapshot ? snapshot.local.map(model => `<option value="${escape(model.id)}" title="${escape(model.id)}" ${chosen.has(model.id) ? 'selected' : ''}>${escape(model.display_name || displayModelName(model.id))}</option>`).join('') : '';
+    const download = catalog.value;
+    catalog.innerHTML = snapshot
+      ? '<option value="">选择要下载的模型</option>' + snapshot.catalog.map(model => `<option value="${escape(model.id)}" title="${escape(model.id)}" ${download === model.id ? 'selected' : ''}>${escape(model.display_name || displayModelName(model.id))}${model.size_gb ? ` · ${escape(model.size_gb)} GB` : ''}</option>`).join('')
+      : '<option value="">请先获取最新模型目录</option>';
   }
   function render() {
     const device = selectedDevice();
     if (device?.id !== deviceID) {
-      deviceID = device?.id; status = null; models = null; loading = false; submitting = false; error = ''; confirmation = null; requestGeneration++;
+      deviceID = device?.id; status = null; modelsLoading = false; loading = false; submitting = false; error = ''; confirmation = null; requestGeneration++;
       longTaskEnabled = false; longTaskUnsupported = false; longTaskError = ''; longTaskSubmitting = false; pendingLongTask = null;
       resetPollState(); runningSinceMs = null; pendingSinceMs = null; clearPollTimer();
       if (dialog.open) dialog.close();
       try { pending = JSON.parse(localStorage.getItem(`bloomer.control.${deviceID}`) || 'null'); } catch { pending = null; }
-      $('#control-local-models').innerHTML = '';
-      $('#control-download-model').innerHTML = '<option value="">请先刷新模型目录</option>';
-      if (currentView() === 'devices') queueMicrotask(() => refresh(true));
+      renderModels();
+      if (currentView() === 'devices') queueMicrotask(() => refresh());
     }
     const demo = deviceID === 'demo', running = status?.jobs?.some(job => job.status === 'running');
+    const snapshot = modelsStore?.get(deviceID) || null;
     const longTaskToggle = $('#long-task-restart');
     if (longTaskToggle) {
       longTaskToggle.checked = longTaskEnabled;
@@ -90,16 +108,36 @@ export function createControlUI({ submitControl, submitLongTaskRestart, query, s
     }
     $('#control-panel').setAttribute('aria-busy', String(loading || submitting));
     $('#control-refresh').disabled = demo || loading || submitting;
+    // Each block refreshes its own list; both read the same discovery response.
+    $('#control-local-refresh').disabled = demo || submitting || modelsLoading || !status?.available;
+    $('#control-catalog-refresh').disabled = demo || submitting || modelsLoading || !status?.available;
     const disabled = demo || loading || submitting || pending || running || !status?.available;
     const chosen = [...$('#control-local-models').selectedOptions].length;
-    document.querySelectorAll('[data-control]').forEach(button => { button.disabled = Boolean(disabled || (['switch', 'start'].includes(button.dataset.control) && !chosen) || (button.dataset.control === 'download' && !$('#control-download-model').value)); });
-    $('#control-local-models').disabled = Boolean(disabled || models?.local_error);
-    $('#control-download-model').disabled = Boolean(disabled || models?.catalog_error);
-    $('#control-local-error').textContent = models?.local_error ? '本地模型读取失败，可刷新重试。' : models && !models.local?.length ? '没有可用的本地模型，请先下载。' : '';
-    $('#control-catalog-error').textContent = models?.catalog_error ? '官方目录暂不可用；本地模型仍可选择。请检查设备网络后刷新。' : '';
+    const localBlocked = Boolean(disabled || modelsLoading || snapshot?.localError);
+    const catalogBlocked = Boolean(disabled || modelsLoading || snapshot?.catalogError);
+    document.querySelectorAll('[data-control]').forEach(button => {
+      // Stop and restart need no model selection, so a pending discovery must not
+      // block them; only the model-dependent actions wait for the snapshot.
+      button.disabled = Boolean(disabled || (['switch', 'start'].includes(button.dataset.control) && (!chosen || localBlocked)) || (button.dataset.control === 'download' && (!$('#control-download-model').value || catalogBlocked)));
+    });
+    $('#control-local-models').disabled = localBlocked;
+    $('#control-download-model').disabled = catalogBlocked;
+    const catalogUnavailable = '官方目录暂不可用；本地模型仍可选择。请检查设备网络后点击「获取最新」重试。';
+    $('#control-local-error').textContent = snapshot?.error ? `模型读取失败：${snapshot.error} 可点击「获取最新」重试。`
+      : modelsLoading && !snapshot ? '正在读取本地模型…'
+        : snapshot?.localError ? localErrorText(snapshot.localError)
+          : snapshot && !snapshot.local.length ? '没有可用的本地模型，请先下载。' : '';
+    $('#control-catalog-error').textContent = modelsLoading && !snapshot ? '正在读取官方目录…'
+      : snapshot?.error || snapshot?.catalogError ? catalogUnavailable : '';
     $('#control-retry').hidden = !pending || demo;
     $('#control-retry').disabled = loading || submitting || Boolean(running) || !status?.available;
     $('#control-jobs').innerHTML = status?.jobs?.length ? status.jobs.slice(0, RECENT_JOB_LIMIT).map(job => renderControlJob(job, escape, dateTime)).join('') : '<p class="control-note">暂无操作记录</p>';
+    // `error` covers the panel-level failures that have no per-field note, notably
+    // an unreachable device or a rejected submission. Without it the panel used to
+    // go silently inert.
+    const errorElement = $('#control-error');
+    errorElement.textContent = error;
+    errorElement.hidden = !error;
   }
   async function loadLongTask(id, generation) {
     try {
@@ -133,7 +171,16 @@ export function createControlUI({ submitControl, submitLongTaskRestart, query, s
       if (id === deviceID && generation === requestGeneration) { longTaskSubmitting = false; render(); }
     }
   }
-  async function refresh(withModels = false) {
+  // Discovery runs only when this device has no snapshot, or when a caller asks
+  // for fresh lists. Cached lists render immediately and never block stop/restart.
+  async function discover(id, generation, force) {
+    if (!id || id === 'demo' || !modelsStore) return;
+    if (!force && modelsStore.get(id)) { renderModels(); render(); return; }
+    modelsLoading = true; render();
+    await modelsStore.load(id);
+    if (id === deviceID && generation === requestGeneration) { modelsLoading = false; renderModels(); render(); }
+  }
+  async function refresh({ models = false } = {}) {
     render();
     if (!deviceID || loading || submitting || longTaskSubmitting) return;
     if (deviceID === 'demo') {
@@ -144,6 +191,7 @@ export function createControlUI({ submitControl, submitLongTaskRestart, query, s
     const id = deviceID, generation = ++requestGeneration;
     loading = true; error = ''; render();
     const switchDone = loadLongTask(id, generation);
+    const modelsDone = discover(id, generation, models);
     try {
       const response = await query('control', null, id);
       if (id !== deviceID || generation !== requestGeneration) return;
@@ -151,15 +199,6 @@ export function createControlUI({ submitControl, submitLongTaskRestart, query, s
       lastFailure = null; networkFailStreak = 0; autoPollStopped = false;
       syncRunningSince();
       if (pending && status.jobs?.some(job => job.request_id === pending.request_id)) remember(null);
-      if (withModels && status.available) {
-        const result = await query('control-models', null, id);
-        if (id !== deviceID || generation !== requestGeneration) return;
-        models = result;
-        const selected = new Set([...$('#control-local-models').selectedOptions].map(option => option.value));
-        $('#control-local-models').innerHTML = models.local.map(model => `<option value="${escape(model.id)}" title="${escape(model.id)}" ${selected.has(model.id) ? 'selected' : ''}>${escape(model.display_name || displayModelName(model.id))}</option>`).join('');
-        const download = $('#control-download-model').value;
-        $('#control-download-model').innerHTML = '<option value="">选择要下载的模型</option>' + models.catalog.map(model => `<option value="${escape(model.id)}" title="${escape(model.id)}" ${download === model.id ? 'selected' : ''}>${escape(model.display_name || displayModelName(model.id))}${model.size_gb ? ` · ${escape(model.size_gb)} GB` : ''}</option>`).join('');
-      }
     } catch (failure) {
       if (id === deviceID && generation === requestGeneration) {
         error = failure.message;
@@ -169,7 +208,12 @@ export function createControlUI({ submitControl, submitLongTaskRestart, query, s
         else { status = null; }
       }
     }
-    finally { if (id === deviceID && generation === requestGeneration) { await switchDone; loading = false; render(); maybeSchedulePoll(); } }
+    finally {
+      if (id === deviceID && generation === requestGeneration) {
+        await switchDone; await modelsDone;
+        loading = false; render(); maybeSchedulePoll();
+      }
+    }
   }
   async function submit(body, id) {
     if (id !== deviceID || submitting) return;
@@ -204,9 +248,19 @@ export function createControlUI({ submitControl, submitLongTaskRestart, query, s
     const id = deviceID; await refresh();
     if (id === deviceID && pending && status?.available && !status.jobs.some(job => job.status === 'running')) submit(pending, id);
   });
+  async function refreshModels() {
+    const id = deviceID, generation = requestGeneration;
+    if (!id || id === 'demo' || !modelsStore || modelsLoading) return;
+    modelsLoading = true; render();
+    await modelsStore.load(id);
+    if (id === deviceID && generation === requestGeneration) { modelsLoading = false; renderModels(); render(); }
+  }
+  $('#control-local-refresh').addEventListener('click', refreshModels);
+  $('#control-catalog-refresh').addEventListener('click', refreshModels);
   $('#control-local-models').addEventListener('change', render);
   $('#control-download-model').addEventListener('change', render);
-  $('#control-refresh').addEventListener('click', () => { resetPollState(); refresh(true); });
+  // The panel refresh reloads the job list and the model lists together.
+  $('#control-refresh').addEventListener('click', () => { resetPollState(); refresh({ models: true }).then(refreshState); });
   const longDialog = $('#long-task-restart-dialog');
   $('#long-task-restart')?.addEventListener('change', event => {
     const input = event.target;
@@ -223,5 +277,5 @@ export function createControlUI({ submitControl, submitLongTaskRestart, query, s
     if (longDialog.returnValue === 'confirm' && next !== null) applyLongTask(next);
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) maybeSchedulePoll(); else clearPollTimer(); });
-  return { render, refresh };
+  return { render, refresh, refreshModels };
 }

@@ -3,6 +3,7 @@ import { createAnalysisPage } from './analysis-page.js';
 import { createDeviceUI } from './device-ui.js';
 import { createAlertUI } from './alert-ui.js';
 import { createControlUI } from './control-ui.js';
+import { createControlModelsStore } from './control-models.js';
 import { createNetworkRatesUI } from './network-rates.js';
 import { displayModelName, displayModelNames } from './models.js';
 import { DeviceStore } from './connections.js';
@@ -100,7 +101,10 @@ const analysisPage = createAnalysisPage({
 const deviceUI = createDeviceUI({ query, selectedDevice, escape, onRefresh: () => { state.deviceFetchedAt = new Date(); updateClock(); } });
 
 const alertUI = createAlertUI({ query, selectedDevice, currentView: () => state.view, escape, dateTime });
-const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), submitLongTaskRestart: (id, enabled) => client.submitLongTaskRestart(id, enabled), query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
+// Model discovery is global per device and shared by both model blocks, so
+// re-entering the devices view never repeats the CLI probe.
+const controlModels = createControlModelsStore({ query });
+const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), submitLongTaskRestart: (id, enabled) => client.submitLongTaskRestart(id, enabled), models: controlModels, query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
 const networkRatesUI = createNetworkRatesUI({ query, selectedDevice, currentView: () => state.view, escape });
 
 function renderDevices() {
@@ -273,7 +277,7 @@ function setView(view, { load = true } = {}) {
   [$('#page-title').textContent, $('#page-subtitle').textContent] = pageCopy[view];
   $('.page-heading').hidden = view === 'overview';
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
-  if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(true); }
+  if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(); }
   if (view === 'network') networkRatesUI.refresh();
   if (view === 'alerts') alertUI.refresh();
   if (view === 'overview' && load) { homeRevenue.refresh(); loadRecentEarnings(); }
@@ -347,7 +351,7 @@ $('#refresh').addEventListener('click', async () => {
     return;
   }
   if (state.view === 'devices') {
-    deviceUI.refresh(); resetAutoRefreshBackoff(); await checkDevices(); await refreshSummary(); controlUI.refresh(true);
+    deviceUI.refresh(); resetAutoRefreshBackoff(); await checkDevices(); await refreshSummary(); controlUI.refresh();
     return;
   }
   loadData();

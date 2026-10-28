@@ -562,6 +562,16 @@ main {
   line-height: 1.7
 }
 
+.control-error {
+  margin: 0 0 12px;
+  padding: 12px 14px;
+  border-radius: var(--radius-sm);
+  background: var(--amber-soft);
+  color: #8a5a10;
+  font-size: 13px;
+  line-height: 1.7
+}
+
 /* Status */
 .status-tag {
   display: inline-flex;
@@ -1757,11 +1767,29 @@ tbody tr.reward-row td {
   background: var(--surface)
 }
 
-.control-block>label {
+.control-block>label,
+.control-block-heading>label {
   display: block;
   margin-bottom: 10px;
   font-size: 14px;
   font-weight: 600
+}
+
+.control-block-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px
+}
+
+.control-block-heading>label {
+  margin-bottom: 10px
+}
+
+.control-block-refresh {
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 12px
 }
 
 .control-block>select:not([multiple]) {
