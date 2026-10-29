@@ -588,14 +588,17 @@ paths:
       summary: Multi-dimensional local-device earnings analysis
       description: |
         Read-only snapshot aggregating retained earnings for Provider IDs previously
-        verified on this installation via `device_provider_ids`. Account-wide rows
-        from other devices are excluded. `models` always lists every local model in
-        the range (ignores `model` filters); `totals`, `series`, `hour_of_day`, and
-        `weekday_hour` honor filters. Series omits empty buckets; bucket boundaries
-        follow the same IANA calendar rules as `/v1/earnings/stats`. Amounts are
-        exact integer micro-USD strings. At most twelve distinct `model` values, one
-        per dashboard series colour. Hour granularity requires span ≤ 31 days;
-        overall span ≤ 366 days.
+        verified on this installation via `device_provider_ids`, plus reward rows
+        stored under the `bloomer_reward` sentinel. Rewards pay the account rather
+        than one Provider, so upstream leaves `provider_id` empty; the agent tags
+        those rows on write instead of inventing a Provider for task income.
+        Account-wide task rows from other devices are excluded. `models` always
+        lists every local model in the range (ignores `model` filters); `totals`,
+        `series`, `hour_of_day`, and `weekday_hour` honor filters. Series omits
+        empty buckets; bucket boundaries follow the same IANA calendar rules as
+        `/v1/earnings/stats`. Amounts are exact integer micro-USD strings. At most
+        twelve distinct `model` values, one per dashboard series colour. Hour
+        granularity requires span ≤ 31 days; overall span ≤ 366 days.
       parameters:
         - name: from
           in: query
@@ -1263,7 +1266,11 @@ components:
           type: string
         provider_id:
           type: string
-          description: Original upstream identity; not asserted to be a physical device ID
+          description: |
+            Original upstream identity; not asserted to be a physical device ID.
+            Reward rows arrive with an empty Provider and are stored under the
+            agent's internal `bloomer_reward` sentinel; this field is always
+            restored to the original empty value on read.
         provider_key:
           type: string
         job_id:

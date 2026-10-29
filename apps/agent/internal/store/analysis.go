@@ -109,10 +109,12 @@ func (v *ReadView) EarningsAnalysis(ctx context.Context, window QueryRange, gran
 		filter[m] = true
 	}
 	all := len(models) == 0
+	// Rewards are paid to the account rather than to one Provider, so they are
+	// stored under RewardProviderID instead of a verified device Provider.
 	query := `SELECT model,amount_micro_usd,created_at_us FROM earnings
  WHERE account_id=? AND created_at_us>=? AND created_at_us<?
- AND provider_id IN (SELECT provider_id FROM device_provider_ids)`
-	rows, err := v.tx.QueryContext(ctx, query, v.State.AccountID, window.From.UnixMicro(), window.To.UnixMicro())
+ AND (provider_id IN (SELECT provider_id FROM device_provider_ids) OR provider_id=?)`
+	rows, err := v.tx.QueryContext(ctx, query, v.State.AccountID, window.From.UnixMicro(), window.To.UnixMicro(), RewardProviderID)
 	if err != nil {
 		return out, err
 	}

@@ -99,6 +99,11 @@ func (v *ReadView) Page(ctx context.Context, window QueryRange, model string, af
 			break
 		}
 		item.AccountID = v.State.AccountID
+		// The sentinel is ours, not upstream's; detail pages and CSV must keep
+		// showing the empty Provider that the reward row actually arrived with.
+		if item.ProviderID == RewardProviderID && IsRewardModel(item.Model) {
+			item.ProviderID = ""
+		}
 		item.Amount = strconv.FormatInt(amount, 10)
 		item.CreatedAt = time.UnixMicro(at).UTC().Format(time.RFC3339Nano)
 		page.Items = append(page.Items, item)

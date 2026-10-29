@@ -155,6 +155,40 @@ func TestAnalysisDeviceScopeModelsFilterAndEmpty(t *testing.T) {
 	}
 }
 
+func TestAnalysisIncludesAccountWideRewards(t *testing.T) {
+	now := time.Date(2026, 10, 16, 4, 0, 0, 0, time.UTC)
+	from, to := now.Add(-24*time.Hour), now.Add(time.Hour)
+	// Rewards carry no Provider upstream, so a device-scoped query used to drop them.
+	h, s := queryAPI(t, &now, []upstream.Earning{
+		earningProvider("task", "keep", "own", now.Add(-time.Hour), 10),
+		earningProvider("reward", "base_reward", "", now.Add(-2*time.Hour), 500),
+		earningProvider("foreign", "ghost", "other", now.Add(-3*time.Hour), 999),
+	})
+	seedDeviceProviders(t, s, "device-key", "own")
+
+	status, body := callAPI(t, h, analysisPath(from, to, "granularity=day"))
+	if status != 200 {
+		t.Fatal(body)
+	}
+	if got := body["totals"].(map[string]any)["amount_micro_usd"]; got != "510" {
+		t.Fatalf("totals must include the reward but not another device: %v", got)
+	}
+	models := body["models"].([]any)
+	if len(models) != 2 {
+		t.Fatalf("reward must be listed as its own pseudo model: %+v", models)
+	}
+	var reward map[string]any
+	for _, item := range models {
+		row := item.(map[string]any)
+		if row["model"] == "base_reward" {
+			reward = row
+		}
+	}
+	if reward == nil || reward["amount_micro_usd"] != "500" || reward["record_count"] != float64(1) {
+		t.Fatalf("reward row missing or wrong: %+v", models)
+	}
+}
+
 func TestAnalysisRetentionTruncation(t *testing.T) {
 	now := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
 	cut := now.Add(-config.Retention)

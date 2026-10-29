@@ -85,7 +85,10 @@ func (s *Store) CommitRound(ctx context.Context, round Round) (CommitResult, err
 			if r.CreatedAt.Before(round.Cutoff) {
 				continue
 			}
-			res, err := insert.ExecContext(ctx, r.AccountID, r.RecordID, r.ProviderID, r.ProviderKey, r.JobID, r.Model, r.AmountMicroUSD, r.PromptTokens, r.CompletionTokens, r.CreatedAt.UnixMicro())
+			// Rewards arrive with a blank Provider. Tagging them keeps the row
+			// attributable without inventing a Provider for real task income.
+			provider := rewardProvider(r.ProviderID, r.Model)
+			res, err := insert.ExecContext(ctx, r.AccountID, r.RecordID, provider, r.ProviderKey, r.JobID, r.Model, r.AmountMicroUSD, r.PromptTokens, r.CompletionTokens, r.CreatedAt.UnixMicro())
 			if err != nil {
 				return err
 			}
@@ -97,8 +100,8 @@ func (s *Store) CommitRound(ctx context.Context, round Round) (CommitResult, err
 				result.New++
 				continue
 			}
-			res, err = update.ExecContext(ctx, r.ProviderID, r.ProviderKey, r.JobID, r.Model, r.AmountMicroUSD, r.PromptTokens, r.CompletionTokens, r.CreatedAt.UnixMicro(), r.AccountID, r.RecordID,
-				r.ProviderID, r.ProviderKey, r.JobID, r.Model, r.AmountMicroUSD, r.PromptTokens, r.CompletionTokens, r.CreatedAt.UnixMicro())
+			res, err = update.ExecContext(ctx, provider, r.ProviderKey, r.JobID, r.Model, r.AmountMicroUSD, r.PromptTokens, r.CompletionTokens, r.CreatedAt.UnixMicro(), r.AccountID, r.RecordID,
+				provider, r.ProviderKey, r.JobID, r.Model, r.AmountMicroUSD, r.PromptTokens, r.CompletionTokens, r.CreatedAt.UnixMicro())
 			if err != nil {
 				return err
 			}

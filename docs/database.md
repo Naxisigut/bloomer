@@ -1,10 +1,10 @@
 # Agent 数据库、迁移与恢复
 
-当前数据库 schema 为 **8**；迁移位于 `apps/agent/migrations`，编译时嵌入程序。schema 1 是 P1 的基础表，schema 2 增加采集与维护的进程级检查点和清理索引，schema 3 增加设备身份和设备状态历史，schema 4 的旧路由列仅保留为升级历史；schema 5 增加本机任务标志、设备最新收益、空闲判定与已确认设备身份关联。schema 6 增加授权心跳、会话 ID、告警规则状态、最近 50 条告警记录与持久化发送队列。schema 7 将设备 telemetry 改为每安装仅保留最新一条样本，升级时删除更早历史并建立 `device_id` 唯一索引。schema 8 增加全网模型收益基线、间隔汇总与切换记录表。数据库默认位于用户应用数据目录，不进入仓库。
+当前数据库 schema 为 **10**；迁移位于 `apps/agent/migrations`，编译时嵌入程序。schema 1 是 P1 的基础表，schema 2 增加采集与维护的进程级检查点和清理索引，schema 3 增加设备身份和设备状态历史，schema 4 的旧路由列仅保留为升级历史；schema 5 增加本机任务标志、设备最新收益、空闲判定与已确认设备身份关联。schema 6 增加授权心跳、会话 ID、告警规则状态、最近 50 条告警记录与持久化发送队列。schema 7 将设备 telemetry 改为每安装仅保留最新一条样本，升级时删除更早历史并建立 `device_id` 唯一索引。schema 8 增加全网模型收益基线、间隔汇总与切换记录表。schema 9 为全网间隔增加范围、忙碌 Provider 与单 Provider 最大 token。schema 10 为 `provider_id` 为空的奖励明细补哨兵值 `bloomer_reward`，使按设备归属的分析查询能看到这类账户级收入。数据库默认位于用户应用数据目录，不进入仓库。
 
 ## 表和连接
 
-- `earnings`：`(account_id, record_id)` 主键，保留来源文本 ID；时间与模型查询各有组合索引。金额为有符号 int64 微美元，时间为 UTC 整数微秒。
+- `earnings`：`(account_id, record_id)` 主键，保留来源文本 ID；时间与模型查询各有组合索引。金额为有符号 int64 微美元，时间为 UTC 整数微秒。上游对奖励明细不填 `provider_id`，落库时改写为哨兵值 `bloomer_reward`（仅限空白 Provider 的奖励行，其他行保持原值），读取明细时再还原为空字符串，避免这条自定义值出现在接口与 CSV 中。
 - `account_summary_current`：每个账户仅保留最新官方汇总，不每分钟永久追加快照。
 - `sync_state`：最近尝试、完整成功、错误分类、同步模式、覆盖状态与上次写入计数。
 - `coverage_gaps`：观测中断及疑似缺口，带账户和时间索引；不等同于精确丢失收益边界。
