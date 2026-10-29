@@ -111,20 +111,14 @@ const contextMenu = createContextMenu();
 // The switcher is created first because the network view renders its buttons;
 // its callbacks close over `networkRatesUI`, which is assigned just after.
 const networkSwitcher = createNetworkSwitch({
-  query,
   submitControl: (id, body) => client.submit(id, body),
   selectedDevice,
-  // The status line lives in the network panel, so any change repaints just that
-  // page's buttons and status line.
-  onChange: () => networkRatesUI.syncSwitchStatus(),
-  // A successful job changes what both views show: a download adds a local model,
-  // a switch changes the running model and the operation record.
-  onSettled: (job, status) => {
-    if (status !== 'succeeded') return;
-    if (job?.action === 'download') controlModels.invalidate(state.selected);
-    if (state.view === 'network') networkRatesUI.refresh();
-    else if (state.view === 'devices') controlUI.refresh();
-  },
+  // A submit only toggles the row buttons, so a device change or a new job
+  // repaints the buttons instead of the whole table.
+  onChange: () => networkRatesUI.syncActionButtons(),
+  // The job's outcome is read on the remote-control panel, so a download is
+  // assumed to have changed the local list and the next visit re-reads it.
+  onSubmitted: body => { if (body.action === 'download') controlModels.invalidate(state.selected); },
 });
 const networkRatesUI = createNetworkRatesUI({ query, selectedDevice, currentView: () => state.view, escape, switcher: networkSwitcher, contextMenu });
 

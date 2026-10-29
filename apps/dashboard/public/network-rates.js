@@ -474,7 +474,7 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
     if (device?.id !== deviceID) {
       deviceID = device?.id; rates = null; trend = null; trendError = ''; loading = false; error = ''; unsupported = false; generation++;
       tokenModels = []; tokenSelected = new Set(); tokenRange = null;
-      // A switch submitted for the previous device must not keep reporting here.
+      // A switch submitted for the previous device must not block the new one.
       switcher?.setDevice(deviceID);
     }
     renderTokenPeriodControls();
@@ -499,13 +499,11 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
     $('#network-chart-unsupported').hidden = !unsupported;
     renderTokenModelChoices();
     renderTokenChart();
-    switcher?.render();
   }
 
-  // While a job runs only the buttons and the status line change; rewriting the
-  // whole table would drop focus and scroll position between polls.
-  function syncSwitchStatus() {
-    switcher?.render();
+  // Only the buttons depend on whether a submit is in flight; rewriting the whole
+  // table would drop focus and scroll position.
+  function syncActionButtons() {
     if (!rates) return;
     const demo = deviceID === 'demo';
     document.querySelectorAll('#network-rates-candidates [data-network-action]').forEach(button => {
@@ -674,7 +672,14 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
       if (failure.code === 'network_rates_unsupported') { unsupported = true; rates = null; }
       else { error = failure.message; rates = null; }
     } finally {
-      if (request === generation && selectedDevice()?.id === id) { loading = false; render(); }
+      if (request === generation && selectedDevice()?.id === id) {
+        loading = false; render();
+        // The network view's refresh is the only signal this page uses for a
+        // submitted job, so it also releases the row buttons. It happens even on
+        // a failed read: a locked row would be worse than an early retry, and the
+        // device rejects a second job while one runs.
+        switcher?.settle();
+      }
     }
   }
 
@@ -766,5 +771,5 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
   });
   selectNetworkTab(storedNetworkTab() || 'table');
 
-  return { render, refresh, syncSwitchStatus, refreshIfVisible() { if (currentView() === 'network') return refresh(); } };
+  return { render, refresh, syncActionButtons, refreshIfVisible() { if (currentView() === 'network') return refresh(); } };
 }
