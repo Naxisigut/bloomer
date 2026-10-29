@@ -5,6 +5,8 @@ import { createAlertUI } from './alert-ui.js';
 import { createControlUI } from './control-ui.js';
 import { createControlModelsStore } from './control-models.js';
 import { createNetworkRatesUI } from './network-rates.js';
+import { createNetworkSwitch } from './network-switch.js';
+import { createContextMenu } from './context-menu.js';
 import { displayModelName, displayModelNames } from './models.js';
 import { DeviceStore } from './connections.js';
 import { createAgentClient } from './agent-client.js';
@@ -105,7 +107,26 @@ const alertUI = createAlertUI({ query, selectedDevice, currentView: () => state.
 // re-entering the devices view never repeats the CLI probe.
 const controlModels = createControlModelsStore({ query });
 const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), submitLongTaskRestart: (id, enabled) => client.submitLongTaskRestart(id, enabled), models: controlModels, query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
-const networkRatesUI = createNetworkRatesUI({ query, selectedDevice, currentView: () => state.view, escape });
+const contextMenu = createContextMenu();
+// The switcher is created first because the network view renders its buttons;
+// its callbacks close over `networkRatesUI`, which is assigned just after.
+const networkSwitcher = createNetworkSwitch({
+  query,
+  submitControl: (id, body) => client.submit(id, body),
+  selectedDevice,
+  // The status line lives in the network panel, so any change repaints just that
+  // page's buttons and status line.
+  onChange: () => networkRatesUI.syncSwitchStatus(),
+  // A successful job changes what both views show: a download adds a local model,
+  // a switch changes the running model and the operation record.
+  onSettled: (job, status) => {
+    if (status !== 'succeeded') return;
+    if (job?.action === 'download') controlModels.invalidate(state.selected);
+    if (state.view === 'network') networkRatesUI.refresh();
+    else if (state.view === 'devices') controlUI.refresh();
+  },
+});
+const networkRatesUI = createNetworkRatesUI({ query, selectedDevice, currentView: () => state.view, escape, switcher: networkSwitcher, contextMenu });
 
 function renderDevices() {
   const active = state.selected;

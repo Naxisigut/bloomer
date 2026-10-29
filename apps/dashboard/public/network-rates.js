@@ -78,6 +78,16 @@ function candidateRowClass(candidate) {
   return '';
 }
 
+// One action per row, chosen from the candidate's own state. A model that is
+// already running cannot be switched to again, and an undownloaded model can
+// only be downloaded — the row never offers both.
+export function modelAction(candidate, { currentModel = null, busy = false, demo = false } = {}) {
+  const blocked = demo ? '演示设备不执行远程操作。' : busy ? '正在执行另一项操作，请等待结束后再试。' : '';
+  if (candidate.model === currentModel) return { kind: 'current', label: '当前模型', disabled: true, hint: '已是当前运行模型。' };
+  if (!candidate.downloaded) return { kind: 'download', label: '下载该模型', disabled: Boolean(blocked), hint: blocked || '下载完成后可切换，不会自动切换。' };
+  return { kind: 'switch', label: '切换到该模型', disabled: Boolean(blocked), hint: blocked || '将替换整套托管模型。' };
+}
+
 export function formatUsdPerMillionMicro(microStr) {
   if (absent(microStr)) return '—';
   const amount = Number(BigInt(microStr)) / 1e6;
@@ -162,7 +172,7 @@ function priceNote(candidate) {
 
 export function renderCandidatesTable(candidates, escape, options = {}) {
   if (!candidates?.length) return '<p class="control-note">暂无候选模型数据</p>';
-  const { currentModel = null, advantageRatio = 0.2, chipTiers = [], shortLabel = '短窗口', longLabel = '近 1 小时' } = options;
+  const { currentModel = null, advantageRatio = 0.2, chipTiers = [], shortLabel = '短窗口', longLabel = '近 1 小时', actionFor = null } = options;
   const labels = displayModelNames(candidates.map(candidate => candidate.model));
   const current = candidates.find(candidate => candidate.model === currentModel);
   const rows = candidates.map(candidate => {
@@ -172,17 +182,25 @@ export function renderCandidatesTable(candidates, escape, options = {}) {
     const cohort = cohortLabel(candidate, chipTiers);
     const note = priceNote(candidate);
     const hourProviders = candidate.hour ? `；${longLabel}均 ${Math.round(candidate.hour.avg_providers * 10) / 10} 台` : '';
+    const action = actionFor?.(candidate) || null;
+    const actionCell = action
+      ? `<td class="network-rates-action"><button type="button" class="button button-white network-rates-action-button" data-network-action="${escape(action.kind)}" data-model="${escape(candidate.model)}"${action.disabled ? ` disabled title="${escape(action.hint)}"` : ` title="${escape(action.hint)}"`}>${escape(action.label)}</button></td>`
+      : '';
     return `<tr${muted ? ` class="${muted}"` : ''}>`
       + `<td title="${escape(candidate.model)}">${escape(labels.get(candidate.model))}${tags}</td>`
       + `<td title="${escape(`${shortLabel}均 ${Math.round(candidate.avg_providers * 10) / 10} 台${hourProviders}`)}">${escape(String(Math.round(candidate.avg_providers * 10) / 10))}${cohort ? `<small class="network-rates-sub">${escape(cohort)}</small>` : ''}</td>`
       + `<td title="输出价 + 输入比 × 输入价（每百万输出 token）">${escape(formatUsdPerMillionMicro(candidate.effective_price_micro))}${note ? `<small class="network-rates-sub">${escape(note)}</small>` : ''}</td>`
       + windowCells(shortWindow(candidate), current && shortWindow(current), isCurrent, advantageRatio, escape)
       + windowCells(candidate.hour, current?.hour, isCurrent, advantageRatio, escape)
+      + actionCell
       + '</tr>';
   }).join('');
   const windowHead = '<th>有单率</th><th>每台输出 token/h</th><th>估算 $/h</th><th title="每轮去掉输出最多的一台后再平均">去头 $/h</th>';
-  return `<div class="table-scroll network-rates-table-wrap"><table><thead>`
-    + `<tr><th rowspan="2">模型</th><th rowspan="2">台数</th><th rowspan="2">综合单价</th><th colspan="4" class="network-rates-window">${escape(shortLabel)}</th><th colspan="4" class="network-rates-window">${escape(longLabel)}</th></tr>`
+  // The action column is pinned to the right edge so it stays reachable while the
+  // eleven metric columns scroll horizontally on narrow screens.
+  const actionHead = actionFor ? '<th rowspan="2" class="network-rates-action">操作</th>' : '';
+  return `<div class="table-scroll network-rates-table-wrap"><table>`
+    + `<thead><tr><th rowspan="2">模型</th><th rowspan="2">台数</th><th rowspan="2">综合单价</th><th colspan="4" class="network-rates-window">${escape(shortLabel)}</th><th colspan="4" class="network-rates-window">${escape(longLabel)}</th>${actionHead}</tr>`
     + `<tr>${windowHead}${windowHead}</tr>`
     + `</thead><tbody>${rows}</tbody></table></div>`;
 }
@@ -389,7 +407,7 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
   };
 }
 
-export function createNetworkRatesUI({ query, selectedDevice, currentView, escape }) {
+export function createNetworkRatesUI({ query, selectedDevice, currentView, escape, switcher = null, contextMenu = null }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, rates = null, trend = null, trendError = '', loading = false, error = '', unsupported = false, generation = 0;
   let tokenModels = [], tokenSelected = new Set(), tokenRange = null;
@@ -456,6 +474,8 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
     if (device?.id !== deviceID) {
       deviceID = device?.id; rates = null; trend = null; trendError = ''; loading = false; error = ''; unsupported = false; generation++;
       tokenModels = []; tokenSelected = new Set(); tokenRange = null;
+      // A switch submitted for the previous device must not keep reporting here.
+      switcher?.setDevice(deviceID);
     }
     renderTokenPeriodControls();
     const demo = deviceID === 'demo';
@@ -470,12 +490,58 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
       message.className = `state-message${error ? ' warning' : ''}`;
       message.textContent = error;
     }
-    $('#network-rates-candidates').innerHTML = unsupported ? '' : rates ? renderCandidatesTable(rates.candidates, escape, candidateTableOptions(rates)) : '';
+    $('#network-rates-candidates').innerHTML = unsupported ? '' : rates ? renderCandidatesTable(rates.candidates, escape, {
+      ...candidateTableOptions(rates),
+      actionFor: candidate => modelAction(candidate, { currentModel: rates.current_model, busy: switcher?.busy, demo }),
+    }) : '';
     $('.network-token-card').hidden = unsupported;
     $('#network-token-period').hidden = unsupported;
     $('#network-chart-unsupported').hidden = !unsupported;
     renderTokenModelChoices();
     renderTokenChart();
+    switcher?.render();
+  }
+
+  // While a job runs only the buttons and the status line change; rewriting the
+  // whole table would drop focus and scroll position between polls.
+  function syncSwitchStatus() {
+    switcher?.render();
+    if (!rates) return;
+    const demo = deviceID === 'demo';
+    document.querySelectorAll('#network-rates-candidates [data-network-action]').forEach(button => {
+      const candidate = rates.candidates.find(item => item.model === button.dataset.model) || { model: button.dataset.model, downloaded: true };
+      const action = modelAction(candidate, { currentModel: rates.current_model, busy: switcher?.busy, demo });
+      button.dataset.networkAction = action.kind;
+      button.disabled = action.disabled;
+      button.title = action.hint;
+      button.textContent = action.label;
+    });
+  }
+
+  // Both entry points submit the same single-model control job, so the row button
+  // and the chip menu never disagree about what a click does.
+  function openModelAction(kind, model) {
+    if (!switcher || !model) return;
+    if (kind === 'download') switcher.download(model);
+    else switcher.switchTo(model);
+  }
+
+  // The chip menu only ever offers a switch, so its item keeps the promised name.
+  // An undownloaded or already-running model keeps the item visible but disabled
+  // with the reason, rather than turning into a download from a chart.
+  function chipActionFor(model) {
+    const candidate = (rates?.candidates || []).find(item => item.model === model);
+    const blocked = deviceID === 'demo' ? '演示设备不执行远程操作。'
+      : switcher?.busy ? '正在执行另一项操作，请等待结束后再试。'
+        : candidate && !candidate.downloaded ? '该模型尚未下载，请先在「模型估算」下载。'
+          : '';
+    const current = model === rates?.current_model;
+    return {
+      kind: 'switch',
+      label: '切换到该模型',
+      disabled: Boolean(blocked || current),
+      hint: current ? '已是当前运行模型。' : blocked || '将替换整套托管模型。',
+    };
   }
 
   function renderTokenChart() {
@@ -634,6 +700,31 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
     else tokenSelected.delete(input.value);
     renderTokenChart();
   });
+  // Right-clicking a chip offers the same switch as the table row. The chip keeps
+  // its checkbox behaviour; only the menu is new.
+  tokenChoices?.addEventListener('contextmenu', event => {
+    const chip = event.target.closest('.home-model-choice');
+    const input = chip?.querySelector('[data-network-token-model]');
+    if (!input) return;
+    event.preventDefault();
+    const action = chipActionFor(input.value);
+    contextMenu?.open({
+      x: event.clientX, y: event.clientY, label: `模型操作：${displayModelName(input.value)}`,
+      items: [{
+        label: action.label,
+        disabled: action.disabled,
+        hint: action.hint,
+        onSelect: () => openModelAction(action.kind, input.value),
+      }],
+    });
+  });
+  // A row button always submits a single model; the kind comes from the same
+  // helper that rendered the label, so a stale row can only re-send its own action.
+  $('#network-rates-candidates')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-network-action]');
+    if (!button || button.disabled) return;
+    openModelAction(button.dataset.networkAction, button.dataset.model);
+  });
   if (chart) new ResizeObserver(() => renderTokenChart()).observe(chart);
 
   const networkTabs = [...document.querySelectorAll('[data-network-tab]')];
@@ -675,5 +766,5 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
   });
   selectNetworkTab(storedNetworkTab() || 'table');
 
-  return { render, refresh, refreshIfVisible() { if (currentView() === 'network') return refresh(); } };
+  return { render, refresh, syncSwitchStatus, refreshIfVisible() { if (currentView() === 'network') return refresh(); } };
 }

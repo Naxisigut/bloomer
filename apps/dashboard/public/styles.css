@@ -1985,6 +1985,81 @@ tbody tr.reward-row td {
   font-size: 11px
 }
 
+/* The action column stays visible while the metric columns scroll sideways, so a
+   narrow window never hides the only control on the row. */
+.network-rates-table-wrap th.network-rates-action,
+.network-rates-table-wrap td.network-rates-action {
+  position: sticky;
+  right: 0;
+  z-index: 1;
+  padding-right: 16px;
+  padding-left: 12px;
+  border-left: 1px solid var(--line);
+  background: var(--paper);
+  text-align: right
+}
+
+.network-rates-table-wrap thead th.network-rates-action {
+  z-index: 2;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 500;
+  vertical-align: middle
+}
+
+.network-rates-table-wrap tbody tr:hover td.network-rates-action {
+  background: var(--surface-2)
+}
+
+.network-rates-action-button {
+  min-height: 30px;
+  padding: 0 12px;
+  font-size: 12px;
+  white-space: nowrap
+}
+
+/* Context menu shared by every right-click action. */
+.context-menu {
+  position: fixed;
+  z-index: 60;
+  min-width: 168px;
+  max-width: min(280px, calc(100vw - 16px));
+  padding: 6px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(27, 29, 33, .16)
+}
+
+.context-menu-item {
+  display: block;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--ink);
+  font-size: 13px;
+  text-align: left
+}
+
+.context-menu-item:hover:not(:disabled),
+.context-menu-item:focus-visible {
+  background: var(--surface)
+}
+
+.context-menu-item:disabled {
+  color: var(--faint)
+}
+
+.context-menu-item small {
+  display: block;
+  margin-top: 2px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.5
+}
+
 .network-token-card {
   min-width: 0;
   max-width: 100%;
