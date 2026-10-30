@@ -225,7 +225,7 @@ export function tokenTrendWindow(series) {
   return { start: end - TOKEN_TREND_WINDOW_MS, end };
 }
 
-export function tokenTrendRecentRange(window, hours = 3) {
+export function tokenTrendRecentRange(window, hours = 2) {
   if (!window) return null;
   return clampTokenTrendRange({ start: window.end - hours * 3_600_000, end: window.end }, window);
 }
@@ -297,7 +297,7 @@ export function tokenTrendRangeMatches(range, target) {
 
 export function tokenTrendRangeLabel(range, window) {
   if (window && range && tokenTrendRangeCoversWindow(range, window)) return '近 24 小时';
-  if (!range || !window || tokenTrendRangeMatches(range, tokenTrendRecentRange(window))) return '前 3 小时';
+  if (!range || !window || tokenTrendRangeMatches(range, tokenTrendRecentRange(window))) return '前 2 小时';
   return `${tokenClock.format(new Date(range.start))} – ${tokenClock.format(new Date(range.end))}`;
 }
 
@@ -546,7 +546,7 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
     if (!chart || unsupported || chart.clientWidth < 40) return;
     const empty = !trend?.length
       ? '近 24 小时暂无各模型输出 token 样本'
-      : tokenRange ? '所选时段暂无各模型输出 token 样本' : '前 3 小时暂无各模型输出 token 样本';
+      : tokenRange ? '所选时段暂无各模型输出 token 样本' : '前 2 小时暂无各模型输出 token 样本';
     const noneSelected = '勾选模型以查看对应折线。';
     if (trendError) {
       chart.innerHTML = `<div class="empty-state">${escape(trendError)}</div>`;
@@ -569,7 +569,7 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
     const windowed = filterTokenTrendByRange(trend, range);
     const visible = windowed.filter(item => tokenSelected.has(item.model));
     const width = Math.max(560, chart.clientWidth);
-    const height = chart.clientHeight || 220;
+    const height = chart.clientHeight || 320;
     const figure = renderTokenTrendFigure(visible, {
       width, height, escape, insufficient: tokenInsufficient(), colorFor: tokenColorFor,
       periodLabel: tokenTrendRangeLabel(range, window),

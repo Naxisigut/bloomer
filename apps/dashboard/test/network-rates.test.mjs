@@ -106,7 +106,7 @@ test('token trend range filter slices within the latest 24h payload', () => {
   assert.deepEqual(window, { start: end - 24 * 3_600_000, end });
   assert.equal(formatTokenTrendInput(end), '2026-10-23T20:00');
   assert.equal(parseTokenTrendInput('2026-10-23T20:00'), end);
-  assert.equal(tokenTrendRangeLabel(null, window), '前 3 小时');
+  assert.equal(tokenTrendRangeLabel(null, window), '前 2 小时');
   assert.equal(tokenTrendRangeLabel(window, window), '近 24 小时');
   const outside = clampTokenTrendRange({ start: window.start - 3_600_000, end: window.end + 3_600_000 }, window);
   assert.deepEqual(outside, window);
@@ -128,8 +128,8 @@ test('token trend range filter slices within the latest 24h payload', () => {
   assert.match(tokenTrendRangeLabel(partial, window), /18:00/);
   const recent = tokenTrendRecentRange(window);
   assert.equal(recent.end, window.end);
-  assert.equal(recent.start, window.end - 3 * 3_600_000);
-  assert.equal(tokenTrendRangeLabel(recent, window), '前 3 小时');
+  assert.equal(recent.start, window.end - 2 * 3_600_000);
+  assert.equal(tokenTrendRangeLabel(recent, window), '前 2 小时');
   assert.equal(tokenTrendRangeMatches(recent, tokenTrendRecentRange(window)), true);
   const shortWindow = { start: end - 3_600_000, end };
   assert.deepEqual(tokenTrendRecentRange(shortWindow), shortWindow);
