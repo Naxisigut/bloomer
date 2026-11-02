@@ -120,7 +120,7 @@ const networkSwitcher = createNetworkSwitch({
   // assumed to have changed the local list and the next visit re-reads it.
   onSubmitted: body => { if (body.action === 'download') controlModels.invalidate(state.selected); },
 });
-const networkRatesUI = createNetworkRatesUI({ query, selectedDevice, currentView: () => state.view, escape, switcher: networkSwitcher, contextMenu });
+const networkRatesUI = createNetworkRatesUI({ query, selectedDevice, escape, switcher: networkSwitcher, contextMenu });
 
 function renderDevices() {
   const active = state.selected;
@@ -293,7 +293,6 @@ function setView(view, { load = true } = {}) {
   $('.page-heading').hidden = view === 'overview';
   $$('.nav-item').forEach(button => { button.classList.toggle('active', button.dataset.view === view); if (button.dataset.view === view) button.setAttribute('aria-current', 'page'); else button.removeAttribute('aria-current'); });
   if (view === 'devices') { checkDevices(); deviceUI.refresh(); controlUI.refresh(); }
-  if (view === 'network') networkRatesUI.refresh();
   if (view === 'alerts') alertUI.refresh();
   if (view === 'overview' && load) { homeRevenue.refresh(); loadRecentEarnings(); }
   if (view === 'analysis') {
@@ -312,10 +311,11 @@ async function selectDevice(id) {
   delete state.data.recent;
   state.recentError = null;
   analysisPage.onGlobalDeviceChange(id);
-  if (state.view === 'analysis') { renderDevices(); renderRecent(); await alertUI.refreshIfVisible(); return; }
+  const networkRefresh = networkRatesUI.refresh();
+  if (state.view === 'analysis') { renderDevices(); renderRecent(); await alertUI.refreshIfVisible(); await networkRefresh; return; }
   await loadData();
   await alertUI.refreshIfVisible();
-  await networkRatesUI.refreshIfVisible();
+  await networkRefresh;
 }
 const deviceTabs = $$('[data-device-tab]');
 function selectDeviceTab(tab, { focus = false } = {}) {
@@ -362,7 +362,7 @@ $('#refresh').addEventListener('click', async () => {
     return;
   }
   if (state.view === 'network') {
-    resetAutoRefreshBackoff(); await refreshSummary(); networkRatesUI.refresh();
+    resetAutoRefreshBackoff(); await refreshSummary(); await networkRatesUI.refresh();
     return;
   }
   if (state.view === 'devices') {
@@ -430,6 +430,7 @@ try {
   else if (['overview', 'analysis', 'network', 'devices', 'alerts'].includes(view)) setView(view, { load: false });
   await loadData();
   scheduleAutoRefresh(nextAutoRefreshDelayMs({ health: state.health.get(state.selected), failStreak: 0 }));
+  networkRatesUI.start();
 } catch (error) { $('#alerts').innerHTML = `<div class="alert error">${escape(error.message)}</div>`; }
 function resetAutoRefreshBackoff() { autoRefreshFailStreak = 0; }
 function scheduleAutoRefresh(delayMs) {
@@ -461,7 +462,7 @@ async function autoRefresh() {
     return;
   }
   if (state.view === 'network') {
-    await refreshSummary(); await networkRatesUI.refresh();
+    await refreshSummary();
     return;
   }
   if (state.view === 'devices') {

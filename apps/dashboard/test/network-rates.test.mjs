@@ -23,6 +23,9 @@ import {
   tokenTrendSeriesEnd,
   tokenTrendWindow,
   validateNetworkRatesTokenTrendResponse,
+  NETWORK_RATES_REFRESH_MS,
+  formatRefreshCountdown,
+  networkRefreshPlan,
 } from '../public/network-rates.js';
 
 const device = { url: 'https://mac.tail123.ts.net:8443', token: 'synthetic-test-token' };
@@ -161,6 +164,17 @@ test('token trend rejects old points payload and draws escaped multi-series curv
   assert.doesNotMatch(figure.markup, /<img onerror/);
   const peak = figure.series[0].coords[1];
   assert.ok(peak.y < figure.series[0].coords[0].y && peak.y < figure.series[0].coords[2].y);
+});
+
+test('network refresh countdown is two minutes and joins the same device', () => {
+  assert.equal(NETWORK_RATES_REFRESH_MS, 120_000);
+  assert.equal(formatRefreshCountdown(120_000), '2:00');
+  assert.equal(formatRefreshCountdown(61_000), '1:01');
+  assert.equal(formatRefreshCountdown(0), '0:00');
+  assert.equal(formatRefreshCountdown(-500), '0:00');
+  assert.equal(networkRefreshPlan('device-a', 'device-a'), 'join');
+  assert.equal(networkRefreshPlan('device-a', 'device-b'), 'start');
+  assert.equal(networkRefreshPlan(null, 'device-a'), 'start');
 });
 
 test('old agents return network_rates_unsupported for network rates routes', async () => {

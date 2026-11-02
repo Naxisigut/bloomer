@@ -22,6 +22,21 @@ export function formatUsdPerHourMicro(microStr) {
   return `${negative ? '−' : ''}$${trimmed}/h`;
 }
 
+export const NETWORK_RATES_REFRESH_MS = 2 * 60_000;
+
+export function formatRefreshCountdown(remainingMs) {
+  const totalSeconds = Math.max(0, Math.ceil(remainingMs / 1000));
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${String(seconds).padStart(2, '0')}`;
+}
+
+// A refresh already running for this device is the refresh. A different device starts its own.
+export function networkRefreshPlan(inflightDeviceID, deviceID) {
+  if (inflightDeviceID != null && inflightDeviceID === deviceID) return 'join';
+  return 'start';
+}
+
 const object = value => value !== null && typeof value === 'object' && !Array.isArray(value);
 const micro = value => typeof value === 'string' && /^-?\d+$/.test(value);
 
@@ -407,7 +422,7 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
   };
 }
 
-export function createNetworkRatesUI({ query, selectedDevice, currentView, escape, switcher = null, contextMenu = null }) {
+export function createNetworkRatesUI({ query, selectedDevice, escape, switcher = null, contextMenu = null }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, rates = null, trend = null, trendError = '', loading = false, error = '', unsupported = false, generation = 0;
   let tokenModels = [], tokenSelected = new Set(), tokenRange = null;
@@ -480,7 +495,7 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
     renderTokenPeriodControls();
     const demo = deviceID === 'demo';
     $('#network-rates-panel').setAttribute('aria-busy', String(loading));
-    $('#network-rates-refresh').disabled = demo || loading;
+    $('#network-rates-refresh').disabled = loading;
     const message = $('#network-rates-message');
     if (unsupported) {
       message.hidden = false; message.className = 'state-message warning';
@@ -633,54 +648,88 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
     chart.onpointerleave = hide;
   }
 
-  function readTrend(id) {
-    return query('network-rates-token-trend', null, id).then(
+  function readTrend(id, signal) {
+    return query('network-rates-token-trend', null, id, signal).then(
       value => ({ series: value.series, error: '' }),
-      failure => ({ series: [], error: failure.code === 'network_rates_unsupported' ? '设备 Agent 版本过旧，暂无输出 token 趋势。' : failure.message }),
+      failure => {
+        if (signal?.aborted || failure?.name === 'AbortError') throw failure;
+        return { series: [], error: failure.code === 'network_rates_unsupported' ? '设备 Agent 版本过旧，暂无输出 token 趋势。' : failure.message };
+      },
     );
   }
 
-  async function refresh() {
-    render();
-    if (!deviceID || deviceID === 'demo') {
-      if (deviceID === 'demo') {
-        loading = true; render();
-        try {
-          const [ratesResponse, trendResponse] = await Promise.all([query('network-rates', null, deviceID), readTrend(deviceID)]);
-          if (selectedDevice()?.id === deviceID) {
-            rates = ratesResponse; trend = trendResponse.series; trendError = trendResponse.error; unsupported = false; error = '';
-            syncTokenModels(trend);
-          }
-        } catch (failure) {
-          if (selectedDevice()?.id === deviceID) { error = failure.message; rates = null; trend = null; trendError = ''; }
-        } finally {
-          if (selectedDevice()?.id === deviceID) { loading = false; render(); }
-        }
-      }
-      return;
-    }
-    const id = deviceID, request = ++generation;
+  const countdown = $('#network-rates-countdown');
+  let refreshFlight = null;
+  let refreshTimer = null;
+  let nextRefreshAt = 0;
+  let polling = false;
+
+  function paintCountdown() {
+    if (!countdown) return;
+    countdown.textContent = nextRefreshAt ? `${formatRefreshCountdown(nextRefreshAt - Date.now())} 后刷新` : '';
+  }
+
+  function armRefresh(from = Date.now()) {
+    nextRefreshAt = from + NETWORK_RATES_REFRESH_MS;
+    if (refreshTimer) clearTimeout(refreshTimer);
+    refreshTimer = setTimeout(() => {
+      refreshTimer = null;
+      refresh();
+    }, Math.max(0, nextRefreshAt - Date.now()));
+    paintCountdown();
+  }
+
+  async function loadRates(id, request, signal) {
     loading = true; error = ''; unsupported = false; render();
     try {
-      const [ratesResponse, trendResponse] = await Promise.all([query('network-rates', null, id), readTrend(id)]);
-      if (request !== generation || selectedDevice()?.id !== id) return;
-      rates = ratesResponse; trend = trendResponse.series; trendError = trendResponse.error;
+      const [ratesResponse, trendResponse] = await Promise.all([
+        query('network-rates', null, id, signal),
+        readTrend(id, signal),
+      ]);
+      if (signal.aborted || request !== generation || selectedDevice()?.id !== id) return;
+      rates = ratesResponse; trend = trendResponse.series; trendError = trendResponse.error; unsupported = false; error = '';
       syncTokenModels(trend);
     } catch (failure) {
-      if (request !== generation || selectedDevice()?.id !== id) return;
+      if (signal.aborted || failure?.name === 'AbortError' || request !== generation || selectedDevice()?.id !== id) return;
       trend = null; trendError = '';
       if (failure.code === 'network_rates_unsupported') { unsupported = true; rates = null; }
       else { error = failure.message; rates = null; }
     } finally {
-      if (request === generation && selectedDevice()?.id === id) {
+      if (!signal.aborted && request === generation && selectedDevice()?.id === id) {
         loading = false; render();
-        // The network view's refresh is the only signal this page uses for a
-        // submitted job, so it also releases the row buttons. It happens even on
-        // a failed read: a locked row would be worse than an early retry, and the
-        // device rejects a second job while one runs.
+        // This refresh is the only signal the page uses for a submitted job, so it
+        // also releases the row buttons. It happens even on a failed read: a locked
+        // row would be worse than an early retry, and the device rejects a second job.
         switcher?.settle();
       }
     }
+  }
+
+  // Manual and automatic refreshes share this call. An in-flight request for the
+  // same device is reused; the countdown always restarts from this call.
+  async function refresh() {
+    armRefresh();
+    render();
+    const id = deviceID;
+    if (!id) return;
+    if (refreshFlight && networkRefreshPlan(refreshFlight.deviceID, id) === 'join') return refreshFlight.promise;
+    refreshFlight?.controller.abort();
+    const controller = new AbortController();
+    const request = ++generation;
+    const promise = loadRates(id, request, controller.signal);
+    refreshFlight = { deviceID: id, promise, controller };
+    try {
+      return await promise;
+    } finally {
+      if (refreshFlight?.controller === controller) refreshFlight = null;
+    }
+  }
+
+  function start() {
+    if (polling) return;
+    polling = true;
+    setInterval(paintCountdown, 1000);
+    return refresh();
   }
 
   $('#network-rates-refresh')?.addEventListener('click', refresh);
@@ -771,5 +820,5 @@ export function createNetworkRatesUI({ query, selectedDevice, currentView, escap
   });
   selectNetworkTab(storedNetworkTab() || 'table');
 
-  return { render, refresh, syncActionButtons, refreshIfVisible() { if (currentView() === 'network') return refresh(); } };
+  return { render, refresh, start, syncActionButtons };
 }

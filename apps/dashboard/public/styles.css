@@ -1655,6 +1655,13 @@ tbody tr.reward-row td {
   max-width: 100%
 }
 
+.network-rates-countdown {
+  color: var(--muted);
+  font-size: 13px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap
+}
+
 .device-tab-pane>.panel-heading {
   padding-top: 18px
 }
