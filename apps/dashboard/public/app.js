@@ -1,4 +1,5 @@
-import { DASHBOARD_TIMEZONE, money, sumMoney, rollingRange } from './data.js';
+import { DASHBOARD_TIMEZONE, money } from './data.js';
+import { createSummaryLoader } from './summary.js';
 import { createAnalysisPage } from './analysis-page.js';
 import { createDeviceUI } from './device-ui.js';
 import { createAlertUI } from './alert-ui.js';
@@ -95,6 +96,7 @@ async function fetchHealth(id) {
   const value = await query('health', null, id);
   return enrichHealthTiming(value, started, Date.now());
 }
+const loadAccountSummary = createSummaryLoader({ query });
 const homeRevenue = createHomeRevenueChart({ query, selectedDevice, currentView: () => state.view, escape, correctedNow: () => correctedNow() });
 const analysisPage = createAnalysisPage({
   query, escape, correctedNow, currentView: () => state.view,
@@ -143,7 +145,7 @@ function renderAlerts() {
   if (state.view === 'alerts') { $('#alerts').innerHTML = ''; return; }
   const health = state.health.get(state.selected);
   const metaList = Object.values(state.data).map(item => item?.meta).filter(Boolean);
-  const meta = state.data.overview?.meta || metaList[0];
+  const meta = state.data.summary?.meta || metaList[0];
   const alerts = state.errors.map(error => ['error', error]);
   if (health?.error && !state.errors.includes(health.error)) alerts.push(['error', health.error]);
   if ((health?.data_stale || metaList.some(item => item.data_stale)) && !health?.error) alerts.push(['', `数据尚未更新。最近成功采集：${health?.last_successful_sync_at || meta?.last_successful_sync_at ? relative(health?.last_successful_sync_at || meta?.last_successful_sync_at) : '尚无'}；当前显示设备保存的最近数据。`]);
@@ -158,10 +160,10 @@ function renderAlerts() {
 }
 
 function renderMetrics() {
-  const { lastHour, lastDay, overview } = state.data;
-  $('#last-hour-amount').textContent = money(lastHour ? sumMoney(lastHour.items) : null, 4);
-  $('#last-day-amount').textContent = money(lastDay ? sumMoney(lastDay.items) : null, 4);
-  $('#available-balance').textContent = money(overview?.official?.available_balance_micro_usd);
+  const { summary } = state.data;
+  $('#last-hour-amount').textContent = money(summary?.last_hour.amount_micro_usd, 4);
+  $('#last-day-amount').textContent = money(summary?.last_24_hours.amount_micro_usd, 4);
+  $('#available-balance').textContent = money(summary?.official?.available_balance_micro_usd);
   for (const id of ['last-hour-amount', 'last-day-amount', 'available-balance']) {
     const element = $(`#${id}`);
     element.title = element.textContent;
@@ -179,32 +181,22 @@ function renderRecent() {
 
 function renderAll() { renderDevices(); renderMetrics(); renderRecent(); renderAlerts(); homeRevenue.render(); }
 
-function summaryJobs(device = state.selected) {
-  const now = correctedNow(device), params = { group_by: 'day', timezone: DASHBOARD_TIMEZONE };
-  return [
-    ['overview', query('overview', null, device)],
-    ['lastHour', query('stats', { ...rollingRange(1, now), ...params }, device)],
-    ['lastDay', query('stats', { ...rollingRange(24, now), ...params }, device)],
-  ];
-}
+const summaryJob = (device = state.selected) => ['summary', loadAccountSummary(device, correctedNow(device))];
 
 async function refreshSummary() {
-  const device = state.selected, generation = state.generation, jobs = summaryJobs(device);
-  const results = await Promise.allSettled(jobs.map(([, promise]) => promise));
+  const device = state.selected, generation = state.generation;
+  const [result] = await Promise.allSettled([summaryJob(device)[1]]);
   if (device !== state.selected || generation !== state.generation) return;
   state.summaryErrors = [];
-  results.forEach((result, index) => {
-    const key = jobs[index][0];
-    if (result.status === 'fulfilled') state.data[key] = result.value;
-    else { delete state.data[key]; state.summaryErrors.push(result.reason.message); }
-  });
+  if (result.status === 'fulfilled') state.data.summary = result.value;
+  else { delete state.data.summary; state.summaryErrors.push(result.reason.message); }
   state.errors = [...state.summaryErrors];
   renderMetrics(); renderAlerts();
 }
 
 async function loadSummary({ device = state.selected } = {}) {
   const generation = state.generation;
-  const jobs = [['health', fetchHealth(device)], ...summaryJobs(device)];
+  const jobs = [['health', fetchHealth(device)], summaryJob(device)];
   const results = await Promise.allSettled(jobs.map(([, promise]) => promise));
   if (generation !== state.generation || device !== state.selected) return;
   state.summaryErrors = [];

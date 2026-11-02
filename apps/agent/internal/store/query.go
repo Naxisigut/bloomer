@@ -139,27 +139,33 @@ func (v *ReadView) Overview(ctx context.Context, window QueryRange) (OfficialSum
 	official.Available = strconv.FormatInt(available, 10)
 	official.Withdrawable = strconv.FormatInt(withdrawable, 10)
 	official.ObservedAt = time.UnixMicro(observed).UTC().Format(time.RFC3339Nano)
+	local, err = v.Total(ctx, window)
+	return official, local, err
+}
+
+func (v *ReadView) Total(ctx context.Context, window QueryRange) (LocalTotal, error) {
+	var local LocalTotal
 	// Stream integer amounts: SQLite SUM can overflow before later negative adjustments.
 	rows, err := v.tx.QueryContext(ctx, "SELECT amount_micro_usd FROM earnings WHERE account_id=? AND created_at_us>=? AND created_at_us<?", v.State.AccountID, window.From.UnixMicro(), window.To.UnixMicro())
 	if err != nil {
-		return official, local, err
+		return local, err
 	}
 	defer rows.Close()
 	var sum, operand big.Int
 	for rows.Next() {
 		var amount int64
 		if err = rows.Scan(&amount); err != nil {
-			return official, local, err
+			return local, err
 		}
 		operand.SetInt64(amount)
 		sum.Add(&sum, &operand)
 		local.RecordCount++
 	}
 	if !sum.IsInt64() {
-		return official, local, ErrAmountOverflow
+		return local, ErrAmountOverflow
 	}
 	local.Amount = sum.String()
-	return official, local, rows.Err()
+	return local, rows.Err()
 }
 
 type StatsItem struct {

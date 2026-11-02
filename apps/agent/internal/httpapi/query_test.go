@@ -81,6 +81,43 @@ func TestQueryAmountsScopesAndErrors(t *testing.T) {
 		}
 	}
 }
+func TestAccountSummaryRollingTotals(t *testing.T) {
+	now := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
+	h, _ := queryAPI(t, &now, []upstream.Earning{
+		earning("hour-edge", "m", now.Add(-time.Hour), 3),
+		earning("recent", "m", now.Add(-30*time.Minute), 5),
+		earning("day", "n", now.Add(-2*time.Hour), 7),
+		earning("day-edge", "n", now.Add(-24*time.Hour), 13),
+		earning("older", "m", now.Add(-25*time.Hour), 11),
+	})
+	status, body := callAPI(t, h, "/v1/account/summary")
+	if status != 200 {
+		t.Fatal(body)
+	}
+	total := func(key string) (string, float64) {
+		value := body[key].(map[string]any)
+		return value["amount_micro_usd"].(string), value["record_count"].(float64)
+	}
+	if amount, count := total("last_hour"); amount != "8" || count != 2 {
+		t.Fatalf("last hour %s/%v", amount, count)
+	}
+	if amount, count := total("last_24_hours"); amount != "28" || count != 4 {
+		t.Fatalf("last 24 hours %s/%v", amount, count)
+	}
+	if amount, count := total("local_last_365_days"); amount != "39" || count != 5 {
+		t.Fatalf("retained %s/%v", amount, count)
+	}
+	hour := body["last_hour"].(map[string]any)
+	if hour["from"] != now.Add(-time.Hour).Format(time.RFC3339Nano) || hour["to"] != now.Format(time.RFC3339Nano) {
+		t.Fatalf("last hour bounds %+v", hour)
+	}
+	if body["official"].(map[string]any)["available_balance_micro_usd"] != "7000" || body["meta"].(map[string]any)["range_truncated"] != false {
+		t.Fatalf("summary overview mismatch %+v", body)
+	}
+	if status, body := callAPI(t, h, "/v1/account/summary?timezone=UTC"); status != 400 || body["request_id"] == nil {
+		t.Fatalf("unknown parameter accepted: %d %+v", status, body)
+	}
+}
 func TestStableCursorWithMovingRetentionAndConcurrentInsert(t *testing.T) {
 	now := time.Date(2026, 10, 16, 0, 0, 0, 0, time.UTC)
 	original := now

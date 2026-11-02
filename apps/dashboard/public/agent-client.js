@@ -4,7 +4,7 @@ import { demoQuery } from './demo.js';
 import { validateNetworkRatesResponse, validateNetworkRatesTokenTrendResponse } from './network-rates.js';
 import { MAX_MODELS } from './palette.js';
 
-const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs', 'long-task-restart': '/v1/device/long-task-restart', 'network-rates': '/v1/device/network-rates', 'network-rates-token-trend': '/v1/device/network-rates/token-trend' };
+const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', summary: '/v1/account/summary', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs', 'long-task-restart': '/v1/device/long-task-restart', 'network-rates': '/v1/device/network-rates', 'network-rates-token-trend': '/v1/device/network-rates/token-trend' };
 const messages = {
   analysis_unsupported: '该设备 Agent 尚不支持收益分析，请升级 Agent。',
   device_identity_unavailable: '设备身份尚未识别，暂时无法统计本机收益。',
@@ -14,6 +14,7 @@ const messages = {
   control_unavailable: '远程操作不可用，请检查设备端 Darkbloom 安装与 Agent 配置。',
   control_unsupported: '该设备 Agent 尚不支持远程操作，请先升级设备端 Agent。',
   network_rates_unsupported: '设备 Agent 版本过旧，不支持此功能。',
+  summary_unsupported: '该设备 Agent 尚不支持合并摘要接口。',
   long_task_restart_unsupported: '该设备 Agent 尚不支持 Qwen3.5 9B 超时重启，请升级 Agent。',
   control_busy: '设备正在执行另一项操作，请等待结束后再试。',
   request_conflict: '此请求编号已用于其他操作，请刷新后重新提交。',
@@ -38,6 +39,10 @@ function validateResponse(route, body, operation) {
   if (route === 'alert-test' && (typeof body.type !== 'string' || typeof body.delivery_status !== 'string')) throw invalidResponse();
   if (route === 'health' && (typeof body.version !== 'string' || !body.version || typeof body.collection_state !== 'string')) throw invalidResponse();
   if (route === 'overview' && !(body.official === null || object(body.official))) throw invalidResponse();
+  if (route === 'summary') {
+    const total = value => object(value) && typeof value.amount_micro_usd === 'string' && /^-?\d+$/.test(value.amount_micro_usd) && Number.isSafeInteger(value.record_count) && value.record_count >= 0;
+    if (!(body.official === null || object(body.official)) || !total(body.last_hour) || !total(body.last_24_hours) || !object(body.meta)) throw invalidResponse();
+  }
   if (route === 'earnings' && (!items() || body.items.length > 500 || !(body.next_cursor == null || typeof body.next_cursor === 'string') || body.items.some(item => typeof item.record_id !== 'string' || typeof item.model !== 'string' || (typeof item.amount_micro_usd !== 'string' || !/^-?\d+$/.test(item.amount_micro_usd)) || !Number.isFinite(Date.parse(item.created_at))))) throw invalidResponse();
   if (route === 'stats' && (!items() || body.items.some(item => typeof item.key !== 'string' || (typeof item.amount_micro_usd !== 'string' || !/^-?\d+$/.test(item.amount_micro_usd)) || !Number.isSafeInteger(item.record_count) || item.record_count < 0))) throw invalidResponse();
   if (route === 'analysis') {
@@ -93,6 +98,7 @@ export async function queryAgent(device, route, params = new URLSearchParams(), 
     if (['alerts', 'alert-test'].includes(route) && [404, 405, 501].includes(response.status)) throw new AppError(404, 'alerts_unsupported', messages.alerts_unsupported);
     if (route.startsWith('control') && [404, 405, 501].includes(response.status)) throw new AppError(404, 'control_unsupported', messages.control_unsupported);
     if (route === 'device-state' && [404, 405, 501].includes(response.status)) throw new AppError(404, 'device_state_unsupported', messages.device_state_unsupported);
+    if (route === 'summary' && [404, 405, 501].includes(response.status)) throw new AppError(404, 'summary_unsupported', messages.summary_unsupported);
     if (route === 'analysis' && [404, 405, 501].includes(response.status)) throw new AppError(404, 'analysis_unsupported', messages.analysis_unsupported);
     if (route.startsWith('network-rates') && [404, 405, 501].includes(response.status)) throw new AppError(404, 'network_rates_unsupported', messages.network_rates_unsupported);
     if (route === 'long-task-restart' && [404, 405, 501].includes(response.status)) throw new AppError(404, 'long_task_restart_unsupported', messages.long_task_restart_unsupported);

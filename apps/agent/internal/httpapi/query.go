@@ -209,6 +209,47 @@ func (h *Handler) overview(ctx context.Context, w http.ResponseWriter, r *http.R
 	}
 	writeJSON(w, 200, body)
 }
+
+type rollingTotal struct {
+	From string `json:"from"`
+	To   string `json:"to"`
+	store.LocalTotal
+}
+
+// summary serves the dashboard header from one read snapshot: the overview plus
+// the rolling last-hour and last-24-hour local totals.
+func (h *Handler) summary(ctx context.Context, w http.ResponseWriter, r *http.Request, id string, now time.Time) {
+	if err := validateParams(r.URL.Query()); err != nil {
+		queryFailure(w, err, id)
+		return
+	}
+	window, _ := store.RetainedRange(now, time.Time{}, time.Time{})
+	hour, _ := store.RetainedRange(now, now.Add(-time.Hour), now)
+	day, _ := store.RetainedRange(now, now.Add(-24*time.Hour), now)
+	var body map[string]any
+	err := h.store.Query(ctx, h.accountID, now, func(v *store.ReadView) error {
+		official, local, err := v.Overview(ctx, window)
+		if err != nil {
+			return err
+		}
+		rolling := make([]rollingTotal, 0, 2)
+		for _, span := range []store.QueryRange{hour, day} {
+			total, err := v.Total(ctx, span)
+			if err != nil {
+				return err
+			}
+			rolling = append(rolling, rollingTotal{From: span.From.Format(time.RFC3339Nano), To: span.To.Format(time.RFC3339Nano), LocalTotal: total})
+		}
+		body = map[string]any{"account_id": v.State.AccountID, "official": official, "local_last_365_days": local,
+			"last_hour": rolling[0], "last_24_hours": rolling[1], "meta": meta(v, window, now)}
+		return nil
+	})
+	if err != nil {
+		queryFailure(w, err, id)
+		return
+	}
+	writeJSON(w, 200, body)
+}
 func (h *Handler) earnings(ctx context.Context, w http.ResponseWriter, r *http.Request, id string, now time.Time) {
 	f, err := h.parseFilters(r.URL.Query(), now, true)
 	if err != nil {

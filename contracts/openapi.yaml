@@ -438,6 +438,44 @@ paths:
           $ref: '#/components/responses/Unavailable'
         '504':
           $ref: '#/components/responses/Timeout'
+  /v1/account/summary:
+    get:
+      operationId: getAccountSummary
+      summary: Dashboard header summary in one snapshot
+      description: |
+        The account overview plus local totals for the rolling last hour and
+        last 24 hours, all read from one database snapshot. Rolling bounds are
+        [now-1h, now) and [now-24h, now) on the Agent clock. meta describes the
+        365-day overview window. Accepts no query parameters.
+      responses:
+        '200':
+          description: Overview with rolling local totals
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [account_id, official, local_last_365_days, last_hour, last_24_hours, meta]
+                properties:
+                  account_id:
+                    type: string
+                  official:
+                    $ref: '#/components/schemas/OfficialSummary'
+                  local_last_365_days:
+                    $ref: '#/components/schemas/LocalTotal'
+                  last_hour:
+                    $ref: '#/components/schemas/RollingTotal'
+                  last_24_hours:
+                    $ref: '#/components/schemas/RollingTotal'
+                  meta:
+                    $ref: '#/components/schemas/DataMetadata'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+        '504':
+          $ref: '#/components/responses/Timeout'
   /v1/earnings:
     get:
       operationId: listEarnings
@@ -1240,6 +1278,28 @@ components:
             last_error:
               type: string
               nullable: true
+    LocalTotal:
+      type: object
+      required: [record_count, amount_micro_usd]
+      properties:
+        record_count:
+          type: integer
+          format: int64
+          minimum: 0
+        amount_micro_usd:
+          $ref: '#/components/schemas/Money'
+    RollingTotal:
+      allOf:
+        - $ref: '#/components/schemas/LocalTotal'
+        - type: object
+          required: [from, to]
+          properties:
+            from:
+              type: string
+              format: date-time
+            to:
+              type: string
+              format: date-time
     OfficialSummary:
       type: object
       required: [record_count, total_micro_usd, available_balance_micro_usd, withdrawable_balance_micro_usd, observed_at]

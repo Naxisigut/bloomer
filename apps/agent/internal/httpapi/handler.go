@@ -97,7 +97,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.alertEndpoints(w, r, requestID)
 		return
 	}
-	if r.URL.Path != "/v1/health" && r.URL.Path != "/v1/account/overview" && r.URL.Path != "/v1/earnings" && r.URL.Path != "/v1/earnings/stats" && r.URL.Path != "/v1/earnings/analysis" && r.URL.Path != "/v1/device/state" {
+	if r.URL.Path != "/v1/health" && r.URL.Path != "/v1/account/overview" && r.URL.Path != "/v1/account/summary" && r.URL.Path != "/v1/earnings" && r.URL.Path != "/v1/earnings/stats" && r.URL.Path != "/v1/earnings/analysis" && r.URL.Path != "/v1/device/state" {
 		failure(w, 404, "not_found", "Endpoint is unavailable in this build", requestID)
 		return
 	}
@@ -119,6 +119,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	case "/v1/account/overview":
 		h.overview(ctx, w, r, requestID, now)
+		return
+	case "/v1/account/summary":
+		h.summary(ctx, w, r, requestID, now)
 		return
 	case "/v1/earnings":
 		h.earnings(ctx, w, r, requestID, now)

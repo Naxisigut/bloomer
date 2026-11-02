@@ -205,7 +205,7 @@ export function demoQuery(route, params = new URLSearchParams(), clock = new Dat
 
   if (route.startsWith('control')) throw new AppError(403, 'demo_read_only', '演示设备不执行远程操作。');
   if (route === 'long-task-restart') return { enabled: false };
-  if (!['health', 'overview', 'earnings', 'stats', 'analysis', 'device-state', 'network-rates', 'network-rates-token-trend'].includes(route)) throw new AppError(404, 'not_found', '接口不存在。');
+  if (!['health', 'overview', 'summary', 'earnings', 'stats', 'analysis', 'device-state', 'network-rates', 'network-rates-token-trend'].includes(route)) throw new AppError(404, 'not_found', '接口不存在。');
   if (route === 'device-state') return demoState(clock);
   if (route === 'network-rates') return demoNetworkRates(clock);
   if (route === 'network-rates-token-trend') return demoTokenTrend(clock);
@@ -215,7 +215,16 @@ export function demoQuery(route, params = new URLSearchParams(), clock = new Dat
   const to = params.get('to') || clock.toISOString();
   const meta = { last_successful_sync_at: new Date(+clock - 18_000).toISOString(), data_stale: false, retention_start: new Date(+clock - 365 * 86_400_000).toISOString(), effective_from: from, effective_to: to, range_truncated: false, coverage: { status: 'partial', start: records.at(-1)?.created_at, gap_count: 0, gaps: [], gaps_truncated: false } };
   if (route === 'health') return { version: '1.1.0', phase: 'P6', schema_version: 7, collection_state: 'idle', server_time: clock.toISOString(), next_collection_at: new Date(+clock + 45_000).toISOString(), last_successful_sync_at: meta.last_successful_sync_at, data_stale: false, last_error: null, last_attempt_at: meta.last_successful_sync_at, sync_mode: 'normal', recovery_reason: null, retry_not_before: null, retention_start: meta.retention_start, coverage: meta.coverage, cleanup: { state: 'idle', last_success_at: new Date(+clock - 2 * 86_400_000).toISOString(), last_error: null } };
-  if (route === 'overview') return { account_id: 'demo-account', official: { record_count: 18204, total_micro_usd: '1846728300', available_balance_micro_usd: '286423800', withdrawable_balance_micro_usd: '265100000', observed_at: meta.last_successful_sync_at }, local_last_365_days: { record_count: records.length, amount_micro_usd: sumMoney(records).toString() }, meta };
+  const overview = () => ({ account_id: 'demo-account', official: { record_count: 18204, total_micro_usd: '1846728300', available_balance_micro_usd: '286423800', withdrawable_balance_micro_usd: '265100000', observed_at: meta.last_successful_sync_at }, local_last_365_days: { record_count: records.length, amount_micro_usd: sumMoney(records).toString() }, meta });
+  if (route === 'overview') return overview();
+  if (route === 'summary') {
+    const rolling = hours => {
+      const range = { from: new Date(+clock - hours * 3_600_000).toISOString(), to: clock.toISOString() };
+      const items = records.filter(item => item.created_at >= range.from && item.created_at < range.to);
+      return { ...range, record_count: items.length, amount_micro_usd: sumMoney(items).toString() };
+    };
+    return { ...overview(), last_hour: rolling(1), last_24_hours: rolling(24) };
+  }
   let selected = records.filter(item => item.created_at >= from && item.created_at < to && (!params.get('model') || item.model === params.get('model')));
   if (route === 'earnings') {
     let offset = 0;
