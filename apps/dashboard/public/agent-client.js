@@ -88,7 +88,7 @@ export async function queryAgent(device, route, params = new URLSearchParams(), 
   signal?.addEventListener('abort', abort, { once: true });
   let timedOut = false;
   const timer = setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs);
-  let reader, response;
+  let reader, response, drained = false;
   try {
     response = await fetcher(url, {
       method: operation || route === 'alert-test' ? 'POST' : 'GET', body: operation ? JSON.stringify(operation) : undefined,
@@ -108,7 +108,7 @@ export async function queryAgent(device, route, params = new URLSearchParams(), 
     const chunks = []; let size = 0;
     while (true) {
       const { value, done } = await reader.read();
-      if (done) break;
+      if (done) { drained = true; break; }
       size += value.byteLength;
       if (size > 8_000_000) throw invalidResponse();
       chunks.push(value);
@@ -130,7 +130,8 @@ export async function queryAgent(device, route, params = new URLSearchParams(), 
     throw new AppError(502, 'device_unreachable', '浏览器无法完成设备请求，无法区分网络、证书或 CORS 问题。请检查 Tailscale、设备在线与 Agent 状态、HTTPS 地址和端口、证书，以及 Agent 是否已升级为允许任意网页来源的版本。');
   } finally {
     clearTimeout(timer); signal?.removeEventListener('abort', abort);
-    if (reader) { try { await reader.cancel(); } catch { /* Aborted stream. */ } reader.releaseLock(); }
+    // Cancelling a drained stream makes Chrome DevTools drop the captured body.
+    if (reader) { if (!drained) { try { await reader.cancel(); } catch { /* Aborted stream. */ } } reader.releaseLock(); }
     else { try { await response?.body?.cancel(); } catch { /* Rejected response. */ } }
   }
 }
