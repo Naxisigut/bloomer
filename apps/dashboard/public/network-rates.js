@@ -431,6 +431,41 @@ export function tokenTrendSeriesForMetric(series, metric = 'tokens') {
   })).filter(item => item.points.length);
 }
 
+export function tokenTrendSeriesForShare(payload) {
+  if (!payload || Array.isArray(payload)) return [];
+  const allByModel = new Map();
+  for (const item of payload.all || []) {
+    if (item?.model) allByModel.set(item.model, item);
+  }
+  const tierByModel = new Map();
+  for (const item of payload.tier || []) {
+    if (item?.model) tierByModel.set(item.model, item);
+  }
+  const models = [...allByModel.keys()];
+  for (const model of tierByModel.keys()) {
+    if (!allByModel.has(model)) models.push(model);
+  }
+  return models.map(model => {
+    const allByAt = new Map();
+    for (const point of allByModel.get(model)?.points || []) {
+      if (point?.at) allByAt.set(point.at, point);
+    }
+    const points = [];
+    const seen = new Set();
+    for (const point of tierByModel.get(model)?.points || []) {
+      if (!point?.at || seen.has(point.at)) continue;
+      seen.add(point.at);
+      const allPoint = allByAt.get(point.at);
+      if (!allPoint) continue;
+      if (!Number.isSafeInteger(point.total) || point.total < 0) continue;
+      if (!Number.isSafeInteger(allPoint.total) || allPoint.total < 0) continue;
+      if (allPoint.total === 0) continue;
+      points.push({ at: point.at, tokens: Math.round(point.total / allPoint.total * 100) });
+    }
+    return { model, points };
+  }).filter(item => item.points.length);
+}
+
 export function tokenTrendAxis(values) {
   let low = 0, high = 0;
   for (const value of values) {
@@ -467,7 +502,9 @@ export function renderTokenTrendModelChoices(models, selected, { escape, insuffi
   }).join('');
 }
 
-export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set(), colorFor, periodLabel = '所选时段', metricLabel = '各模型每台每小时输出 token' }) {
+export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set(), colorFor, periodLabel = '所选时段', metricLabel = '各模型每台每小时输出 token', formatTick, formatValue } = {}) {
+  const tickLabel = tick => (formatTick || (value => tokenCompact.format(value)))(tick);
+  const valueLabel = value => (formatValue || (tokens => tokenExact.format(tokens)))(value);
   const lines = (series || []).map((item, index) => {
     const points = (item?.points || [])
       .map(point => ({ instant: Date.parse(point.at), tokens: point.tokens }))
@@ -483,7 +520,7 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
   }).filter(line => line.points.length);
   if (!lines.length) return null;
   const axis = tokenTrendAxis(lines.flatMap(line => line.points.map(point => point.tokens)));
-  const left = Math.max(48, ...axis.ticks.map(tick => tokenCompact.format(tick).length * 7 + 14));
+  const left = Math.max(48, ...axis.ticks.map(tick => tickLabel(tick).length * 7 + 14));
   const right = 16, top = 16, bottom = 28;
   const plotWidth = Math.max(1, width - left - right), plotHeight = Math.max(1, height - top - bottom);
   const y = value => top + (axis.high - value) / (axis.high - axis.low) * plotHeight;
@@ -501,7 +538,7 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
   let svg = '';
   for (const tick of axis.ticks) {
     const yPos = round(y(tick));
-    svg += `<line class="chart-grid" x1="${left}" x2="${width - right}" y1="${yPos}" y2="${yPos}"/><text class="chart-label" x="${left - 8}" y="${yPos + 3}" text-anchor="end">${escape(tokenCompact.format(tick))}</text>`;
+    svg += `<line class="chart-grid" x1="${left}" x2="${width - right}" y1="${yPos}" y2="${yPos}"/><text class="chart-label" x="${left - 8}" y="${yPos + 3}" text-anchor="end">${escape(tickLabel(tick))}</text>`;
   }
   const labelCount = plotWidth < 420 ? 4 : 6;
   const seen = new Set();
@@ -522,7 +559,7 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
   return {
     series: drawn,
     instants: instants.map(instant => ({ instant, x: round(x(instant)), timeLabel: tokenClock.format(new Date(instant)) })),
-    markup: `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escape(periodLabel)}${escape(metricLabel)}，最低 ${escape(tokenExact.format(low))}，最高 ${escape(tokenExact.format(peak))}">${svg}</svg><div class="chart-crosshair" hidden></div><div class="chart-tooltip home-revenue-tooltip" hidden></div>${drawn.map((_, index) => `<div class="network-token-dot" data-token-dot="${index}" hidden></div>`).join('')}`,
+    markup: `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escape(periodLabel)}${escape(metricLabel)}，最低 ${escape(valueLabel(low))}，最高 ${escape(valueLabel(peak))}">${svg}</svg><div class="chart-crosshair" hidden></div><div class="chart-tooltip home-revenue-tooltip" hidden></div>${drawn.map((_, index) => `<div class="network-token-dot" data-token-dot="${index}" hidden></div>`).join('')}`,
   };
 }
 
@@ -530,8 +567,8 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
   const $ = selector => document.querySelector(selector);
   let deviceID, rates = null, trend = null, trendError = '', loading = false, error = '', unsupported = false, generation = 0;
   let tokenModels = [], tokenSelected = new Set(), tokenRange = null, networkScope = storedNetworkScope();
-  const chart = $('#network-token-chart');
   const totalChart = $('#network-token-total-chart');
+  const shareChart = $('#network-token-share-chart');
   const tokenChoices = $('#network-token-models');
   const tokenFrom = $('#network-token-from');
   const tokenTo = $('#network-token-to');
@@ -685,9 +722,9 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     };
   }
 
-  function paintTokenChart(el, { metric, metricLabel, sampleNoun, loadingText }) {
+  function paintTokenChart(el, { metric, metricLabel, sampleNoun, loadingText, formatTick, formatValue }) {
     if (!el || unsupported || el.clientWidth < 40) return;
-    const series = tokenTrendSeriesForMetric(visibleTrend(), metric);
+    const series = metric === 'share' ? tokenTrendSeriesForShare(trend) : tokenTrendSeriesForMetric(visibleTrend(), metric);
     const empty = !series?.length
       ? `近 24 小时暂无各模型${sampleNoun}样本`
       : tokenRange ? `所选时段暂无各模型${sampleNoun}样本` : `前 2 小时暂无各模型${sampleNoun}样本`;
@@ -717,7 +754,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     const figure = renderTokenTrendFigure(visible, {
       width, height, escape, insufficient: tokenInsufficient(), colorFor: tokenColorFor,
       periodLabel: tokenTrendRangeLabel(range, window),
-      metricLabel,
+      metricLabel, formatTick, formatValue,
     });
     if (!figure) {
       el.innerHTML = `<div class="empty-state">${empty}</div>`;
@@ -740,7 +777,8 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
         if (distance < best) { best = distance; nearest = item; }
       }
       const rows = figure.series.map((line, index) => ({ line, index, point: line.coords.find(coord => coord.instant === nearest.instant) }));
-      tooltip.innerHTML = `<span class="tooltip-time">${escape(nearest.timeLabel)}</span>` + rows.map(row => `<span class="tooltip-row"><i style="background:${row.line.color}"></i>${escape(displayModelName(row.line.model))}<strong>${escape(row.point ? tokenExact.format(row.point.tokens) : '—')}</strong></span>`).join('');
+      const pointLabel = tokens => (formatValue || (value => tokenExact.format(value)))(tokens);
+      tooltip.innerHTML = `<span class="tooltip-time">${escape(nearest.timeLabel)}</span>` + rows.map(row => `<span class="tooltip-row"><i style="background:${row.line.color}"></i>${escape(displayModelName(row.line.model))}<strong>${escape(row.point ? pointLabel(row.point.tokens) : '—')}</strong></span>`).join('');
       tooltip.hidden = false;
       const bounds = el.getBoundingClientRect();
       const svgBounds = svg.getBoundingClientRect();
@@ -778,15 +816,6 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     el.onpointerleave = hide;
   }
 
-  function renderTokenChart() {
-    paintTokenChart(chart, {
-      metric: 'tokens',
-      metricLabel: '各模型每台每小时输出 token',
-      sampleNoun: '输出 token',
-      loadingText: '正在读取输出 token 趋势…',
-    });
-  }
-
   function renderTokenTotalChart() {
     paintTokenChart(totalChart, {
       metric: 'total',
@@ -796,9 +825,20 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     });
   }
 
+  function renderTokenShareChart() {
+    paintTokenChart(shareChart, {
+      metric: 'share',
+      metricLabel: '各模型同档组总 token 占全组比例',
+      sampleNoun: '同档/全组 token 占比',
+      loadingText: '正在读取同档/全组 token 占比…',
+      formatTick: tick => `${tokenCompact.format(tick)}%`,
+      formatValue: tokens => `${tokenExact.format(tokens)}%`,
+    });
+  }
+
   function renderTrendCharts() {
-    renderTokenChart();
     renderTokenTotalChart();
+    renderTokenShareChart();
   }
 
   function readTrend(id, signal) {
@@ -941,12 +981,15 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     if (!button || button.disabled) return;
     openModelAction(button.dataset.networkAction, button.dataset.model);
   });
-  if (chart) new ResizeObserver(() => renderTokenChart()).observe(chart);
   if (totalChart) new ResizeObserver(() => renderTokenTotalChart()).observe(totalChart);
+  if (shareChart) new ResizeObserver(() => renderTokenShareChart()).observe(shareChart);
 
   const networkTabs = [...document.querySelectorAll('[data-network-tab]')];
   function storedNetworkTab() {
-    try { return localStorage.getItem('bloomer.networkTab'); } catch { return null; }
+    try {
+      const value = localStorage.getItem('bloomer.networkTab');
+      return value === 'chart' ? 'table' : value;
+    } catch { return null; }
   }
   function selectNetworkTab(tab, { focus = false } = {}) {
     if (!networkTabs.length) return;
@@ -961,15 +1004,15 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     });
     if (focus) active.focus();
     try { localStorage.setItem('bloomer.networkTab', active.dataset.networkTab); } catch { /* 忽略无法写入的偏好 */ }
-    const trendTab = active.dataset.networkTab === 'chart' || active.dataset.networkTab === 'total';
+    const trendTab = active.dataset.networkTab === 'total' || active.dataset.networkTab === 'share';
     const shared = $('#network-token-shared');
     if (shared) shared.hidden = !trendTab;
-    if (active.dataset.networkTab === 'chart') {
-      renderTokenChart();
-      if (chart && chart.clientWidth < 40) requestAnimationFrame(() => renderTokenChart());
-    } else if (active.dataset.networkTab === 'total') {
+    if (active.dataset.networkTab === 'total') {
       renderTokenTotalChart();
       if (totalChart && totalChart.clientWidth < 40) requestAnimationFrame(() => renderTokenTotalChart());
+    } else if (active.dataset.networkTab === 'share') {
+      renderTokenShareChart();
+      if (shareChart && shareChart.clientWidth < 40) requestAnimationFrame(() => renderTokenShareChart());
     }
   }
   function showNetworkTab(tab, options) {

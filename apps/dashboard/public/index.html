@@ -191,7 +191,7 @@
           <div id="network-sticky-sentinel" aria-hidden="true"></div>
           <div class="devices-sticky">
             <div class="device-tabs-bar"><div class="device-tabs" id="network-tabs" role="tablist" aria-label="全网数据">
-              <button type="button" role="tab" id="network-tab-table" data-network-tab="table" aria-controls="network-table-panel" aria-selected="true" class="selected">模型估算</button><button type="button" role="tab" id="network-tab-chart" data-network-tab="chart" aria-controls="network-chart-panel" aria-selected="false" tabindex="-1">token趋势</button><button type="button" role="tab" id="network-tab-total" data-network-tab="total" aria-controls="network-total-panel" aria-selected="false" tabindex="-1">总token趋势</button>
+              <button type="button" role="tab" id="network-tab-table" data-network-tab="table" aria-controls="network-table-panel" aria-selected="true" class="selected">模型估算</button><button type="button" role="tab" id="network-tab-total" data-network-tab="total" aria-controls="network-total-panel" aria-selected="false" tabindex="-1">总token趋势</button><button type="button" role="tab" id="network-tab-share" data-network-tab="share" aria-controls="network-share-panel" aria-selected="false" tabindex="-1">同档/全组token占比</button>
             </div></div>
             <div class="panel network-tabs-panel">
               <div class="network-tab-pane" id="network-table-panel" role="tabpanel" aria-labelledby="network-tab-table">
@@ -204,17 +204,17 @@
                 <div class="network-token-range" id="network-token-period" role="group" aria-label="输出 token 趋势起止时间（北京时间，近 24 小时内）"><input id="network-token-from" type="datetime-local" step="60" disabled aria-label="开始时间"><span class="network-token-range-sep" aria-hidden="true"></span><input id="network-token-to" type="datetime-local" step="60" disabled aria-label="结束时间"></div>
                 <fieldset class="home-models network-token-models" aria-label="输出 token 曲线模型选择"><div id="network-token-models" class="home-model-choices" hidden></div></fieldset>
               </div>
-              <div class="network-tab-pane" id="network-chart-panel" role="tabpanel" aria-labelledby="network-tab-chart" hidden>
-                <div class="network-rates-content">
-                  <section class="network-token-card" aria-label="token趋势">
-                    <div id="network-token-chart" class="network-token-chart"></div>
-                  </section>
-                </div>
-              </div>
               <div class="network-tab-pane" id="network-total-panel" role="tabpanel" aria-labelledby="network-tab-total" hidden>
                 <div class="network-rates-content">
                   <section class="network-token-card" aria-label="总token趋势">
                     <div id="network-token-total-chart" class="network-token-chart"></div>
+                  </section>
+                </div>
+              </div>
+              <div class="network-tab-pane" id="network-share-panel" role="tabpanel" aria-labelledby="network-tab-share" hidden>
+                <div class="network-rates-content">
+                  <section class="network-token-card" aria-label="同档/全组token占比">
+                    <div id="network-token-share-chart" class="network-token-chart"></div>
                   </section>
                 </div>
               </div>

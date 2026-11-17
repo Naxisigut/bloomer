@@ -29,6 +29,7 @@ import {
   tokenTrendFromPayload,
   tokenTrendModels,
   tokenTrendSeriesForMetric,
+  tokenTrendSeriesForShare,
   NETWORK_RATES_REFRESH_MS,
   formatRefreshCountdown,
   networkRefreshPlan,
@@ -149,6 +150,54 @@ test('token trend payload keeps all and tier series apart', () => {
   assert.deepEqual(tokenTrendFromPayload(payload, 'tier').map(item => item.points[0].tokens), [3]);
   assert.deepEqual(tokenTrendModels(payload).sort(), ['a', 'a', 'a', 'b']);
   assert.equal(tokenTrendFromPayload({ series: payload.series }, 'tier')[0].points[0].tokens, 1);
+});
+
+test('token trend share joins all and tier totals at the same at', () => {
+  const at = '2026-10-23T01:00:00Z';
+  const later = '2026-10-23T01:05:00Z';
+  const payload = {
+    series: [{ model: 'a', points: [{ at, tokens: 1, total: 999 }] }],
+    all: [
+      {
+        model: 'a',
+        points: [
+          { at, tokens: 10, total: 100 },
+          { at: later, tokens: 10, total: 0 },
+          { at: '2026-10-23T01:10:00Z', tokens: 10, total: 50 },
+        ],
+      },
+      { model: 'b', points: [{ at, tokens: 8, total: 80 }] },
+    ],
+    tier: [{
+      model: 'a',
+      points: [
+        { at, tokens: 5, total: 40 },
+        { at: later, tokens: 5, total: 10 },
+        { at: '2026-10-23T01:15:00Z', tokens: 5, total: 10 },
+        { at: '2026-10-23T01:20:00Z', tokens: 5 },
+      ],
+    }],
+  };
+  assert.deepEqual(tokenTrendSeriesForShare(payload), [{ model: 'a', points: [{ at, tokens: 40 }] }]);
+  assert.deepEqual(tokenTrendSeriesForShare({ series: [], all: [], tier: [] }), []);
+  assert.deepEqual(tokenTrendSeriesForShare(payload.series), []);
+  const third = tokenTrendSeriesForShare({
+    all: [{ model: 'c', points: [{ at, tokens: 1, total: 3 }] }],
+    tier: [{ model: 'c', points: [{ at, tokens: 1, total: 1 }] }],
+  });
+  assert.equal(third[0].points[0].tokens, 33);
+  const over = tokenTrendSeriesForShare({
+    all: [{ model: 'd', points: [{ at, tokens: 1, total: 10 }] }],
+    tier: [{ model: 'd', points: [{ at, tokens: 1, total: 15 }] }],
+  });
+  assert.equal(over[0].points[0].tokens, 150);
+  const figure = renderTokenTrendFigure(third, {
+    width: 640, height: 220, escape: String, metricLabel: '各模型同档组总 token 占全组比例', periodLabel: '前 2 小时',
+    formatTick: tick => `${tick}%`, formatValue: tokens => `${tokens}%`,
+  });
+  assert.match(figure.markup, /各模型同档组总 token 占全组比例/);
+  assert.match(figure.markup, /33%/);
+  assert.equal(figure.series[0].coords[0].tokens, 33);
 });
 
 test('token trend total is optional and plots cohort totals', () => {

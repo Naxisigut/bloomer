@@ -1,6 +1,6 @@
 # 连接设备指南
 
-本指南适用于个人使用：公司 Mac（Tailscale IP `100.88.173.51`）打开静态看板，家中 Mac（`100.101.88.84`）运行 Darkbloom 和 Bloomer Agent。两台 Mac 已在同一 Tailscale 网络，无需配对码、账号系统或中心服务。看板通过现有 Tailscale HTTPS 入口直接调用 Agent。
+本指南适用于个人使用：公司 Mac（Tailscale IP 示例 `100.64.0.10`）打开静态看板，家中 Mac（示例 `100.64.0.20`）运行 Darkbloom 和 Bloomer Agent。两台 Mac 已在同一 Tailscale 网络，无需配对码、账号系统或中心服务。看板通过现有 Tailscale HTTPS 入口直接调用 Agent。文中 IP 仅为占位，请替换为你 tailnet 中的实际地址。
 
 ## 1. 家中设备安装并启动 Agent
 
@@ -34,7 +34,7 @@ https://home-mac.your-tailnet.ts.net:8443
 
 示例域名需要替换；地址**包含实际 HTTPS 端口、不附加 `/v1`、路径、查询串或令牌**。若现有入口使用 443，填写 `:443` 即可（浏览器会将默认端口规范化）。浏览器自行在其后添加 `/v1/...`。
 
-`100.101.88.84` 用于确认家中设备的 Tailscale 连通性；不能直接替换 HTTPS 域名，否则证书名称通常不匹配。公司 IP `100.88.173.51` 也不是家中 Agent 地址。不要改为公开 Funnel，不需要调整现有 Serve 路由。
+家中设备的 Tailscale IP（上例 `100.64.0.20`）仅用于确认连通性；不能直接替换 HTTPS 域名，否则证书名称通常不匹配。公司侧 IP 也不是家中 Agent 地址。不要改为公开 Funnel，不需要调整现有 Serve 路由。
 
 ## 3. 升级后无需配置网页来源
 
@@ -100,7 +100,7 @@ cat "$HOME/Library/Application Support/Bloomer/agent/access.token"
 
 | 现象 / 检查项 | 排查方法 |
 | --- | --- |
-| Tailscale 断开 | 两台 Mac 检查 Tailscale 连接与同一 tailnet，确认可到达家中 `100.101.88.84` |
+| Tailscale 断开 | 两台 Mac 检查 Tailscale 连接与同一 tailnet，确认可到达家中的 Tailscale IP（如 `tailscale ping` 家中主机名） |
 | 家中设备离线 / 休眠 | 唤醒设备，确认对应用户登录，执行 `bloomerctl status`、`health`；检查家中网络 |
 | 地址或端口错误 | 在家中执行 `tailscale serve status`，确认完整 `.ts.net` 域名和实际 HTTPS 端口；不附加 `/v1` |
 | 证书问题 | 在公司浏览器直接打开实际 Agent 地址加 `/v1/health`；未带令牌返回 401 是正常的，证书错误应修复域名、时间、证书或 Tailscale 状态，不关闭证书校验 |

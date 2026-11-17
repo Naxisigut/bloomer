@@ -1,6 +1,6 @@
 # P0：Darkbloom 收益接口复验
 
-复验日期：2026-10-16（Asia/Shanghai）。目标设备使用既有 SSH 别名 `bloom-01`，Darkbloom 版本 **0.9.22**，凭证位于该设备运行用户的 `~/.darkbloom/auth_token`。连接方式与用户提供的“tailscale ssh配置”聊天记录一致。脚本在目标设备上读取凭证、请求官方 HTTPS 接口，仅带回字段类型、计数、格式和脱敏示例。
+复验日期：2026-10-16（Asia/Shanghai）。目标设备为家中运行 Darkbloom 的 Mac（SSH 配置中的主机别名由你自行定义，例如 `home-agent`），Darkbloom 版本 **0.9.22**，凭证位于该设备运行用户的 `~/.darkbloom/auth_token`。脚本在目标设备上读取凭证、请求官方 HTTPS 接口，仅带回字段类型、计数、格式和脱敏示例。
 
 ## 已观察的请求
 
@@ -61,7 +61,7 @@
 复验时在仓库根目录执行：
 
 ```sh
-ssh -o BatchMode=yes -o StrictHostKeyChecking=yes bloom-01 python3 - < scripts/probe-upstream.py
+ssh -o BatchMode=yes -o StrictHostKeyChecking=yes home-agent python3 - < scripts/probe-upstream.py
 ```
 
 脚本不打印令牌、真实金额、邮箱、Provider 标识或原始响应，不修改远端文件或 Provider 状态。输出的 `timestamp_formats` 使用 `#` 替换所有数字。脚本兼容目标设备的 Python 3.9；小数秒用 `strptime` 解析，避免旧版 `fromisoformat` 对 4/5 位小数秒的限制。

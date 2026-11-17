@@ -55,7 +55,7 @@
 
 任务状态来自 `~/.darkbloom/daemon-state.json` 的 `inference_active` 和 `request_work_pending`，与模型状态一样校验 PID/启动时间及快照新鲜度（90 秒）。不能从 CPU 低负载、模型是否加载或无收益推断没有任务。
 
-本机状态文件的 `attestation_public_key` 与无需登录的官方公开接口 `/v1/providers/attestation` 的 `se_public_key` 精确匹配，取得本机 `provider_id`。实机 bloom-01（0.9.22）已核验此映射可匹配本地收益记录。认证公钥与收益 `provider_key` 是不同标识，不能直接比较。公开接口只用于身份映射，不读取或推断派单状态；请求不携带认证头。按同一 HTTPS upstream 来源派生固定路径，10 秒超时、2 MiB 响应上限、禁止重定向，429 遵守 Retry-After。
+本机状态文件的 `attestation_public_key` 与无需登录的官方公开接口 `/v1/providers/attestation` 的 `se_public_key` 精确匹配，取得本机 `provider_id`。在 Darkbloom 0.9.22 实机上已核验此映射可匹配本地收益记录。认证公钥与收益 `provider_key` 是不同标识，不能直接比较。公开接口只用于身份映射，不读取或推断派单状态；请求不携带认证头。按同一 HTTPS upstream 来源派生固定路径，10 秒超时、2 MiB 响应上限、禁止重定向，429 遵守 Retry-After。
 
 同一认证身份可能有多个注册会话；保存已精确确认的 Provider ID 与公钥 SHA-256 摘要的关联，在重连后仍可查询该设备已确认会话的收益。公钥原文、完整公开设备列表和认证信息不入库。查询限定本地绑定账户、匹配到的本机 Provider ID 和 365 天保留范围，取 created_at 最大的一条，不受看板日期、模型或分页筛选影响，不回退到账户最新收益，也不按芯片、机型或列表顺序猜测。尚未确认过的历史会话不自动归属本机。
 

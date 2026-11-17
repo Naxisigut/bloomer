@@ -105,7 +105,7 @@ function demoTokenTrend(clock) {
     return { model: spec.model, points };
   });
   const series = seriesFor(1, 'tier');
-  return { series, all: seriesFor(0.72, 'all'), tier: series };
+  return { series, all: seriesFor(1, 'all'), tier: series };
 }
 
 function stateSample(id) {
