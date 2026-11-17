@@ -282,6 +282,8 @@ export function renderCandidatesTable(candidates, escape, options = {}) {
 
 const TOKEN_COLORS = ['#5b8def', '#f2994a', '#8b7cf6', '#2bb3a3', '#e5677e', '#9ab843', '#c08a4f', '#d4a72c'];
 export const TOKEN_TREND_WINDOW_MS = 24 * 3_600_000;
+export const TOKEN_TREND_SHARE_WINDOW_MS = 30 * 60_000;
+export const TOKEN_TREND_SHARE_MIN_SAMPLES = 3;
 
 export function tokenTrendSeriesEnd(series) {
   let end = 0;
@@ -431,7 +433,7 @@ export function tokenTrendSeriesForMetric(series, metric = 'tokens') {
   })).filter(item => item.points.length);
 }
 
-export function tokenTrendSeriesForShare(payload) {
+function alignedShareTotals(payload) {
   if (!payload || Array.isArray(payload)) return [];
   const allByModel = new Map();
   for (const item of payload.all || []) {
@@ -459,11 +461,96 @@ export function tokenTrendSeriesForShare(payload) {
       if (!allPoint) continue;
       if (!Number.isSafeInteger(point.total) || point.total < 0) continue;
       if (!Number.isSafeInteger(allPoint.total) || allPoint.total < 0) continue;
-      if (allPoint.total === 0) continue;
-      points.push({ at: point.at, tokens: Math.round(point.total / allPoint.total * 100) });
+      const instant = Date.parse(point.at);
+      if (!Number.isFinite(instant)) continue;
+      points.push({ at: point.at, instant, tierTotal: point.total, allTotal: allPoint.total });
     }
+    points.sort((left, right) => left.instant - right.instant);
     return { model, points };
   }).filter(item => item.points.length);
+}
+
+// Sum aligned totals in (at - 30min, at], then divide. Two pointers so each
+// point is O(1) after the series is sorted.
+function rollingSharePoints(points) {
+  const result = [];
+  let left = 0;
+  let tierSum = 0;
+  let allSum = 0;
+  for (let right = 0; right < points.length; right++) {
+    const start = points[right].instant - TOKEN_TREND_SHARE_WINDOW_MS;
+    tierSum += points[right].tierTotal;
+    allSum += points[right].allTotal;
+    while (left <= right && points[left].instant <= start) {
+      tierSum -= points[left].tierTotal;
+      allSum -= points[left].allTotal;
+      left += 1;
+    }
+    const samples = right - left + 1;
+    if (samples < TOKEN_TREND_SHARE_MIN_SAMPLES || !(allSum > 0)) continue;
+    result.push({ at: points[right].at, tokens: Math.round(tierSum / allSum * 100) });
+  }
+  return result;
+}
+
+export function tokenTrendSeriesForShare(payload) {
+  return alignedShareTotals(payload).map(item => ({
+    model: item.model,
+    points: rollingSharePoints(item.points),
+  })).filter(item => item.points.length);
+}
+
+export function tokenTrendShareBaselinePercent(candidate) {
+  const tier = candidate?.tier_avg_providers;
+  const all = candidate?.all_avg_providers;
+  if (!Number.isFinite(tier) || !Number.isFinite(all) || !(all > 0)) return null;
+  return Math.round(tier / all * 100);
+}
+
+export function tokenTrendShareSummary(payload, { range, models, candidates } = {}) {
+  const aligned = alignedShareTotals(payload);
+  const byModel = new Map(aligned.map(item => [item.model, item]));
+  const candidateByModel = new Map((candidates || []).map(candidate => [candidate.model, candidate]));
+  const order = models?.length ? models : aligned.map(item => item.model);
+  const hasRange = Number.isFinite(range?.start) && Number.isFinite(range?.end);
+  const seen = new Set();
+  const result = [];
+  for (const model of order) {
+    if (seen.has(model)) continue;
+    seen.add(model);
+    const item = byModel.get(model);
+    if (!item) continue;
+    let tierSum = 0;
+    let allSum = 0;
+    for (const point of item.points) {
+      if (hasRange && (point.instant < range.start || point.instant > range.end)) continue;
+      tierSum += point.tierTotal;
+      allSum += point.allTotal;
+    }
+    if (!(allSum > 0)) continue;
+    const share = Math.round(tierSum / allSum * 100);
+    const baseline = tokenTrendShareBaselinePercent(candidateByModel.get(model));
+    const lift = baseline == null || baseline === 0 ? null : share / baseline;
+    result.push({ model, share, baseline, lift });
+  }
+  return result;
+}
+
+function tokenTrendShareStatsText(share, baseline, lift) {
+  let text = `${tokenExact.format(share)}%`;
+  if (!Number.isFinite(baseline)) return text;
+  text += ` · 基线 ${tokenExact.format(baseline)}%`;
+  if (lift == null || !Number.isFinite(lift)) return text;
+  return `${text} · ${lift.toFixed(1)}×`;
+}
+
+function polylinePath(points) {
+  if (!points.length) return '';
+  let path = `M${points[0].x},${points[0].y}`;
+  for (let index = 1; index < points.length; index++) {
+    path += ` L${points[index].x},${points[index].y}`;
+  }
+  return path;
 }
 
 export function tokenTrendAxis(values) {
@@ -502,7 +589,7 @@ export function renderTokenTrendModelChoices(models, selected, { escape, insuffi
   }).join('');
 }
 
-export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set(), colorFor, periodLabel = '所选时段', metricLabel = '各模型每台每小时输出 token', formatTick, formatValue } = {}) {
+export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set(), colorFor, periodLabel = '所选时段', metricLabel = '各模型每台每小时输出 token', formatTick, formatValue, smooth = true, baselineFor } = {}) {
   const tickLabel = tick => (formatTick || (value => tokenCompact.format(value)))(tick);
   const valueLabel = value => (formatValue || (tokens => tokenExact.format(tokens)))(value);
   const lines = (series || []).map((item, index) => {
@@ -511,15 +598,23 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
       .filter(point => Number.isFinite(point.instant) && Number.isSafeInteger(point.tokens) && point.tokens >= 0)
       .sort((a, b) => a.instant - b.instant);
     const model = typeof item?.model === 'string' ? item.model : '';
+    const baseline = Number.isFinite(item?.baseline)
+      ? item.baseline
+      : (typeof baselineFor === 'function' ? baselineFor(model) : null);
     return {
       model,
       color: typeof colorFor === 'function' ? colorFor(model) : TOKEN_COLORS[index % TOKEN_COLORS.length],
       dashed: insufficient.has(model),
+      baseline: Number.isFinite(baseline) ? baseline : null,
       points,
     };
   }).filter(line => line.points.length);
   if (!lines.length) return null;
-  const axis = tokenTrendAxis(lines.flatMap(line => line.points.map(point => point.tokens)));
+  const axis = tokenTrendAxis(lines.flatMap(line => {
+    const values = line.points.map(point => point.tokens);
+    if (Number.isFinite(line.baseline)) values.push(line.baseline);
+    return values;
+  }));
   const left = Math.max(48, ...axis.ticks.map(tick => tickLabel(tick).length * 7 + 14));
   const right = 16, top = 16, bottom = 28;
   const plotWidth = Math.max(1, width - left - right), plotHeight = Math.max(1, height - top - bottom);
@@ -549,7 +644,12 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
     svg += `<text class="chart-label" x="${round(x(instant))}" y="${height - 8}" text-anchor="middle">${escape(axisTime.format(new Date(instant)))}</text>`;
   }
   for (const line of drawn) {
-    const path = line.coords.length > 1 ? smoothLinePath(line.coords) : '';
+    if (!Number.isFinite(line.baseline)) continue;
+    const yPos = round(y(line.baseline));
+    svg += `<line class="network-token-baseline" stroke="${line.color}" x1="${left}" x2="${width - right}" y1="${yPos}" y2="${yPos}"><title>${escape(line.model)}</title></line>`;
+  }
+  for (const line of drawn) {
+    const path = line.coords.length > 1 ? (smooth ? smoothLinePath(line.coords) : polylinePath(line.coords)) : '';
     const dash = line.dashed ? ' stroke-dasharray="6 4"' : '';
     if (path) svg += `<path class="network-token-line" stroke="${line.color}"${dash} d="${path}"><title>${escape(line.model)}</title></path>`;
     if (line.coords.length === 1) svg += `<circle fill="${line.color}" cx="${line.coords[0].x}" cy="${line.coords[0].y}" r="3.5"><title>${escape(line.model)}</title></circle>`;
@@ -722,7 +822,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     };
   }
 
-  function paintTokenChart(el, { metric, metricLabel, sampleNoun, loadingText, formatTick, formatValue }) {
+  function paintTokenChart(el, { metric, metricLabel, sampleNoun, loadingText, formatTick, formatValue, formatTooltip, smooth = true, baselineFor } = {}) {
     if (!el || unsupported || el.clientWidth < 40) return;
     const series = metric === 'share' ? tokenTrendSeriesForShare(trend) : tokenTrendSeriesForMetric(visibleTrend(), metric);
     const empty = !series?.length
@@ -748,13 +848,15 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     const window = activeTokenWindow();
     const range = activeTokenRange();
     const windowed = filterTokenTrendByRange(series, range);
-    const visible = windowed.filter(item => tokenSelected.has(item.model));
+    const visible = windowed.filter(item => tokenSelected.has(item.model)).map(item => (
+      typeof baselineFor === 'function' ? { ...item, baseline: baselineFor(item.model) } : item
+    ));
     const width = Math.max(560, el.clientWidth);
     const height = el.clientHeight || 320;
     const figure = renderTokenTrendFigure(visible, {
       width, height, escape, insufficient: tokenInsufficient(), colorFor: tokenColorFor,
       periodLabel: tokenTrendRangeLabel(range, window),
-      metricLabel, formatTick, formatValue,
+      metricLabel, formatTick, formatValue, smooth,
     });
     if (!figure) {
       el.innerHTML = `<div class="empty-state">${empty}</div>`;
@@ -777,8 +879,10 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
         if (distance < best) { best = distance; nearest = item; }
       }
       const rows = figure.series.map((line, index) => ({ line, index, point: line.coords.find(coord => coord.instant === nearest.instant) }));
-      const pointLabel = tokens => (formatValue || (value => tokenExact.format(value)))(tokens);
-      tooltip.innerHTML = `<span class="tooltip-time">${escape(nearest.timeLabel)}</span>` + rows.map(row => `<span class="tooltip-row"><i style="background:${row.line.color}"></i>${escape(displayModelName(row.line.model))}<strong>${escape(row.point ? pointLabel(row.point.tokens) : '—')}</strong></span>`).join('');
+      const pointLabel = (tokens, line) => formatTooltip
+        ? formatTooltip(tokens, line)
+        : (formatValue || (value => tokenExact.format(value)))(tokens);
+      tooltip.innerHTML = `<span class="tooltip-time">${escape(nearest.timeLabel)}</span>` + rows.map(row => `<span class="tooltip-row"><i style="background:${row.line.color}"></i>${escape(displayModelName(row.line.model))}<strong>${escape(row.point ? pointLabel(row.point.tokens, row.line) : '—')}</strong></span>`).join('');
       tooltip.hidden = false;
       const bounds = el.getBoundingClientRect();
       const svgBounds = svg.getBoundingClientRect();
@@ -825,15 +929,42 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     });
   }
 
+  function renderTokenShareSummary() {
+    const el = $('#network-token-share-summary');
+    if (!el) return;
+    const hide = () => { el.hidden = true; el.innerHTML = ''; };
+    if (unsupported || !trend || trendError || !tokenSelected.size) return hide();
+    const items = tokenTrendShareSummary(trend, {
+      range: activeTokenRange(),
+      models: tokenModels.filter(model => tokenSelected.has(model)),
+      candidates: rates?.candidates || [],
+    });
+    if (!items.length) return hide();
+    const labels = displayModelNames(items.map(item => item.model));
+    el.hidden = false;
+    el.innerHTML = items.map(item => {
+      const stats = tokenTrendShareStatsText(item.share, item.baseline, item.lift);
+      return `<span class="network-token-share-chip" style="--series-color:${tokenColorFor(item.model)}" title="${escape(item.model)}"><i aria-hidden="true"></i>${escape(labels.get(item.model))}  ${escape(stats)}</span>`;
+    }).join('');
+  }
+
   function renderTokenShareChart() {
     paintTokenChart(shareChart, {
       metric: 'share',
-      metricLabel: '各模型同档组总 token 占全组比例',
+      metricLabel: '各模型同档组总 token 占全组近 30 分钟滚动比例',
       sampleNoun: '同档/全组 token 占比',
       loadingText: '正在读取同档/全组 token 占比…',
       formatTick: tick => `${tokenCompact.format(tick)}%`,
       formatValue: tokens => `${tokenExact.format(tokens)}%`,
+      formatTooltip: (tokens, line) => tokenTrendShareStatsText(
+        tokens,
+        line.baseline,
+        Number.isFinite(line.baseline) && line.baseline > 0 ? tokens / line.baseline : null,
+      ),
+      smooth: false,
+      baselineFor: model => tokenTrendShareBaselinePercent((rates?.candidates || []).find(candidate => candidate.model === model)),
     });
+    renderTokenShareSummary();
   }
 
   function renderTrendCharts() {

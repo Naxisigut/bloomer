@@ -2111,7 +2111,8 @@ tbody tr.reward-row td {
 }
 
 #network-chart-panel .network-rates-content,
-#network-total-panel .network-rates-content {
+#network-total-panel .network-rates-content,
+#network-share-panel .network-rates-content {
   padding-top: 8px
 }
 
@@ -2178,6 +2179,42 @@ tbody tr.reward-row td {
   stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round
+}
+
+.network-token-baseline {
+  fill: none;
+  stroke-width: 1.25;
+  stroke-dasharray: 5 4;
+  stroke-linecap: round
+}
+
+#network-token-share-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  margin: 0 0 2px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--muted)
+}
+
+#network-token-share-summary[hidden] {
+  display: none
+}
+
+.network-token-share-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums
+}
+
+.network-token-share-chip i {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--series-color)
 }
 
 .network-token-chart .chart-crosshair {
