@@ -34,8 +34,8 @@ function demoNetworkRates(clock) {
     enabled: true,
     auto_switch: false,
     auto_switch_since: null,
-    window_samples: 6,
-    samples: 6,
+    window_samples: 5,
+    samples: 5,
     updated_at: stamp,
     snapshot_at: stamp,
     current_model: 'Qwen3-32B',
@@ -43,22 +43,22 @@ function demoNetworkRates(clock) {
     candidates: [
       {
         model: 'DeepSeek-R1-Distill-Qwen-32B', downloaded: true, avg_providers: 8.5, busy_ratio: 0.62, requests_per_hour: 118.2, tokens_per_hour: 365000,
-        usd_per_hour_micro: '142500', trimmed_usd_per_hour_micro: '121000', price_source: 'official', effective_price_micro: '390400', input_ratio: 4.2, ratio_source: 'own', cohort: 'tier', insufficient: false,
+        usd_per_hour_micro: '142500', trimmed_usd_per_hour_micro: '121000', price_source: 'official', effective_price_micro: '390400', input_ratio: 4.2, ratio_source: 'own', cohort: 'tier', insufficient: false, tier_avg_providers: 8.5, all_avg_providers: 14,
         hour: { samples: 30, avg_providers: 8.1, busy_ratio: 0.58, requests_per_hour: 110.4, tokens_per_hour: 341000, usd_per_hour_micro: '133100', trimmed_usd_per_hour_micro: '118000' },
       },
       {
         model: 'Qwen3-32B', downloaded: true, avg_providers: 9.0, busy_ratio: 0.55, requests_per_hour: 96.4, tokens_per_hour: 310000,
-        usd_per_hour_micro: '118200', trimmed_usd_per_hour_micro: '104500', price_source: 'official', effective_price_micro: '381300', input_ratio: 3.9, ratio_source: 'own', cohort: 'tier', insufficient: false,
+        usd_per_hour_micro: '118200', trimmed_usd_per_hour_micro: '104500', price_source: 'official', effective_price_micro: '381300', input_ratio: 3.9, ratio_source: 'own', cohort: 'tier', insufficient: false, tier_avg_providers: 9, all_avg_providers: 15.2,
         hour: { samples: 30, avg_providers: 9.2, busy_ratio: 0.57, requests_per_hour: 101.7, tokens_per_hour: 322000, usd_per_hour_micro: '122800', trimmed_usd_per_hour_micro: '109900' },
       },
       {
         model: 'Qwen3-8B', downloaded: false, avg_providers: 22.0, busy_ratio: 0.31, requests_per_hour: 140.0, tokens_per_hour: 420000,
-        usd_per_hour_micro: '98000', trimmed_usd_per_hour_micro: '61000', price_source: 'official', effective_price_micro: '233300', input_ratio: 8.3, ratio_source: 'network', cohort: 'all', insufficient: true,
+        usd_per_hour_micro: '98000', trimmed_usd_per_hour_micro: '61000', price_source: 'official', effective_price_micro: '233300', input_ratio: 8.3, ratio_source: 'network', cohort: 'all', insufficient: true, tier_avg_providers: 1.2, all_avg_providers: 22,
         hour: { samples: 30, avg_providers: 21.4, busy_ratio: 0.29, requests_per_hour: 133.0, tokens_per_hour: 401000, usd_per_hour_micro: '93600', trimmed_usd_per_hour_micro: '58800' },
       },
       {
         model: 'gemma-4-26b-qat-4bit', downloaded: true, avg_providers: 12.0, busy_ratio: 0.17, requests_per_hour: 8.0, tokens_per_hour: 24000,
-        usd_per_hour_micro: '13700', trimmed_usd_per_hour_micro: '4100', price_source: 'fallback', effective_price_micro: '568600', input_ratio: 8.3, ratio_source: 'network', cohort: 'tier', insufficient: false,
+        usd_per_hour_micro: '13700', trimmed_usd_per_hour_micro: '4100', price_source: 'fallback', effective_price_micro: '568600', input_ratio: 8.3, ratio_source: 'network', cohort: 'tier', insufficient: false, tier_avg_providers: 12, all_avg_providers: 18,
         hour: null,
       },
     ],

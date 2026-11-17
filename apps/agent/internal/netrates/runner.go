@@ -64,6 +64,8 @@ type CandidateView struct {
 	RatioSource            string             `json:"ratio_source"`
 	Cohort                 string             `json:"cohort"`
 	Insufficient           bool               `json:"insufficient"`
+	TierAvgProviders       *float64           `json:"tier_avg_providers"`
+	AllAvgProviders        float64            `json:"all_avg_providers"`
 }
 
 type CandidateHourView struct {
@@ -910,6 +912,7 @@ func candidateViews(cands []Candidate) []CandidateView {
 			USDPerHourMicro: strconv.FormatInt(c.USDPerHourMicro, 10), TrimmedUSDPerHourMicro: microString(c.TrimmedUSDPerHourMicro),
 			Hour: hourView(c.Hour), PriceSource: c.PriceSource, EffectivePriceMicro: strconv.FormatInt(c.EffectivePriceMicro, 10),
 			InputRatio: c.InputRatio, RatioSource: c.RatioSource, Cohort: c.Cohort, Insufficient: c.Insufficient,
+			TierAvgProviders: c.TierAvgProviders, AllAvgProviders: c.AllAvgProviders,
 		}
 	}
 	return out

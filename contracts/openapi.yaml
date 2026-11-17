@@ -1423,7 +1423,7 @@ components:
           type: boolean
     NetworkRatesCandidate:
       type: object
-      description: Top-level figures cover the latest `window_samples` intervals and drive recommendations; `hour` covers `long_window_minutes`.
+      description: Top-level figures cover the latest `window_samples` intervals and drive recommendations; `hour` covers `long_window_minutes`. Dashboard tables show the short window only.
       required: [model, downloaded, avg_providers, requests_per_hour, tokens_per_hour, usd_per_hour_micro, price_source, insufficient]
       properties:
         model:
@@ -1432,6 +1432,13 @@ components:
           type: boolean
         avg_providers:
           type: number
+        tier_avg_providers:
+          type: number
+          nullable: true
+          description: Average same-tier machines in the short window. Null when chip_tiers is empty.
+        all_avg_providers:
+          type: number
+          description: Average machines in the whole family+memory cohort in the short window.
         busy_ratio:
           type: number
           nullable: true

@@ -14,7 +14,7 @@
   "network_rates": {
     "enabled": true,
     "interval_minutes": 2,
-    "window_samples": 6,
+    "window_samples": 5,
     "auto_switch": false,
     "switch_min_interval_minutes": 30,
     "switch_advantage_ratio": 0.2,

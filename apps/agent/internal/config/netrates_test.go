@@ -8,7 +8,7 @@ import (
 
 func TestDefaultNetworkRates(t *testing.T) {
 	n := DefaultNetworkRates()
-	if !n.Enabled || n.IntervalMinutes != 2 || n.WindowSamples != 6 || n.AutoSwitch || n.SwitchMinIntervalMinutes != 30 ||
+	if !n.Enabled || n.IntervalMinutes != 2 || n.WindowSamples != 5 || n.AutoSwitch || n.SwitchMinIntervalMinutes != 30 ||
 		n.SwitchAdvantageRatio != 0.2 || n.FallbackModel != "gemma-4-26b-qat-4bit" || n.MemoryGB != 64 ||
 		n.MinProviders != 3 || n.NearZeroMicroUSDPerHour != 1000 {
 		t.Fatal(n)
@@ -37,7 +37,7 @@ func TestNetworkRatesPartialConfiguration(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if c.NetworkRates.IntervalMinutes != 10 || c.NetworkRates.WindowSamples != 6 || !c.NetworkRates.Enabled ||
+	if c.NetworkRates.IntervalMinutes != 10 || c.NetworkRates.WindowSamples != 5 || !c.NetworkRates.Enabled ||
 		c.NetworkRates.FallbackModel != "gemma-4-26b-qat-4bit" || len(c.NetworkRates.ChipFamilies) != 1 || c.NetworkRates.ChipFamilies[0] != "M5" {
 		t.Fatal(c.NetworkRates)
 	}

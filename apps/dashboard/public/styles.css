@@ -1948,6 +1948,10 @@ tbody tr.reward-row td {
   margin: 14px 0 0
 }
 
+.network-rates-table-note {
+  margin: 10px 0 0 16px
+}
+
 .network-rates-table-wrap th:first-child,
 .network-rates-table-wrap td:first-child {
   padding-left: 16px
@@ -1960,12 +1964,6 @@ tbody tr.reward-row td {
 
 .network-rates-muted td {
   color: var(--faint)
-}
-
-.network-rates-table-wrap th.network-rates-window {
-  border-bottom-color: var(--line-strong);
-  color: var(--ink-2);
-  text-align: center
 }
 
 .network-rates-sub {

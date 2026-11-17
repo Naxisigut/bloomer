@@ -141,11 +141,15 @@ func (t *windowTotals) add(iv Interval, hours float64) {
 	}
 }
 
-func (t *windowTotals) stats(samples int, priceMicro int64) WindowStats {
-	out := WindowStats{Samples: samples}
-	if samples > 0 {
-		out.AvgProviders = float64(t.providerSum) / float64(samples)
+func avgProviders(t *windowTotals, samples int) float64 {
+	if t == nil || samples <= 0 {
+		return 0
 	}
+	return float64(t.providerSum) / float64(samples)
+}
+
+func (t *windowTotals) stats(samples int, priceMicro int64) WindowStats {
+	out := WindowStats{Samples: samples, AvgProviders: avgProviders(t, samples)}
 	if t.providerHours > 0 {
 		out.RequestsPerHour = float64(t.deltaRequests) / t.providerHours
 		out.TokensPerHour = float64(t.deltaTokens) / t.providerHours
@@ -247,6 +251,11 @@ func Estimate(in EstimateInput) (cands []Candidate, samples int) {
 			USDPerHourMicro: st.USDPerHourMicro, TrimmedUSDPerHourMicro: st.TrimmedUSDPerHourMicro,
 			PriceSource: source, EffectivePriceMicro: effective, InputRatio: ratio, RatioSource: ratioSource,
 			Cohort: cohort, Insufficient: st.AvgProviders < float64(in.MinProviders),
+			AllAvgProviders: avgProviders(short[key{model, ""}], samples),
+		}
+		if in.TierScope {
+			v := avgProviders(short[key{model, ScopeTier}], samples)
+			c.TierAvgProviders = &v
 		}
 		if t := long[key{model, scope}]; t != nil {
 			hour := t.stats(len(longEnded), effective)

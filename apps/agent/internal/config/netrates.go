@@ -29,7 +29,7 @@ func DefaultNetworkRates() NetworkRates {
 	return NetworkRates{
 		Enabled:                  true,
 		IntervalMinutes:          2,
-		WindowSamples:            6,
+		WindowSamples:            5,
 		AutoSwitch:               false,
 		SwitchMinIntervalMinutes: 30,
 		SwitchAdvantageRatio:     0.2,

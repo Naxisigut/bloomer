@@ -331,6 +331,7 @@ func TestRunnerFreshStartSamplesAndNoSubmit(t *testing.T) {
 	r, _ := newTestRunner(t, dir, store, stats, ctl, clk, "model-m1")
 	ctx := context.Background()
 
+	window := r.cfg.WindowSamples
 	for round := 1; round <= 7; round++ {
 		r.runRound(ctx)
 		st := r.Status()
@@ -338,13 +339,13 @@ func TestRunnerFreshStartSamplesAndNoSubmit(t *testing.T) {
 			t.Fatalf("round %d: candidates must encode as an array", round)
 		}
 		wantSamples := round - 1
-		if round > 6 {
-			wantSamples = 6
+		if wantSamples > window {
+			wantSamples = window
 		}
 		if st.Samples != wantSamples {
 			t.Fatalf("round %d: samples=%d want %d", round, st.Samples, wantSamples)
 		}
-		if wantSamples < 6 && st.Recommendation != nil {
+		if wantSamples < window && st.Recommendation != nil {
 			t.Fatalf("round %d: expected nil recommendation", round)
 		}
 		if round < 7 {

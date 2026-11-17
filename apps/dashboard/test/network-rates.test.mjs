@@ -58,13 +58,13 @@ test('candidates escape server strings', () => {
   assert.doesNotMatch(html, /<img/);
 });
 
-test('candidate table shows both windows, cohort, combined price and gain over current model', () => {
+test('candidate table shows short-window columns, provider counts, combined price and gain over current model', () => {
   const window = (usd, extra = {}) => ({ samples: 30, avg_providers: 5, busy_ratio: 0.5, requests_per_hour: 10, tokens_per_hour: 20000, usd_per_hour_micro: usd, trimmed_usd_per_hour_micro: '1000', ...extra });
   const rates = {
-    ...ratesBody, current_model: 'cur', window_samples: 6, interval_minutes: 2, long_window_minutes: 60, switch_advantage_ratio: 0.2, chip_tiers: ['Pro'], memory_gb: 64,
+    ...ratesBody, current_model: 'cur', window_samples: 5, interval_minutes: 2, long_window_minutes: 60, switch_advantage_ratio: 0.2, chip_tiers: ['Pro'], memory_gb: 64,
     candidates: [
-      { model: 'best', downloaded: true, avg_providers: 4, busy_ratio: 0.25, requests_per_hour: 10, tokens_per_hour: 30000, usd_per_hour_micro: '150000', trimmed_usd_per_hour_micro: null, price_source: 'official', effective_price_micro: '570000', input_ratio: 8.3, ratio_source: 'network', cohort: 'tier', insufficient: false, hour: window('90000') },
-      { model: 'cur', downloaded: true, avg_providers: 6, busy_ratio: 0.5, requests_per_hour: 10, tokens_per_hour: 30000, usd_per_hour_micro: '100000', trimmed_usd_per_hour_micro: '80000', price_source: 'official', effective_price_micro: '2550000', input_ratio: 1.2, ratio_source: 'own', cohort: 'all', insufficient: false, hour: window('100000') },
+      { model: 'best', downloaded: true, avg_providers: 4, busy_ratio: 0.25, requests_per_hour: 10, tokens_per_hour: 30000, usd_per_hour_micro: '150000', trimmed_usd_per_hour_micro: null, price_source: 'official', effective_price_micro: '570000', input_ratio: 8.3, ratio_source: 'network', cohort: 'tier', insufficient: false, tier_avg_providers: 4, all_avg_providers: 9, hour: window('90000') },
+      { model: 'cur', downloaded: true, avg_providers: 6, busy_ratio: 0.5, requests_per_hour: 10, tokens_per_hour: 30000, usd_per_hour_micro: '100000', trimmed_usd_per_hour_micro: '80000', price_source: 'official', effective_price_micro: '2550000', input_ratio: 1.2, ratio_source: 'own', cohort: 'all', insufficient: false, tier_avg_providers: 1, all_avg_providers: 6, hour: window('100000') },
       { model: 'cold', downloaded: false, avg_providers: 1, requests_per_hour: 0, tokens_per_hour: 0, usd_per_hour_micro: '0', price_source: 'fallback', insufficient: true },
     ],
   };
@@ -73,18 +73,19 @@ test('candidate table shows both windows, cohort, combined price and gain over c
   assert.throws(() => validateNetworkRatesResponse({ ...rates, candidates: [{ ...rates.candidates[0], busy_ratio: 2 }] }));
   assert.throws(() => validateNetworkRatesResponse({ ...rates, candidates: [{ ...rates.candidates[0], cohort: 'x' }] }));
   const options = candidateTableOptions(rates);
-  assert.equal(options.shortLabel, '近 12 分钟');
-  assert.equal(options.longLabel, '近 1 小时');
+  assert.equal(options.shortLabel, '近 10 分钟');
+  assert.equal(options.longLabel, undefined);
   const html = renderCandidatesTable(rates.candidates, String, options);
-  assert.match(html, /近 12 分钟<\/th>/);
-  assert.match(html, /同档 Pro/);
-  assert.match(html, /全组（同档不足）/);
+  assert.match(html, /同档数\/全组数/);
+  assert.match(html, />4\/9</);
+  assert.match(html, />1\/6</);
+  assert.match(html, /以上为近 10 分钟的数据。/);
+  assert.doesNotMatch(html, /近 1 小时|colspan|rowspan|同档 Pro|全组（同档不足）/);
   assert.match(html, /\$0\.570\/M/);
   assert.match(html, /\$2\.55\/M/);
   assert.match(html, /全网输入比 8\.3/);
   assert.match(html, /本机输入比 1\.2/);
   assert.match(html, /network-rates-gain" title="相对当前模型">\+50%/);
-  assert.match(html, /network-rates-loss" title="相对当前模型">−10%/);
   assert.match(html, /25%/);
   assert.match(html, /未下载/);
   assert.match(html, /兜底价/);

@@ -20,18 +20,18 @@ Agent 定期拉取公开统计与官方价格，按对照组差值估算各模�
 - 筛选 `chip_family ∈ chip_families` 且 `memory_gb == memory_gb`；`current_model` 为空的 provider 不计入。
 - 配置了 `chip_tiers`（默认 `["Pro"]`）时，另按 `chip_tier` 汇总一份同档数据。某模型同档平均台数 ≥ `min_providers` 时用同档数据（`cohort: tier`），否则退回全组（`cohort: all`）。`chip_tiers` 设为 `[]` 时始终用全组。
 - 相邻快照间隔需在 `[0.5, 2] × interval_minutes` 内才产生有效差值；`snapshot_at` 未变化时跳过本轮写入。
-- 两个窗口并排：短窗口为最近 `window_samples`（默认 6）个有效间隔，用于推荐和自动切换；`hour` 为最近 60 分钟，仅展示。
+- 估算窗口为最近 `window_samples`（默认 5，约 10 分钟）个有效间隔，用于推荐、自动切换和看板候选表。接口仍计算 `hour`（最近 60 分钟），看板不再展示。
 - 平均在线台数低于 `min_providers` 的模型标 `insufficient`，不参与推荐排名。
 - 每个间隔另记有单台数和单台最大输出：`busy_ratio` 为有输出的机器占比；`trimmed_usd_per_hour_micro` 为每轮去掉输出最多的一台后再平均的估算，用来判断收益是否集中在少数机器。升级前的旧间隔没有这两项，对应字段为 null。
 
 ## 自动切换规则
 
-采集与切换独立调度：采集仍按 `interval_minutes`（默认 2 分钟）拉取统计；切换不绑定采集轮次。冷却到期后立刻用最近 `window_samples`（默认 6）个有效间隔的当前推荐评估并提交。采集进行中或本轮统计失败，只要已有足够样本，仍可切换。
+采集与切换独立调度：采集仍按 `interval_minutes`（默认 2 分钟）拉取统计；切换不绑定采集轮次。冷却到期后立刻用最近 `window_samples`（默认 5）个有效间隔的当前推荐评估并提交。采集进行中或本轮统计失败，只要已有足够样本，仍可切换。
 
 以下条件**全部**满足才会提交切换：
 
 1. Agent 开关 `auto_switch` 为开（持久化在数据目录 `network-rates.json`）。看板不再提供此开关。
-2. 开启时间距今满 `switch_min_interval_minutes`（默认 30 分钟），且已有 6 个有效间隔。
+2. 开启时间距今满 `switch_min_interval_minutes`（默认 30 分钟），且已有 5 个有效间隔。
 3. 距上次切换满 30 分钟：取控制记录中最近 `switch` / `start` 的 `created_at` 与自动切换检查点中的较晚者。
 4. 无执行中的控制任务；本机最新设备状态（10 分钟内）能读到 `current_model`。
 5. 目标选择：全部已下载候选接近 0 或无可用候选时切到 `fallback_model`（需已下载）；否则切到推荐模型，且目标估算 ≥ 当前估算 × (1 + `switch_advantage_ratio`)。
@@ -49,7 +49,7 @@ Agent 定期拉取公开统计与官方价格，按对照组差值估算各模�
 
 Bearer 认证，无查询参数：
 
-- `GET /v1/device/network-rates`：推荐、候选、样本数、`interval_minutes`、切换门控（`next_eligible_at`、`blocked_reason`、`backoff_until`）、`last_error`（`stats_unavailable` / `pricing_unavailable` / `models_unavailable`）。另含 `long_window_minutes`（60）、`switch_advantage_ratio`、`chip_tiers`、`memory_gb`，看板据此标注窗口、对照组与「相对当前模型」的涨跌。看板不展示切换门控与阻止原因。采集未运行时 `enabled` 为 false，`interval_minutes` 为 0。
+- `GET /v1/device/network-rates`：推荐、候选、样本数、`interval_minutes`、切换门控（`next_eligible_at`、`blocked_reason`、`backoff_until`）、`last_error`（`stats_unavailable` / `pricing_unavailable` / `models_unavailable`）。另含 `long_window_minutes`（60）、`switch_advantage_ratio`、`chip_tiers`、`memory_gb`，以及候选的 `tier_avg_providers` / `all_avg_providers`。看板候选表用 `window_samples` × `interval_minutes` 在表下标注窗口（默认近 10 分钟），四列分开展示有单率、每台输出 token/h、估算 $/h、去头 $/h，并用同档数/全组数对照「相对当前模型」的涨跌。看板不展示近 1 小时列、切换门控与阻止原因。采集未运行时 `enabled` 为 false，`interval_minutes` 为 0。
 - `POST /v1/device/network-rates/settings`：`{"auto_switch": true|false}`，返回与 GET 相同结构。
 - `GET /v1/device/network-rates/switches`：`{ "switches": [...] }`，最新在前，最多 50 条。看板不请求此接口。
 - `GET /v1/device/network-rates/token-trend`：`{ "series": [{ "model", "points": [{ "at", "tokens" }] }] }`，最近 24 小时。每个模型一条序列，点从旧到新。`tokens` 与候选表「每台每小时输出 token」相同：`round(delta_tokens / (providers * hours))`，不是各模型合计；每个模型使用与候选相同的对照组（同档或全组）。有候选时只返回这些模型且顺序一致；候选为空时返回间隔中出现过的全部模型，按名称排序。跳过 `providers<=0`、`hours<=0` 或 `delta_tokens<0` 的间隔，不补 0。没有样本时 `series` 为空数组。

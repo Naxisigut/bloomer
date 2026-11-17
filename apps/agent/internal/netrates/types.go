@@ -71,6 +71,9 @@ type Candidate struct {
 	RatioSource            string
 	Cohort                 string
 	Insufficient           bool
+	// TierAvgProviders is the same-tier average; nil when chip_tiers is empty.
+	TierAvgProviders *float64
+	AllAvgProviders  float64
 }
 
 type Recommendation struct {

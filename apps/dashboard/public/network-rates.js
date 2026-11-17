@@ -58,7 +58,9 @@ function validateCandidate(candidate) {
     && optionalShare(candidate.busy_ratio) && optionalMicro(candidate.trimmed_usd_per_hour_micro) && validateWindow(candidate.hour)
     && optionalMicro(candidate.effective_price_micro) && (absent(candidate.input_ratio) || (Number.isFinite(candidate.input_ratio) && candidate.input_ratio >= 0))
     && (absent(candidate.ratio_source) || ['own', 'network', 'none'].includes(candidate.ratio_source))
-    && (absent(candidate.cohort) || ['tier', 'all'].includes(candidate.cohort));
+    && (absent(candidate.cohort) || ['tier', 'all'].includes(candidate.cohort))
+    && (absent(candidate.tier_avg_providers) || Number.isFinite(candidate.tier_avg_providers))
+    && (absent(candidate.all_avg_providers) || Number.isFinite(candidate.all_avg_providers));
 }
 
 export function validateNetworkRatesResponse(body) {
@@ -135,9 +137,7 @@ export function candidateTableOptions(rates) {
   return {
     currentModel: rates?.current_model ?? null,
     advantageRatio: Number.isFinite(rates?.switch_advantage_ratio) ? rates.switch_advantage_ratio : 0.2,
-    chipTiers: Array.isArray(rates?.chip_tiers) ? rates.chip_tiers : [],
-    shortLabel: windowLabel((rates?.window_samples || 0) * (rates?.interval_minutes || 0)) || '短窗口',
-    longLabel: windowLabel(rates?.long_window_minutes) || '近 1 小时',
+    shortLabel: windowLabel((rates?.window_samples || 0) * (rates?.interval_minutes || 0)) || '近 10 分钟',
   };
 }
 
@@ -169,10 +169,8 @@ function windowCells(window, current, isCurrent, advantageRatio, escape) {
     + `<td>${escape(formatUsdPerHourMicro(window.trimmed_usd_per_hour_micro))}</td>`;
 }
 
-function cohortLabel(candidate, chipTiers) {
-  if (candidate.cohort === 'tier') return `同档 ${chipTiers.join('/')}`.trim();
-  if (candidate.cohort === 'all') return chipTiers.length ? '全组（同档不足）' : '全组';
-  return '';
+function formatCount(value) {
+  return Number.isFinite(value) ? String(Math.round(value * 10) / 10) : '—';
 }
 
 function priceNote(candidate) {
@@ -187,37 +185,35 @@ function priceNote(candidate) {
 
 export function renderCandidatesTable(candidates, escape, options = {}) {
   if (!candidates?.length) return '<p class="control-note">暂无候选模型数据</p>';
-  const { currentModel = null, advantageRatio = 0.2, chipTiers = [], shortLabel = '短窗口', longLabel = '近 1 小时', actionFor = null } = options;
+  const { currentModel = null, advantageRatio = 0.2, shortLabel = '近 10 分钟', actionFor = null } = options;
   const labels = displayModelNames(candidates.map(candidate => candidate.model));
   const current = candidates.find(candidate => candidate.model === currentModel);
   const rows = candidates.map(candidate => {
     const muted = candidateRowClass(candidate);
     const isCurrent = candidate.model === currentModel;
     const tags = (isCurrent ? ' <span class="network-rates-tag">当前</span>' : '') + (candidate.downloaded ? '' : ' <span class="network-rates-tag">未下载</span>');
-    const cohort = cohortLabel(candidate, chipTiers);
     const note = priceNote(candidate);
-    const hourProviders = candidate.hour ? `；${longLabel}均 ${Math.round(candidate.hour.avg_providers * 10) / 10} 台` : '';
+    const allProviders = Number.isFinite(candidate.all_avg_providers) ? candidate.all_avg_providers : candidate.avg_providers;
+    const providers = `${formatCount(candidate.tier_avg_providers)}/${formatCount(allProviders)}`;
     const action = actionFor?.(candidate) || null;
     const actionCell = action
       ? `<td class="network-rates-action"><button type="button" class="button button-white network-rates-action-button" data-network-action="${escape(action.kind)}" data-model="${escape(candidate.model)}"${action.disabled ? ` disabled title="${escape(action.hint)}"` : ` title="${escape(action.hint)}"`}>${escape(action.label)}</button></td>`
       : '';
     return `<tr${muted ? ` class="${muted}"` : ''}>`
       + `<td title="${escape(candidate.model)}">${escape(labels.get(candidate.model))}${tags}</td>`
-      + `<td title="${escape(`${shortLabel}均 ${Math.round(candidate.avg_providers * 10) / 10} 台${hourProviders}`)}">${escape(String(Math.round(candidate.avg_providers * 10) / 10))}${cohort ? `<small class="network-rates-sub">${escape(cohort)}</small>` : ''}</td>`
+      + `<td title="${escape(`同档 ${formatCount(candidate.tier_avg_providers)} 台 · 全组 ${formatCount(allProviders)} 台`)}">${escape(providers)}</td>`
       + `<td title="输出价 + 输入比 × 输入价（每百万输出 token）">${escape(formatUsdPerMillionMicro(candidate.effective_price_micro))}${note ? `<small class="network-rates-sub">${escape(note)}</small>` : ''}</td>`
       + windowCells(shortWindow(candidate), current && shortWindow(current), isCurrent, advantageRatio, escape)
-      + windowCells(candidate.hour, current?.hour, isCurrent, advantageRatio, escape)
       + actionCell
       + '</tr>';
   }).join('');
-  const windowHead = '<th>有单率</th><th>每台输出 token/h</th><th>估算 $/h</th><th title="每轮去掉输出最多的一台后再平均">去头 $/h</th>';
   // The action column is pinned to the right edge so it stays reachable while the
-  // eleven metric columns scroll horizontally on narrow screens.
-  const actionHead = actionFor ? '<th rowspan="2" class="network-rates-action">操作</th>' : '';
+  // metric columns scroll horizontally on narrow screens.
+  const actionHead = actionFor ? '<th class="network-rates-action">操作</th>' : '';
   return `<div class="table-scroll network-rates-table-wrap"><table>`
-    + `<thead><tr><th rowspan="2">模型</th><th rowspan="2">台数</th><th rowspan="2">综合单价</th><th colspan="4" class="network-rates-window">${escape(shortLabel)}</th><th colspan="4" class="network-rates-window">${escape(longLabel)}</th>${actionHead}</tr>`
-    + `<tr>${windowHead}${windowHead}</tr>`
-    + `</thead><tbody>${rows}</tbody></table></div>`;
+    + `<thead><tr><th>模型</th><th>同档数/全组数</th><th>综合单价</th><th>有单率</th><th>每台输出 token/h</th><th>估算 $/h</th><th title="每轮去掉输出最多的一台后再平均">去头 $/h</th>${actionHead}</tr></thead>`
+    + `<tbody>${rows}</tbody></table></div>`
+    + `<p class="control-note network-rates-table-note">以上为${escape(shortLabel)}的数据。</p>`;
 }
 
 const TOKEN_COLORS = ['#5b8def', '#f2994a', '#8b7cf6', '#2bb3a3', '#e5677e', '#9ab843', '#c08a4f', '#d4a72c'];
