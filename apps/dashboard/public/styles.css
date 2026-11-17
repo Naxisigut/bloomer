@@ -1655,6 +1655,36 @@ tbody tr.reward-row td {
   max-width: 100%
 }
 
+.network-scope {
+  display: inline-flex;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: var(--surface)
+}
+
+.network-scope-option {
+  margin: 0;
+  padding: 6px 14px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer
+}
+
+.network-scope-option.selected {
+  background: var(--ink);
+  color: var(--paper)
+}
+
+.network-scope-option:focus-visible {
+  outline: 2px solid var(--blue);
+  outline-offset: 2px
+}
+
 .network-rates-countdown {
   color: var(--muted);
   font-size: 13px;

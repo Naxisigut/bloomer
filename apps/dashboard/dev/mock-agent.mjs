@@ -18,11 +18,14 @@ function mockNetworkRates(autoSwitch) {
     current_model: 'mock/model-a',
     recommendation: { model: 'mock/model-b', usd_per_hour_micro: '88000', fallback: false },
     candidates: [
-      { model: 'mock/model-b', downloaded: true, avg_providers: 34.0, requests_per_hour: 100, tokens_per_hour: 300000, usd_per_hour_micro: '88000', price_source: 'official', insufficient: false, tier_avg_providers: 20, all_avg_providers: 34 },
-      { model: 'mock/model-a', downloaded: true, avg_providers: 30.0, requests_per_hour: 80, tokens_per_hour: 240000, usd_per_hour_micro: '65000', price_source: 'official', insufficient: false, tier_avg_providers: 18, all_avg_providers: 30 },
+      { model: 'mock/model-b', downloaded: true, avg_providers: 20, requests_per_hour: 100, tokens_per_hour: 300000, usd_per_hour_micro: '88000', price_source: 'official', insufficient: false, tier_avg_providers: 20, all_avg_providers: 34, cohort: 'tier', all: { samples: 5, avg_providers: 34, busy_ratio: 0.4, requests_per_hour: 70, tokens_per_hour: 210000, usd_per_hour_micro: '62000', trimmed_usd_per_hour_micro: '50000' }, tier: { samples: 5, avg_providers: 20, busy_ratio: 0.55, requests_per_hour: 100, tokens_per_hour: 300000, usd_per_hour_micro: '88000', trimmed_usd_per_hour_micro: '71000' } },
+      { model: 'mock/model-a', downloaded: true, avg_providers: 18, requests_per_hour: 80, tokens_per_hour: 240000, usd_per_hour_micro: '65000', price_source: 'official', insufficient: false, tier_avg_providers: 18, all_avg_providers: 30, cohort: 'tier', all: { samples: 5, avg_providers: 30, busy_ratio: 0.36, requests_per_hour: 55, tokens_per_hour: 165000, usd_per_hour_micro: '45000', trimmed_usd_per_hour_micro: '38000' }, tier: { samples: 5, avg_providers: 18, busy_ratio: 0.5, requests_per_hour: 80, tokens_per_hour: 240000, usd_per_hour_micro: '65000', trimmed_usd_per_hour_micro: '54000' } },
     ],
     switch: { next_eligible_at: new Date(+now + 20 * 60_000).toISOString(), blocked_reason: autoSwitch ? 'warming_up' : 'auto_switch_off', backoff_until: null },
     last_error: null,
+    chip_tiers: ['Pro'],
+    memory_gb: 64,
+    min_providers: 3,
   };
 }
 

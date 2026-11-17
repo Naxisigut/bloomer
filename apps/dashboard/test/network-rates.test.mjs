@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { queryAgent } from '../public/agent-client.js';
 import {
   candidateTableOptions,
+  candidateForScope,
   formatShare,
   formatUsdPerHourMicro,
   formatUsdPerMillionMicro,
@@ -23,6 +24,10 @@ import {
   tokenTrendSeriesEnd,
   tokenTrendWindow,
   validateNetworkRatesTokenTrendResponse,
+  resolveNetworkScope,
+  networkScopeToggleAvailable,
+  tokenTrendFromPayload,
+  tokenTrendModels,
   NETWORK_RATES_REFRESH_MS,
   formatRefreshCountdown,
   networkRefreshPlan,
@@ -92,6 +97,45 @@ test('candidate table shows short-window columns, provider counts, combined pric
   assert.equal(formatShare(null), '—');
   assert.equal(formatUsdPerMillionMicro('220000'), '$0.220/M');
   assert.equal(relativeToCurrent('120000', '0'), null);
+});
+
+test('candidate table can show every model on all or tier, never mixed', () => {
+  const window = (avg, tokens, usd, extra = {}) => ({ samples: 5, avg_providers: avg, busy_ratio: 0.4, requests_per_hour: 10, tokens_per_hour: tokens, usd_per_hour_micro: usd, trimmed_usd_per_hour_micro: '1000', ...extra });
+  const candidates = [
+    { model: 'best', downloaded: true, avg_providers: 3, requests_per_hour: 10, tokens_per_hour: 30000, usd_per_hour_micro: '150000', price_source: 'official', insufficient: false, tier_avg_providers: 3, all_avg_providers: 9, all: window(9, 18000, '90000'), tier: window(3, 30000, '150000') },
+    { model: 'thin', downloaded: true, avg_providers: 6, requests_per_hour: 8, tokens_per_hour: 12000, usd_per_hour_micro: '60000', price_source: 'official', insufficient: false, tier_avg_providers: 1, all_avg_providers: 6, all: window(6, 12000, '60000'), tier: window(1, 48000, '240000') },
+  ];
+  const rates = { ...ratesBody, chip_tiers: ['Pro'], min_providers: 3, current_model: 'thin', candidates };
+  assert.equal(resolveNetworkScope('tier', rates), 'tier');
+  assert.equal(resolveNetworkScope('all', { ...rates, chip_tiers: [] }), 'all');
+  assert.equal(networkScopeToggleAvailable(rates, { series: [], all: [], tier: [] }), true);
+  assert.equal(networkScopeToggleAvailable({ ...rates, chip_tiers: [] }, { all: [], tier: [] }), false);
+  const allHtml = renderCandidatesTable(candidates, String, candidateTableOptions(rates, 'all'));
+  assert.match(allHtml, /18,000/);
+  assert.match(allHtml, /12,000/);
+  assert.match(allHtml, /（全组）/);
+  assert.doesNotMatch(allHtml, /30,000|48,000/);
+  const tierHtml = renderCandidatesTable(candidates, String, candidateTableOptions(rates, 'tier'));
+  assert.match(tierHtml, /30,000/);
+  assert.match(tierHtml, /48,000/);
+  assert.match(tierHtml, /（同档 Pro）/);
+  assert.doesNotMatch(tierHtml, /18,000|12,000/);
+  assert.equal(candidateForScope(candidates[1], 'tier', 3).insufficient, true);
+  assert.equal(candidateForScope(candidates[1], 'all', 3).insufficient, false);
+});
+
+test('token trend payload keeps all and tier series apart', () => {
+  const point = (tokens) => ({ at: '2026-10-23T01:00:00Z', tokens });
+  const payload = {
+    series: [{ model: 'a', points: [point(1)] }],
+    all: [{ model: 'a', points: [point(100)] }, { model: 'b', points: [point(200)] }],
+    tier: [{ model: 'a', points: [point(3)] }],
+  };
+  assert.equal(validateNetworkRatesTokenTrendResponse(payload), payload);
+  assert.deepEqual(tokenTrendFromPayload(payload, 'all').map(item => item.points[0].tokens), [100, 200]);
+  assert.deepEqual(tokenTrendFromPayload(payload, 'tier').map(item => item.points[0].tokens), [3]);
+  assert.deepEqual(tokenTrendModels(payload).sort(), ['a', 'a', 'a', 'b']);
+  assert.equal(tokenTrendFromPayload({ series: payload.series }, 'tier')[0].points[0].tokens, 1);
 });
 
 test('token trend range filter slices within the latest 24h payload', () => {

@@ -66,6 +66,8 @@ type CandidateView struct {
 	Insufficient           bool               `json:"insufficient"`
 	TierAvgProviders       *float64           `json:"tier_avg_providers"`
 	AllAvgProviders        float64            `json:"all_avg_providers"`
+	All                    *CandidateHourView `json:"all"`
+	Tier                   *CandidateHourView `json:"tier"`
 }
 
 type CandidateHourView struct {
@@ -109,6 +111,7 @@ type StatusView struct {
 	SwitchAdvantageRatio float64  `json:"switch_advantage_ratio"`
 	ChipTiers            []string `json:"chip_tiers"`
 	MemoryGB             int      `json:"memory_gb"`
+	MinProviders         int      `json:"min_providers"`
 }
 
 type TokenTrendPointView struct {
@@ -123,6 +126,8 @@ type TokenTrendSeriesView struct {
 
 type TokenTrendView struct {
 	Series []TokenTrendSeriesView `json:"series"`
+	All    []TokenTrendSeriesView `json:"all"`
+	Tier   []TokenTrendSeriesView `json:"tier"`
 }
 
 type SwitchItemView struct {
@@ -191,7 +196,7 @@ func NewRunner(cfg config.NetworkRates, settings *Settings, store netRateStore, 
 		view: StatusView{
 			Enabled: true, WindowSamples: cfg.WindowSamples, IntervalMinutes: cfg.IntervalMinutes, Candidates: []CandidateView{},
 			LongWindowMinutes: int(longWindow / time.Minute), SwitchAdvantageRatio: cfg.SwitchAdvantageRatio,
-			ChipTiers: append([]string{}, cfg.ChipTiers...), MemoryGB: cfg.MemoryGB,
+			ChipTiers: append([]string{}, cfg.ChipTiers...), MemoryGB: cfg.MemoryGB, MinProviders: cfg.MinProviders,
 		},
 	}
 }
@@ -335,22 +340,43 @@ func (r *Runner) TokenTrend(ctx context.Context) (TokenTrendView, error) {
 	if err != nil {
 		return TokenTrendView{}, err
 	}
-	scoped := intervals[:0:0]
+	return TokenTrendView{
+		Series: tokenTrendSeriesViews(OutputTokenTrend(intervalsForScope(intervals, tierModels), models)),
+		All:    tokenTrendSeriesViews(OutputTokenTrend(intervalsForCohort(intervals, false), models)),
+		Tier:   tokenTrendSeriesViews(OutputTokenTrend(intervalsForCohort(intervals, true), models)),
+	}, nil
+}
+
+func intervalsForCohort(intervals []Interval, tier bool) []Interval {
+	out := make([]Interval, 0, len(intervals))
 	for _, iv := range intervals {
-		if (iv.Scope == ScopeTier) == tierModels[iv.Model] {
-			scoped = append(scoped, iv)
+		if (iv.Scope == ScopeTier) == tier {
+			out = append(out, iv)
 		}
 	}
-	computed := OutputTokenTrend(scoped, models)
-	view := TokenTrendView{Series: make([]TokenTrendSeriesView, 0, len(computed))}
+	return out
+}
+
+func intervalsForScope(intervals []Interval, tierModels map[string]bool) []Interval {
+	out := make([]Interval, 0, len(intervals))
+	for _, iv := range intervals {
+		if (iv.Scope == ScopeTier) == tierModels[iv.Model] {
+			out = append(out, iv)
+		}
+	}
+	return out
+}
+
+func tokenTrendSeriesViews(computed []TokenTrendSeries) []TokenTrendSeriesView {
+	view := make([]TokenTrendSeriesView, 0, len(computed))
 	for _, series := range computed {
 		points := make([]TokenTrendPointView, 0, len(series.Points))
 		for _, point := range series.Points {
 			points = append(points, TokenTrendPointView{At: point.At.UTC().Format(time.RFC3339Nano), Tokens: point.Tokens})
 		}
-		view.Series = append(view.Series, TokenTrendSeriesView{Model: series.Model, Points: points})
+		view = append(view, TokenTrendSeriesView{Model: series.Model, Points: points})
 	}
-	return view, nil
+	return view
 }
 
 func (r *Runner) Switches(ctx context.Context, limit int) ([]SwitchItemView, error) {
@@ -490,6 +516,7 @@ func (r *Runner) applyEstimateViewLocked(st estimateState) {
 	r.view.SwitchAdvantageRatio = r.cfg.SwitchAdvantageRatio
 	r.view.ChipTiers = append([]string{}, r.cfg.ChipTiers...)
 	r.view.MemoryGB = r.cfg.MemoryGB
+	r.view.MinProviders = r.cfg.MinProviders
 	r.view.Samples = st.samples
 	r.view.UpdatedAt = formatTime(st.now)
 	r.view.CurrentModel = optionalString(st.current, st.currentOK)
@@ -913,6 +940,7 @@ func candidateViews(cands []Candidate) []CandidateView {
 			Hour: hourView(c.Hour), PriceSource: c.PriceSource, EffectivePriceMicro: strconv.FormatInt(c.EffectivePriceMicro, 10),
 			InputRatio: c.InputRatio, RatioSource: c.RatioSource, Cohort: c.Cohort, Insufficient: c.Insufficient,
 			TierAvgProviders: c.TierAvgProviders, AllAvgProviders: c.AllAvgProviders,
+			All: hourView(c.All), Tier: hourView(c.Tier),
 		}
 	}
 	return out

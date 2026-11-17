@@ -157,6 +157,9 @@ func TestEstimateRevenueTierFallbackAndWindows(t *testing.T) {
 	if hot.TierAvgProviders == nil || *hot.TierAvgProviders != 3 || hot.AllAvgProviders != 4 {
 		t.Fatalf("hot providers: %+v", hot)
 	}
+	if hot.All == nil || hot.All.AvgProviders != 4 || math.Abs(hot.All.TokensPerHour-36000) > 1e-6 || hot.Tier == nil || hot.Tier.AvgProviders != 3 || hot.Tier.TokensPerHour != 48000 {
+		t.Fatalf("hot all/tier: all=%+v tier=%+v", hot.All, hot.Tier)
+	}
 	// Own ratio 2: 1000000 + 2*100000 per million output tokens.
 	if hot.RatioSource != RatioOwn || hot.EffectivePriceMicro != 1200000 || hot.USDPerHourMicro != 57600 {
 		t.Fatalf("hot price: %+v", hot)
@@ -174,6 +177,9 @@ func TestEstimateRevenueTierFallbackAndWindows(t *testing.T) {
 	if few.TierAvgProviders == nil || *few.TierAvgProviders != 1 || few.AllAvgProviders != 4 {
 		t.Fatalf("few providers: %+v", few)
 	}
+	if few.All == nil || few.All.AvgProviders != 4 || few.Tier == nil || few.Tier.AvgProviders != 1 || math.Abs(few.Tier.TokensPerHour-12000) > 1e-6 {
+		t.Fatalf("few all/tier: all=%+v tier=%+v", few.All, few.Tier)
+	}
 	// Without the 3000-token top machine: 1000 tokens over 3 machines per 5 minutes = 4000 tokens/h.
 	if few.TrimmedUSDPerHourMicro == nil || *few.TrimmedUSDPerHourMicro != 2400 || few.BusyRatio == nil || *few.BusyRatio != 0.5 {
 		t.Fatalf("few trimmed: %+v", few)
@@ -184,7 +190,7 @@ func TestEstimateRevenueTierFallbackAndWindows(t *testing.T) {
 	in.NetworkRatio = 0
 	cands, _ = Estimate(in)
 	for _, c := range cands {
-		if c.Cohort != CohortAll || c.RatioSource != RatioNone || c.EffectivePriceMicro != in.Prices[c.Model].Output || c.TierAvgProviders != nil {
+		if c.Cohort != CohortAll || c.RatioSource != RatioNone || c.EffectivePriceMicro != in.Prices[c.Model].Output || c.TierAvgProviders != nil || c.All == nil || c.Tier != nil {
 			t.Fatalf("whole cohort output-only: %+v", c)
 		}
 	}

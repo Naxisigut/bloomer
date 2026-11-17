@@ -107,7 +107,11 @@ func (h *Handler) deviceNetworkRates(w http.ResponseWriter, r *http.Request, id 
 }
 
 func emptyTokenTrend() netrates.TokenTrendView {
-	return netrates.TokenTrendView{Series: []netrates.TokenTrendSeriesView{}}
+	return netrates.TokenTrendView{
+		Series: []netrates.TokenTrendSeriesView{},
+		All:    []netrates.TokenTrendSeriesView{},
+		Tier:   []netrates.TokenTrendSeriesView{},
+	}
 }
 
 func disabledNetworkRates() netrates.StatusView {
@@ -115,6 +119,6 @@ func disabledNetworkRates() netrates.StatusView {
 		Enabled: false, AutoSwitch: false, AutoSwitchSince: nil, WindowSamples: 5, Samples: 0, IntervalMinutes: 0,
 		UpdatedAt: nil, SnapshotAt: nil, CurrentModel: nil, Recommendation: nil,
 		Candidates: []netrates.CandidateView{}, Switch: netrates.SwitchGateView{}, LastError: nil,
-		ChipTiers: []string{},
+		ChipTiers: []string{}, MinProviders: 0,
 	}
 }

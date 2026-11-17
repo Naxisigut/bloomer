@@ -18,7 +18,7 @@ Agent 定期拉取公开统计与官方价格，按对照组差值估算各模�
 ## 对照组
 
 - 筛选 `chip_family ∈ chip_families` 且 `memory_gb == memory_gb`；`current_model` 为空的 provider 不计入。
-- 配置了 `chip_tiers`（默认 `["Pro"]`）时，另按 `chip_tier` 汇总一份同档数据。某模型同档平均台数 ≥ `min_providers` 时用同档数据（`cohort: tier`），否则退回全组（`cohort: all`）。`chip_tiers` 设为 `[]` 时始终用全组。
+- 配置了 `chip_tiers`（默认 `["Pro"]`）时，另按 `chip_tier` 汇总一份同档数据。推荐和自动切换仍按模型选择：同档平均台数 ≥ `min_providers` 时用同档（`cohort: tier`），否则退回全组（`cohort: all`）。`chip_tiers` 设为 `[]` 时始终用全组。看板展示与此独立：刷新按钮左侧可在「全组 / 同档」间切换，所有模型使用同一口径，不再按模型混用。
 - 相邻快照间隔需在 `[0.5, 2] × interval_minutes` 内才产生有效差值；`snapshot_at` 未变化时跳过本轮写入。
 - 估算窗口为最近 `window_samples`（默认 5，约 10 分钟）个有效间隔，用于推荐、自动切换和看板候选表。接口仍计算 `hour`（最近 60 分钟），看板不再展示。
 - 平均在线台数低于 `min_providers` 的模型标 `insufficient`，不参与推荐排名。
@@ -49,10 +49,10 @@ Agent 定期拉取公开统计与官方价格，按对照组差值估算各模�
 
 Bearer 认证，无查询参数：
 
-- `GET /v1/device/network-rates`：推荐、候选、样本数、`interval_minutes`、切换门控（`next_eligible_at`、`blocked_reason`、`backoff_until`）、`last_error`（`stats_unavailable` / `pricing_unavailable` / `models_unavailable`）。另含 `long_window_minutes`（60）、`switch_advantage_ratio`、`chip_tiers`、`memory_gb`，以及候选的 `tier_avg_providers` / `all_avg_providers`。看板候选表用 `window_samples` × `interval_minutes` 在表下标注窗口（默认近 10 分钟），四列分开展示有单率、每台输出 token/h、估算 $/h、去头 $/h，并用同档数/全组数对照「相对当前模型」的涨跌。看板不展示近 1 小时列、切换门控与阻止原因。采集未运行时 `enabled` 为 false，`interval_minutes` 为 0。
+- `GET /v1/device/network-rates`：推荐、候选、样本数、`interval_minutes`、切换门控（`next_eligible_at`、`blocked_reason`、`backoff_until`）、`last_error`（`stats_unavailable` / `pricing_unavailable` / `models_unavailable`）。另含 `long_window_minutes`（60）、`switch_advantage_ratio`、`chip_tiers`、`memory_gb`、`min_providers`，以及候选的 `tier_avg_providers` / `all_avg_providers` 和短窗口 `all` / `tier` 两套数字。看板候选表用 `window_samples` × `interval_minutes` 在表下标注窗口（默认近 10 分钟），四列分开展示有单率、每台输出 token/h、估算 $/h、去头 $/h，并用同档数/全组数对照「相对当前模型」的涨跌。顶部可切换全组或同档，表与趋势共用这一选择。看板不展示近 1 小时列、切换门控与阻止原因。采集未运行时 `enabled` 为 false，`interval_minutes` 为 0。
 - `POST /v1/device/network-rates/settings`：`{"auto_switch": true|false}`，返回与 GET 相同结构。
 - `GET /v1/device/network-rates/switches`：`{ "switches": [...] }`，最新在前，最多 50 条。看板不请求此接口。
-- `GET /v1/device/network-rates/token-trend`：`{ "series": [{ "model", "points": [{ "at", "tokens" }] }] }`，最近 24 小时。每个模型一条序列，点从旧到新。`tokens` 与候选表「每台每小时输出 token」相同：`round(delta_tokens / (providers * hours))`，不是各模型合计；每个模型使用与候选相同的对照组（同档或全组）。有候选时只返回这些模型且顺序一致；候选为空时返回间隔中出现过的全部模型，按名称排序。跳过 `providers<=0`、`hours<=0` 或 `delta_tokens<0` 的间隔，不补 0。没有样本时 `series` 为空数组。
+- `GET /v1/device/network-rates/token-trend`：`{ "series", "all", "tier": [{ "model", "points": [{ "at", "tokens" }] }] }`，最近 24 小时。每个模型一条序列，点从旧到新。`tokens` 与候选表「每台每小时输出 token」相同：`round(delta_tokens / (providers * hours))`，不是各模型合计。`series` 仍按每个模型当前自动选择的对照组（兼容旧看板）；`all` / `tier` 分别为全组、同档，看板切换时所有模型走同一套。有候选时只返回这些模型且顺序一致；候选为空时返回间隔中出现过的全部模型，按名称排序。跳过 `providers<=0`、`hours<=0` 或 `delta_tokens<0` 的间隔，不补 0。没有样本时各数组为空。
 
 契约细节见 `contracts/openapi.yaml`。
 

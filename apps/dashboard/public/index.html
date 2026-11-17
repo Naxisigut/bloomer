@@ -179,6 +179,10 @@
             <div class="panel-heading network-rates-heading">
               <h2>全网模型收益（估算）</h2>
               <div class="network-rates-header-actions">
+                <div class="network-scope" id="network-scope" role="group" aria-label="对照组" hidden>
+                  <button type="button" class="network-scope-option" data-network-scope="all" aria-pressed="false">全组</button>
+                  <button type="button" class="network-scope-option selected" data-network-scope="tier" aria-pressed="true">同档</button>
+                </div>
                 <button id="network-rates-refresh" type="button" class="button button-white">刷新</button><span id="network-rates-countdown" class="network-rates-countdown"></span>
               </div>
             </div>

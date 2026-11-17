@@ -148,6 +148,13 @@ func avgProviders(t *windowTotals, samples int) float64 {
 	return float64(t.providerSum) / float64(samples)
 }
 
+func statsFor(t *windowTotals, samples int, priceMicro int64) WindowStats {
+	if t == nil {
+		return WindowStats{Samples: samples}
+	}
+	return t.stats(samples, priceMicro)
+}
+
 func (t *windowTotals) stats(samples int, priceMicro int64) WindowStats {
 	out := WindowStats{Samples: samples, AvgProviders: avgProviders(t, samples)}
 	if t.providerHours > 0 {
@@ -253,9 +260,13 @@ func Estimate(in EstimateInput) (cands []Candidate, samples int) {
 			Cohort: cohort, Insufficient: st.AvgProviders < float64(in.MinProviders),
 			AllAvgProviders: avgProviders(short[key{model, ""}], samples),
 		}
+		allStats := statsFor(short[key{model, ""}], samples, effective)
+		c.All = &allStats
 		if in.TierScope {
 			v := avgProviders(short[key{model, ScopeTier}], samples)
 			c.TierAvgProviders = &v
+			tierStats := statsFor(short[key{model, ScopeTier}], samples, effective)
+			c.Tier = &tierStats
 		}
 		if t := long[key{model, scope}]; t != nil {
 			hour := t.stats(len(longEnded), effective)

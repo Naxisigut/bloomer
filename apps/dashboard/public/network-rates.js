@@ -60,14 +60,16 @@ function validateCandidate(candidate) {
     && (absent(candidate.ratio_source) || ['own', 'network', 'none'].includes(candidate.ratio_source))
     && (absent(candidate.cohort) || ['tier', 'all'].includes(candidate.cohort))
     && (absent(candidate.tier_avg_providers) || Number.isFinite(candidate.tier_avg_providers))
-    && (absent(candidate.all_avg_providers) || Number.isFinite(candidate.all_avg_providers));
+    && (absent(candidate.all_avg_providers) || Number.isFinite(candidate.all_avg_providers))
+    && validateWindow(candidate.all) && validateWindow(candidate.tier);
 }
 
 export function validateNetworkRatesResponse(body) {
   if (object(body) && (!(absent(body.long_window_minutes) || Number.isInteger(body.long_window_minutes))
     || !(absent(body.switch_advantage_ratio) || Number.isFinite(body.switch_advantage_ratio))
     || !(absent(body.chip_tiers) || (Array.isArray(body.chip_tiers) && body.chip_tiers.every(tier => typeof tier === 'string')))
-    || !(absent(body.memory_gb) || Number.isInteger(body.memory_gb)))) {
+    || !(absent(body.memory_gb) || Number.isInteger(body.memory_gb))
+    || !(absent(body.min_providers) || Number.isInteger(body.min_providers)))) {
     throw new Error('invalid');
   }
   if (!object(body) || typeof body.enabled !== 'boolean' || typeof body.auto_switch !== 'boolean'
@@ -133,12 +135,71 @@ function windowLabel(minutes) {
   return minutes % 60 === 0 ? `近 ${minutes / 60} 小时` : `近 ${minutes} 分钟`;
 }
 
-export function candidateTableOptions(rates) {
-  return {
+export function candidateTableOptions(rates, scope) {
+  const chipTiers = Array.isArray(rates?.chip_tiers) ? rates.chip_tiers : [];
+  const options = {
     currentModel: rates?.current_model ?? null,
     advantageRatio: Number.isFinite(rates?.switch_advantage_ratio) ? rates.switch_advantage_ratio : 0.2,
     shortLabel: windowLabel((rates?.window_samples || 0) * (rates?.interval_minutes || 0)) || '近 10 分钟',
+    minProviders: Number.isInteger(rates?.min_providers) ? rates.min_providers : 3,
   };
+  if (scope === 'all' || scope === 'tier') {
+    const resolved = resolveNetworkScope(scope, rates);
+    options.scope = resolved;
+    options.scopeLabel = resolved === 'tier' ? (chipTiers.length ? `同档 ${chipTiers.join('/')}` : '同档') : '全组';
+  }
+  return options;
+}
+
+export const NETWORK_SCOPE_STORAGE_KEY = 'bloomer.networkScope';
+
+export function storedNetworkScope() {
+  try {
+    const value = localStorage.getItem(NETWORK_SCOPE_STORAGE_KEY);
+    return value === 'all' || value === 'tier' ? value : 'tier';
+  } catch {
+    return 'tier';
+  }
+}
+
+export function resolveNetworkScope(preferred, rates) {
+  if (Array.isArray(rates?.chip_tiers) && rates.chip_tiers.length === 0) return 'all';
+  return preferred === 'all' ? 'all' : 'tier';
+}
+
+export function networkScopeToggleAvailable(rates, trend) {
+  if (!Array.isArray(rates?.chip_tiers) || !rates.chip_tiers.length) return false;
+  if ((rates.candidates || []).some(candidate => object(candidate.all) || object(candidate.tier))) return true;
+  return Boolean(trend && (Array.isArray(trend.all) || Array.isArray(trend.tier)));
+}
+
+export function candidateForScope(candidate, scope, minProviders = 3) {
+  if (!candidate) return candidate;
+  const window = scope === 'tier' ? candidate.tier : candidate.all;
+  if (!window) return candidate;
+  const avg = window.avg_providers;
+  return {
+    ...candidate,
+    avg_providers: avg,
+    busy_ratio: window.busy_ratio,
+    requests_per_hour: window.requests_per_hour,
+    tokens_per_hour: window.tokens_per_hour,
+    usd_per_hour_micro: window.usd_per_hour_micro,
+    trimmed_usd_per_hour_micro: window.trimmed_usd_per_hour_micro,
+    insufficient: Number.isFinite(avg) ? avg < minProviders : candidate.insufficient,
+    cohort: scope,
+  };
+}
+
+export function sortCandidatesByUsd(candidates) {
+  return [...candidates || []].sort((left, right) => {
+    const usdLeft = Number(left?.usd_per_hour_micro);
+    const usdRight = Number(right?.usd_per_hour_micro);
+    const a = Number.isFinite(usdLeft) ? usdLeft : -Infinity;
+    const b = Number.isFinite(usdRight) ? usdRight : -Infinity;
+    if (a !== b) return b - a;
+    return String(left?.model || '').localeCompare(String(right?.model || ''));
+  });
 }
 
 function shortWindow(candidate) {
@@ -185,10 +246,13 @@ function priceNote(candidate) {
 
 export function renderCandidatesTable(candidates, escape, options = {}) {
   if (!candidates?.length) return '<p class="control-note">暂无候选模型数据</p>';
-  const { currentModel = null, advantageRatio = 0.2, shortLabel = '近 10 分钟', actionFor = null } = options;
-  const labels = displayModelNames(candidates.map(candidate => candidate.model));
-  const current = candidates.find(candidate => candidate.model === currentModel);
-  const rows = candidates.map(candidate => {
+  const { currentModel = null, advantageRatio = 0.2, shortLabel = '近 10 分钟', actionFor = null, scope = null, minProviders = 3 } = options;
+  const scoped = scope === 'all' || scope === 'tier'
+    ? sortCandidatesByUsd(candidates.map(candidate => candidateForScope(candidate, scope, minProviders)))
+    : candidates;
+  const labels = displayModelNames(scoped.map(candidate => candidate.model));
+  const current = scoped.find(candidate => candidate.model === currentModel);
+  const rows = scoped.map(candidate => {
     const muted = candidateRowClass(candidate);
     const isCurrent = candidate.model === currentModel;
     const tags = (isCurrent ? ' <span class="network-rates-tag">当前</span>' : '') + (candidate.downloaded ? '' : ' <span class="network-rates-tag">未下载</span>');
@@ -213,7 +277,7 @@ export function renderCandidatesTable(candidates, escape, options = {}) {
   return `<div class="table-scroll network-rates-table-wrap"><table>`
     + `<thead><tr><th>模型</th><th>同档数/全组数</th><th>综合单价</th><th>有单率</th><th>每台输出 token/h</th><th>估算 $/h</th><th title="每轮去掉输出最多的一台后再平均">去头 $/h</th>${actionHead}</tr></thead>`
     + `<tbody>${rows}</tbody></table></div>`
-    + `<p class="control-note network-rates-table-note">以上为${escape(shortLabel)}的数据。</p>`;
+    + `<p class="control-note network-rates-table-note">${options.scopeLabel ? `以上为${escape(shortLabel)}（${escape(options.scopeLabel)}）的数据。` : `以上为${escape(shortLabel)}的数据。`}</p>`;
 }
 
 const TOKEN_COLORS = ['#5b8def', '#f2994a', '#8b7cf6', '#2bb3a3', '#e5677e', '#9ab843', '#c08a4f', '#d4a72c'];
@@ -312,15 +376,50 @@ export function tokenTrendRangeLabel(range, window) {
   return `${tokenClock.format(new Date(range.start))} – ${tokenClock.format(new Date(range.end))}`;
 }
 
+function validateTokenTrendSeries(series) {
+  if (!object(series) || typeof series.model !== 'string' || !Array.isArray(series.points) || series.points.length > 2000) throw new Error('invalid');
+  for (const point of series.points) {
+    if (!object(point) || !Number.isFinite(Date.parse(point.at)) || !Number.isSafeInteger(point.tokens) || point.tokens < 0) throw new Error('invalid');
+  }
+}
+
+function validateTokenTrendGroup(group) {
+  if (absent(group)) return;
+  if (!Array.isArray(group) || group.length > 256) throw new Error('invalid');
+  for (const series of group) validateTokenTrendSeries(series);
+}
+
 export function validateNetworkRatesTokenTrendResponse(body) {
   if (!object(body) || Object.hasOwn(body, 'points') || !Array.isArray(body.series) || body.series.length > 256) throw new Error('invalid');
-  for (const series of body.series) {
-    if (!object(series) || typeof series.model !== 'string' || !Array.isArray(series.points) || series.points.length > 2000) throw new Error('invalid');
-    for (const point of series.points) {
-      if (!object(point) || !Number.isFinite(Date.parse(point.at)) || !Number.isSafeInteger(point.tokens) || point.tokens < 0) throw new Error('invalid');
+  for (const series of body.series) validateTokenTrendSeries(series);
+  validateTokenTrendGroup(body.all);
+  validateTokenTrendGroup(body.tier);
+  return body;
+}
+
+export function tokenTrendFromPayload(payload, scope) {
+  if (Array.isArray(payload)) return payload;
+  if (scope === 'tier' && Array.isArray(payload?.tier)) return payload.tier;
+  if (scope === 'all' && Array.isArray(payload?.all)) return payload.all;
+  return payload?.series || [];
+}
+
+export function tokenTrendWindowFromPayload(payload) {
+  if (Array.isArray(payload)) return tokenTrendWindow(payload);
+  const end = Math.max(tokenTrendSeriesEnd(payload?.series), tokenTrendSeriesEnd(payload?.all), tokenTrendSeriesEnd(payload?.tier));
+  if (!end) return null;
+  return { start: end - TOKEN_TREND_WINDOW_MS, end };
+}
+
+export function tokenTrendModels(payload) {
+  const groups = Array.isArray(payload) ? [payload] : [payload?.series, payload?.all, payload?.tier];
+  const models = [];
+  for (const group of groups) {
+    for (const item of group || []) {
+      if (item?.model) models.push(item.model);
     }
   }
-  return body;
+  return models;
 }
 
 export function tokenTrendAxis(values) {
@@ -421,22 +520,42 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
 export function createNetworkRatesUI({ query, selectedDevice, escape, switcher = null, contextMenu = null }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, rates = null, trend = null, trendError = '', loading = false, error = '', unsupported = false, generation = 0;
-  let tokenModels = [], tokenSelected = new Set(), tokenRange = null;
+  let tokenModels = [], tokenSelected = new Set(), tokenRange = null, networkScope = storedNetworkScope();
   const chart = $('#network-token-chart');
   const tokenChoices = $('#network-token-models');
   const tokenFrom = $('#network-token-from');
   const tokenTo = $('#network-token-to');
   const tokenColorFor = model => tokenTrendColorFor(model, tokenModels);
-  const tokenInsufficient = () => new Set((rates?.candidates || []).filter(candidate => candidate.insufficient).map(candidate => candidate.model));
+  const activeScope = () => resolveNetworkScope(networkScope, rates);
+  const scopedCandidates = () => (rates?.candidates || []).map(candidate => candidateForScope(candidate, activeScope(), Number.isInteger(rates?.min_providers) ? rates.min_providers : 3));
+  const tokenInsufficient = () => new Set(scopedCandidates().filter(candidate => candidate.insufficient).map(candidate => candidate.model));
+  const visibleTrend = () => tokenTrendFromPayload(trend, activeScope());
 
-  function syncTokenModels(series) {
-    const fromTrend = (series || []).map(item => item.model).filter(Boolean);
+  function syncTokenModels(models) {
+    const fromTrend = [...new Set(models || [])];
     tokenModels = [...new Set([...fromTrend, ...tokenSelected])].sort();
     if (!tokenSelected.size && fromTrend.length) fromTrend.forEach(model => tokenSelected.add(model));
   }
 
+  function renderScopeToggle() {
+    const group = $('#network-scope');
+    if (!group) return;
+    const available = !unsupported && networkScopeToggleAvailable(rates, trend);
+    group.hidden = !available;
+    const selected = activeScope();
+    const tiers = Array.isArray(rates?.chip_tiers) ? rates.chip_tiers.join('/') : '';
+    group.querySelectorAll('[data-network-scope]').forEach(button => {
+      const on = button.dataset.networkScope === selected;
+      button.classList.toggle('selected', on);
+      button.setAttribute('aria-pressed', String(on));
+      button.title = button.dataset.networkScope === 'tier'
+        ? (tiers ? `所有模型使用同档 ${tiers} 数据` : '所有模型使用同档数据')
+        : '所有模型使用全组数据';
+    });
+  }
+
   function activeTokenWindow() {
-    return tokenTrendWindow(trend);
+    return tokenTrendWindowFromPayload(trend);
   }
 
   function activeTokenRange() {
@@ -489,6 +608,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
       switcher?.setDevice(deviceID);
     }
     renderTokenPeriodControls();
+    renderScopeToggle();
     const demo = deviceID === 'demo';
     $('#network-rates-panel').setAttribute('aria-busy', String(loading));
     $('#network-rates-refresh').disabled = loading;
@@ -502,7 +622,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
       message.textContent = error;
     }
     $('#network-rates-candidates').innerHTML = unsupported ? '' : rates ? renderCandidatesTable(rates.candidates, escape, {
-      ...candidateTableOptions(rates),
+      ...candidateTableOptions(rates, activeScope()),
       actionFor: candidate => modelAction(candidate, { currentModel: rates.current_model, busy: switcher?.busy, demo }),
     }) : '';
     $('.network-token-card').hidden = unsupported;
@@ -555,7 +675,8 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
 
   function renderTokenChart() {
     if (!chart || unsupported || chart.clientWidth < 40) return;
-    const empty = !trend?.length
+    const series = visibleTrend();
+    const empty = !series?.length
       ? '近 24 小时暂无各模型输出 token 样本'
       : tokenRange ? '所选时段暂无各模型输出 token 样本' : '前 2 小时暂无各模型输出 token 样本';
     const noneSelected = '勾选模型以查看对应折线。';
@@ -567,7 +688,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
       chart.innerHTML = `<div class="empty-state">${loading ? '正在读取输出 token 趋势…' : ''}</div>`;
       return;
     }
-    if (!trend.length) {
+    if (!series.length) {
       chart.innerHTML = `<div class="empty-state">${empty}</div>`;
       return;
     }
@@ -577,7 +698,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     }
     const window = activeTokenWindow();
     const range = activeTokenRange();
-    const windowed = filterTokenTrendByRange(trend, range);
+    const windowed = filterTokenTrendByRange(series, range);
     const visible = windowed.filter(item => tokenSelected.has(item.model));
     const width = Math.max(560, chart.clientWidth);
     const height = chart.clientHeight || 320;
@@ -646,10 +767,10 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
 
   function readTrend(id, signal) {
     return query('network-rates-token-trend', null, id, signal).then(
-      value => ({ series: value.series, error: '' }),
+      value => ({ trend: value, error: '' }),
       failure => {
         if (signal?.aborted || failure?.name === 'AbortError') throw failure;
-        return { series: [], error: failure.code === 'network_rates_unsupported' ? '设备 Agent 版本过旧，暂无输出 token 趋势。' : failure.message };
+        return { trend: { series: [], all: [], tier: [] }, error: failure.code === 'network_rates_unsupported' ? '设备 Agent 版本过旧，暂无输出 token 趋势。' : failure.message };
       },
     );
   }
@@ -683,8 +804,8 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
         readTrend(id, signal),
       ]);
       if (signal.aborted || request !== generation || selectedDevice()?.id !== id) return;
-      rates = ratesResponse; trend = trendResponse.series; trendError = trendResponse.error; unsupported = false; error = '';
-      syncTokenModels(trend);
+      rates = ratesResponse; trend = trendResponse.trend; trendError = trendResponse.error; unsupported = false; error = '';
+      syncTokenModels(tokenTrendModels(trend));
     } catch (failure) {
       if (signal.aborted || failure?.name === 'AbortError' || request !== generation || selectedDevice()?.id !== id) return;
       trend = null; trendError = '';
@@ -729,6 +850,15 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
   }
 
   $('#network-rates-refresh')?.addEventListener('click', refresh);
+  $('#network-scope')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-network-scope]');
+    if (!button) return;
+    const next = button.dataset.networkScope === 'all' ? 'all' : 'tier';
+    if (next === networkScope) return;
+    networkScope = next;
+    try { localStorage.setItem(NETWORK_SCOPE_STORAGE_KEY, networkScope); } catch { /* 忽略无法写入的偏好 */ }
+    render();
+  });
   const applyTokenRange = () => {
     const window = activeTokenWindow();
     if (!window || loading) return;

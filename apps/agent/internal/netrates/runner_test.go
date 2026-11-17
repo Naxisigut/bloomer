@@ -385,7 +385,7 @@ func TestRunnerTierCohortAndPromptRatios(t *testing.T) {
 		}
 	}
 	st := r.Status()
-	if st.LongWindowMinutes != 60 || len(st.ChipTiers) != 1 || st.ChipTiers[0] != "Pro" || st.SwitchAdvantageRatio != 0.2 || st.MemoryGB != 64 {
+	if st.LongWindowMinutes != 60 || len(st.ChipTiers) != 1 || st.ChipTiers[0] != "Pro" || st.SwitchAdvantageRatio != 0.2 || st.MemoryGB != 64 || st.MinProviders != 3 {
 		t.Fatalf("status meta: %+v", st)
 	}
 	got := map[string]CandidateView{}
@@ -393,14 +393,14 @@ func TestRunnerTierCohortAndPromptRatios(t *testing.T) {
 		got[c.Model] = c
 	}
 	m1, m2 := got["model-m1"], got["model-m2"]
-	if m1.Cohort != CohortTier || m1.RatioSource != RatioOwn || m1.EffectivePriceMicro != "130000" || m1.Hour == nil || m1.BusyRatio == nil {
+	if m1.Cohort != CohortTier || m1.RatioSource != RatioOwn || m1.EffectivePriceMicro != "130000" || m1.Hour == nil || m1.BusyRatio == nil || m1.All == nil || m1.Tier == nil {
 		t.Fatalf("m1: %+v", m1)
 	}
-	if m2.Cohort != CohortAll || m2.RatioSource != RatioNetwork || m2.EffectivePriceMicro != "180000" {
+	if m2.Cohort != CohortAll || m2.RatioSource != RatioNetwork || m2.EffectivePriceMicro != "180000" || m2.All == nil || m2.Tier == nil {
 		t.Fatalf("m2: %+v", m2)
 	}
 	trend, err := r.TokenTrend(ctx)
-	if err != nil || len(trend.Series) != 2 || len(trend.Series[0].Points) != 6 {
+	if err != nil || len(trend.Series) != 2 || len(trend.Series[0].Points) != 6 || len(trend.All) != 2 || len(trend.Tier) == 0 {
 		t.Fatalf("trend: %+v %v", trend, err)
 	}
 }

@@ -28,6 +28,10 @@ const decodeCursor = value => JSON.parse(new TextDecoder('utf-8', { fatal: true 
 
 const demoHardware = { device_id: 'demo-device', hardware: { os: 'darwin', architecture: 'arm64', chip: 'Apple M4 Max', model: '演示 Mac', logical_cpus: 16, memory_total_bytes: 64 * 2 ** 30 } };
 
+function demoWindow(samples, avg, busy, requests, tokens, usd, trimmed) {
+  return { samples, avg_providers: avg, busy_ratio: busy, requests_per_hour: requests, tokens_per_hour: tokens, usd_per_hour_micro: usd, trimmed_usd_per_hour_micro: trimmed };
+}
+
 function demoNetworkRates(clock) {
   const stamp = clock.toISOString();
   return {
@@ -44,21 +48,25 @@ function demoNetworkRates(clock) {
       {
         model: 'DeepSeek-R1-Distill-Qwen-32B', downloaded: true, avg_providers: 8.5, busy_ratio: 0.62, requests_per_hour: 118.2, tokens_per_hour: 365000,
         usd_per_hour_micro: '142500', trimmed_usd_per_hour_micro: '121000', price_source: 'official', effective_price_micro: '390400', input_ratio: 4.2, ratio_source: 'own', cohort: 'tier', insufficient: false, tier_avg_providers: 8.5, all_avg_providers: 14,
+        all: demoWindow(5, 14, 0.5, 90, 280000, '109000', '98000'), tier: demoWindow(5, 8.5, 0.62, 118.2, 365000, '142500', '121000'),
         hour: { samples: 30, avg_providers: 8.1, busy_ratio: 0.58, requests_per_hour: 110.4, tokens_per_hour: 341000, usd_per_hour_micro: '133100', trimmed_usd_per_hour_micro: '118000' },
       },
       {
         model: 'Qwen3-32B', downloaded: true, avg_providers: 9.0, busy_ratio: 0.55, requests_per_hour: 96.4, tokens_per_hour: 310000,
         usd_per_hour_micro: '118200', trimmed_usd_per_hour_micro: '104500', price_source: 'official', effective_price_micro: '381300', input_ratio: 3.9, ratio_source: 'own', cohort: 'tier', insufficient: false, tier_avg_providers: 9, all_avg_providers: 15.2,
+        all: demoWindow(5, 15.2, 0.48, 80, 255000, '97200', '86000'), tier: demoWindow(5, 9, 0.55, 96.4, 310000, '118200', '104500'),
         hour: { samples: 30, avg_providers: 9.2, busy_ratio: 0.57, requests_per_hour: 101.7, tokens_per_hour: 322000, usd_per_hour_micro: '122800', trimmed_usd_per_hour_micro: '109900' },
       },
       {
         model: 'Qwen3-8B', downloaded: false, avg_providers: 22.0, busy_ratio: 0.31, requests_per_hour: 140.0, tokens_per_hour: 420000,
         usd_per_hour_micro: '98000', trimmed_usd_per_hour_micro: '61000', price_source: 'official', effective_price_micro: '233300', input_ratio: 8.3, ratio_source: 'network', cohort: 'all', insufficient: true, tier_avg_providers: 1.2, all_avg_providers: 22,
+        all: demoWindow(5, 22, 0.31, 140, 420000, '98000', '61000'), tier: demoWindow(5, 1.2, 0.08, 12, 36000, '8400', null),
         hour: { samples: 30, avg_providers: 21.4, busy_ratio: 0.29, requests_per_hour: 133.0, tokens_per_hour: 401000, usd_per_hour_micro: '93600', trimmed_usd_per_hour_micro: '58800' },
       },
       {
         model: 'gemma-4-26b-qat-4bit', downloaded: true, avg_providers: 12.0, busy_ratio: 0.17, requests_per_hour: 8.0, tokens_per_hour: 24000,
         usd_per_hour_micro: '13700', trimmed_usd_per_hour_micro: '4100', price_source: 'fallback', effective_price_micro: '568600', input_ratio: 8.3, ratio_source: 'network', cohort: 'tier', insufficient: false, tier_avg_providers: 12, all_avg_providers: 18,
+        all: demoWindow(5, 18, 0.14, 6, 18000, '10200', '3100'), tier: demoWindow(5, 12, 0.17, 8, 24000, '13700', '4100'),
         hour: null,
       },
     ],
@@ -73,6 +81,7 @@ function demoNetworkRates(clock) {
     switch_advantage_ratio: 0.2,
     chip_tiers: ['Pro'],
     memory_gb: 64,
+    min_providers: 3,
   };
 }
 
@@ -85,17 +94,17 @@ function demoTokenTrend(clock) {
     { model: 'Qwen3-8B', tokens: hours => 410000 + 16000 * Math.sin(hours / 2.1 + 0.4) },
     { model: 'gemma-4-26b-qat-4bit', tokens: hours => 24000 + 2800 * Math.sin(hours / 1.8 + 2.1) },
   ];
-  return {
-    series: specs.map(spec => {
-      const points = [];
-      for (let at = start; at <= +clock; at += step) {
-        const hours = (at - start) / 3_600_000;
-        const recent = Math.max(0, hours - 20);
-        points.push({ at: new Date(at).toISOString(), tokens: Math.max(0, Math.round(spec.tokens(hours, recent))) });
-      }
-      return { model: spec.model, points };
-    }),
-  };
+  const seriesFor = scale => specs.map(spec => {
+    const points = [];
+    for (let at = start; at <= +clock; at += step) {
+      const hours = (at - start) / 3_600_000;
+      const recent = Math.max(0, hours - 20);
+      points.push({ at: new Date(at).toISOString(), tokens: Math.max(0, Math.round(spec.tokens(hours, recent) * scale)) });
+    }
+    return { model: spec.model, points };
+  });
+  const series = seriesFor(1);
+  return { series, all: seriesFor(0.72), tier: series };
 }
 
 function stateSample(id) {

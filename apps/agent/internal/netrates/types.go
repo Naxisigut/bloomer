@@ -74,6 +74,11 @@ type Candidate struct {
 	// TierAvgProviders is the same-tier average; nil when chip_tiers is empty.
 	TierAvgProviders *float64
 	AllAvgProviders  float64
+	// All and Tier are the short-window figures for every model, so the dashboard can
+	// show one cohort at a time instead of mixing per-model fallbacks. Tier is nil
+	// when chip_tiers is empty. Auto-switch still uses the top-level fields.
+	All  *WindowStats
+	Tier *WindowStats
 }
 
 type Recommendation struct {

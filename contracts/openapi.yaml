@@ -291,7 +291,10 @@ paths:
         hours<=0, or delta_tokens<0 are skipped and not filled with zeros.
         When candidates exist, only those models are returned in table order;
         otherwise every model seen in the window is returned, sorted by name.
-        No query parameters. An empty series array means no retained samples.
+        `series` still mixes each model's current auto-selected cohort for older
+        dashboards. `all` and `tier` are the same models with a single cohort so
+        the dashboard can switch every model together. No query parameters.
+        An empty series array means no retained samples.
       responses:
         '200':
           description: Series in candidate or name order; points oldest first
@@ -1410,6 +1413,9 @@ components:
           description: Chip tiers (for example Pro) preferred as the same-tier cohort. Empty means the whole cohort.
         memory_gb:
           type: integer
+        min_providers:
+          type: integer
+          description: Minimum average machines before a model is marked insufficient. Dashboard uses this for both all and tier views.
     NetworkRatesRecommendation:
       type: object
       required: [model, usd_per_hour_micro, fallback]
@@ -1484,6 +1490,16 @@ components:
           description: tier = same chip tier machines; all = whole family+memory cohort (no tier configured or fewer than min_providers same-tier machines).
         insufficient:
           type: boolean
+        all:
+          nullable: true
+          description: Short-window figures for the whole family+memory cohort.
+          allOf:
+            - $ref: '#/components/schemas/NetworkRatesCandidateWindow'
+        tier:
+          nullable: true
+          description: Short-window figures for the same chip tier. Null when chip_tiers is empty.
+          allOf:
+            - $ref: '#/components/schemas/NetworkRatesCandidateWindow'
     NetworkRatesCandidateWindow:
       type: object
       required: [samples, avg_providers, busy_ratio, requests_per_hour, tokens_per_hour, usd_per_hour_micro, trimmed_usd_per_hour_micro]
@@ -1513,29 +1529,35 @@ components:
       required: [series]
       properties:
         series:
-          type: array
-          maxItems: 256
-          items:
-            type: object
-            required: [model, points]
-            properties:
-              model:
-                type: string
-              points:
-                type: array
-                maxItems: 2000
-                items:
-                  type: object
-                  required: [at, tokens]
-                  properties:
-                    at:
-                      type: string
-                      format: date-time
-                    tokens:
-                      type: integer
-                      format: int64
-                      minimum: 0
-                      description: Output tokens per machine per hour for this model
+          $ref: '#/components/schemas/NetworkRateTokenTrendSeriesList'
+        all:
+          $ref: '#/components/schemas/NetworkRateTokenTrendSeriesList'
+        tier:
+          $ref: '#/components/schemas/NetworkRateTokenTrendSeriesList'
+    NetworkRateTokenTrendSeriesList:
+      type: array
+      maxItems: 256
+      items:
+        type: object
+        required: [model, points]
+        properties:
+          model:
+            type: string
+          points:
+            type: array
+            maxItems: 2000
+            items:
+              type: object
+              required: [at, tokens]
+              properties:
+                at:
+                  type: string
+                  format: date-time
+                tokens:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                  description: Output tokens per machine per hour for this model
     NetworkRatesSwitchGate:
       type: object
       required: [next_eligible_at, blocked_reason, backoff_until]
