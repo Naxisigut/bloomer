@@ -122,6 +122,18 @@ test('candidate table can show every model on all or tier, never mixed', () => {
   assert.doesNotMatch(tierHtml, /18,000|12,000/);
   assert.equal(candidateForScope(candidates[1], 'tier', 3).insufficient, true);
   assert.equal(candidateForScope(candidates[1], 'all', 3).insufficient, false);
+  assert.doesNotMatch(tierHtml, /network-rates-muted/);
+});
+
+test('only undownloaded candidates mute the row, not insufficient samples', () => {
+  const row = (model, extra = {}) => ({
+    model, downloaded: true, avg_providers: 1, requests_per_hour: 0, tokens_per_hour: 0,
+    usd_per_hour_micro: '0', price_source: 'official', insufficient: true, ...extra,
+  });
+  const thin = renderCandidatesTable([row('thin')], String);
+  assert.doesNotMatch(thin, /network-rates-muted/);
+  const cold = renderCandidatesTable([row('cold', { downloaded: false })], String);
+  assert.match(cold, /<tr class="network-rates-muted">/);
 });
 
 test('token trend payload keeps all and tier series apart', () => {

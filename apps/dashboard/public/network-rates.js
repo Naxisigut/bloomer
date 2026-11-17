@@ -93,7 +93,7 @@ export function validateNetworkRatesResponse(body) {
 }
 
 function candidateRowClass(candidate) {
-  if (candidate.insufficient || !candidate.downloaded) return 'network-rates-muted';
+  if (!candidate.downloaded) return 'network-rates-muted';
   return '';
 }
 
