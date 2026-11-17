@@ -52,7 +52,7 @@ Bearer 认证，无查询参数：
 - `GET /v1/device/network-rates`：推荐、候选、样本数、`interval_minutes`、切换门控（`next_eligible_at`、`blocked_reason`、`backoff_until`）、`last_error`（`stats_unavailable` / `pricing_unavailable` / `models_unavailable`）。另含 `long_window_minutes`（60）、`switch_advantage_ratio`、`chip_tiers`、`memory_gb`、`min_providers`，以及候选的 `tier_avg_providers` / `all_avg_providers` 和短窗口 `all` / `tier` 两套数字。看板候选表用 `window_samples` × `interval_minutes` 在表下标注窗口（默认近 10 分钟），四列分开展示有单率、每台输出 token/h、估算 $/h、去头 $/h，并用同档数/全组数对照「相对当前模型」的涨跌。顶部可切换全组或同档，表与趋势共用这一选择。看板不展示近 1 小时列、切换门控与阻止原因。采集未运行时 `enabled` 为 false，`interval_minutes` 为 0。
 - `POST /v1/device/network-rates/settings`：`{"auto_switch": true|false}`，返回与 GET 相同结构。
 - `GET /v1/device/network-rates/switches`：`{ "switches": [...] }`，最新在前，最多 50 条。看板不请求此接口。
-- `GET /v1/device/network-rates/token-trend`：`{ "series", "all", "tier": [{ "model", "points": [{ "at", "tokens" }] }] }`，最近 24 小时。每个模型一条序列，点从旧到新。`tokens` 与候选表「每台每小时输出 token」相同：`round(delta_tokens / (providers * hours))`，不是各模型合计。`series` 仍按每个模型当前自动选择的对照组（兼容旧看板）；`all` / `tier` 分别为全组、同档，看板切换时所有模型走同一套。有候选时只返回这些模型且顺序一致；候选为空时返回间隔中出现过的全部模型，按名称排序。跳过 `providers<=0`、`hours<=0` 或 `delta_tokens<0` 的间隔，不补 0。没有样本时各数组为空。
+- `GET /v1/device/network-rates/token-trend`：`{ "series", "all", "tier": [{ "model", "points": [{ "at", "tokens", "total" }] }] }`，最近 24 小时。每个模型一条序列，点从旧到新。`tokens` 与候选表「每台每小时输出 token」相同：`round(delta_tokens / (providers * hours))`。`total` 为组总每小时输出 token：`round(delta_tokens / hours)`，约等于每台速率 × 机器数；旧 Agent 可省略。`series` 仍按每个模型当前自动选择的对照组（兼容旧看板）；`all` / `tier` 分别为全组、同档，看板切换时所有模型走同一套。有候选时只返回这些模型且顺序一致；候选为空时返回间隔中出现过的全部模型，按名称排序。跳过 `providers<=0`、`hours<=0` 或 `delta_tokens<0` 的间隔，不补 0。没有样本时各数组为空。
 
 契约细节见 `contracts/openapi.yaml`。
 

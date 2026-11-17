@@ -23,14 +23,14 @@ func TestOutputTokenTrendPerModelPerMachineHour(t *testing.T) {
 	if len(all) != 3 || all[0].Model != "a" || all[1].Model != "b" || all[2].Model != "c" {
 		t.Fatalf("all models: %+v", all)
 	}
-	if len(all[0].Points) != 2 || !all[0].Points[0].At.Equal(end) || all[0].Points[0].Tokens != 36000 || all[0].Points[1].Tokens != 18000 {
+	if len(all[0].Points) != 2 || !all[0].Points[0].At.Equal(end) || all[0].Points[0].Tokens != 36000 || all[0].Points[0].Total != 72000 || all[0].Points[1].Tokens != 18000 || all[0].Points[1].Total != 36000 {
 		t.Fatalf("a: %+v", all[0])
 	}
-	if len(all[1].Points) != 1 || all[1].Points[0].Tokens != 36000 || all[2].Points[0].Tokens != 108000 {
+	if len(all[1].Points) != 1 || all[1].Points[0].Tokens != 36000 || all[1].Points[0].Total != 36000 || all[2].Points[0].Tokens != 108000 || all[2].Points[0].Total != 108000 {
 		t.Fatalf("b/c: %+v %+v", all[1], all[2])
 	}
 	selected := OutputTokenTrend(intervals, []string{"b", "a", "missing"})
-	if len(selected) != 2 || selected[0].Model != "b" || selected[1].Model != "a" || selected[0].Points[0].Tokens != 36000 || selected[1].Points[0].Tokens != 36000 {
+	if len(selected) != 2 || selected[0].Model != "b" || selected[1].Model != "a" || selected[0].Points[0].Tokens != 36000 || selected[1].Points[0].Tokens != 36000 || selected[1].Points[0].Total != 72000 {
 		t.Fatalf("selected models: %+v", selected)
 	}
 	empty := OutputTokenTrend(nil, []string{"a"})

@@ -56,7 +56,7 @@ func TestNetworkRatesHTTP(t *testing.T) {
 	}, time.Now().Add(-7*24*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	if w := request("GET", "/v1/device/network-rates/token-trend", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"model":"a"`) || !strings.Contains(w.Body.String(), `"model":"b"`) || !strings.Contains(w.Body.String(), `"tokens":36000`) || !strings.Contains(w.Body.String(), `"all"`) || !strings.Contains(w.Body.String(), `"tier"`) || strings.Contains(w.Body.String(), `"tokens":108000`) {
+	if w := request("GET", "/v1/device/network-rates/token-trend", ""); w.Code != 200 || !strings.Contains(w.Body.String(), `"model":"a"`) || !strings.Contains(w.Body.String(), `"model":"b"`) || !strings.Contains(w.Body.String(), `"tokens":36000`) || !strings.Contains(w.Body.String(), `"total":72000`) || !strings.Contains(w.Body.String(), `"all"`) || !strings.Contains(w.Body.String(), `"tier"`) || strings.Contains(w.Body.String(), `"tokens":108000`) {
 		t.Fatal(w.Code, w.Body)
 	}
 	if w := request("POST", "/v1/device/network-rates/token-trend", ""); w.Code != 405 {

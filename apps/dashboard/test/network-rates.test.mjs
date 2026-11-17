@@ -28,6 +28,7 @@ import {
   networkScopeToggleAvailable,
   tokenTrendFromPayload,
   tokenTrendModels,
+  tokenTrendSeriesForMetric,
   NETWORK_RATES_REFRESH_MS,
   formatRefreshCountdown,
   networkRefreshPlan,
@@ -150,6 +151,25 @@ test('token trend payload keeps all and tier series apart', () => {
   assert.equal(tokenTrendFromPayload({ series: payload.series }, 'tier')[0].points[0].tokens, 1);
 });
 
+test('token trend total is optional and plots cohort totals', () => {
+  const at = '2026-10-23T01:00:00Z';
+  const withoutTotal = { series: [{ model: 'a', points: [{ at, tokens: 36000 }] }] };
+  assert.equal(validateNetworkRatesTokenTrendResponse(withoutTotal), withoutTotal);
+  const withTotal = { series: [{ model: 'a', points: [{ at, tokens: 36000, total: 72000 }] }] };
+  assert.equal(validateNetworkRatesTokenTrendResponse(withTotal), withTotal);
+  assert.throws(() => validateNetworkRatesTokenTrendResponse({ series: [{ model: 'a', points: [{ at, tokens: 36000, total: -1 }] }] }));
+  assert.throws(() => validateNetworkRatesTokenTrendResponse({ series: [{ model: 'a', points: [{ at, tokens: 36000, total: 1.5 }] }] }));
+  const fixture = [{ model: 'a', points: [{ at, tokens: 36000, total: 72000 }, { at: '2026-10-23T01:05:00Z', tokens: 18000 }] }];
+  assert.deepEqual(tokenTrendSeriesForMetric(fixture)[0].points.map(point => point.tokens), [36000, 18000]);
+  assert.deepEqual(tokenTrendSeriesForMetric(fixture, 'total')[0].points, [{ at, tokens: 72000 }]);
+  const figure = renderTokenTrendFigure(tokenTrendSeriesForMetric(fixture, 'total'), {
+    width: 640, height: 220, escape: String, metricLabel: '各模型组总每小时输出 token', periodLabel: '前 2 小时',
+  });
+  assert.match(figure.markup, /各模型组总每小时输出 token/);
+  assert.doesNotMatch(figure.markup, /每台每小时输出 token/);
+  assert.equal(figure.series[0].coords[0].tokens, 72000);
+});
+
 test('token trend range filter slices within the latest 24h payload', () => {
   const series = [{
     model: 'a',
@@ -200,6 +220,7 @@ test('token trend rejects old points payload and draws escaped multi-series curv
   assert.throws(() => validateNetworkRatesTokenTrendResponse({ points: [{ at: '2026-10-23T01:00:00Z', tokens: 1200 }] }));
   assert.throws(() => validateNetworkRatesTokenTrendResponse({ series: [], points: [] }));
   assert.throws(() => validateNetworkRatesTokenTrendResponse({ series: [{ model: 'a', points: [{ at: '2026-10-23T01:00:00Z', tokens: -1 }] }] }));
+  assert.equal(validateNetworkRatesTokenTrendResponse({ series: [{ model: 'a', points: [{ at: '2026-10-23T01:00:00Z', tokens: 1200, total: 0 }] }] }).series[0].points[0].total, 0);
   const axis = tokenTrendAxis([1000, 1000]);
   assert.ok(axis.high > axis.low);
   const escape = value => String(value ?? '').replace(/[&<>"']/g, character => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[character]);

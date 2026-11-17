@@ -287,8 +287,10 @@ paths:
       description: |
         Returns one series per model for stored intervals in the last 24 hours.
         Each point is tokens per machine per hour, matching the candidate table:
-        round(delta_tokens / (providers * hours)). Intervals with providers<=0,
-        hours<=0, or delta_tokens<0 are skipped and not filled with zeros.
+        round(delta_tokens / (providers * hours)). Optional `total` is the cohort
+        output tokens per hour: round(delta_tokens / hours). Older agents may omit
+        `total`. Intervals with providers<=0, hours<=0, or delta_tokens<0 are
+        skipped and not filled with zeros.
         When candidates exist, only those models are returned in table order;
         otherwise every model seen in the window is returned, sorted by name.
         `series` still mixes each model's current auto-selected cohort for older
@@ -1558,6 +1560,11 @@ components:
                   format: int64
                   minimum: 0
                   description: Output tokens per machine per hour for this model
+                total:
+                  type: integer
+                  format: int64
+                  minimum: 0
+                  description: Cohort output tokens per hour, round(delta_tokens / hours)
     NetworkRatesSwitchGate:
       type: object
       required: [next_eligible_at, blocked_reason, backoff_until]

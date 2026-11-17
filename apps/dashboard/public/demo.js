@@ -89,22 +89,23 @@ function demoTokenTrend(clock) {
   const step = 5 * 60_000;
   const start = Math.floor((+clock - 24 * 3_600_000) / step) * step;
   const specs = [
-    { model: 'DeepSeek-R1-Distill-Qwen-32B', tokens: (hours, recent) => 300000 + 18000 * Math.sin(hours / 3.2) + recent * 18000 },
-    { model: 'Qwen3-32B', tokens: (hours, recent) => 330000 + 14000 * Math.sin(hours / 2.7 + 1.2) - recent * 22000 },
-    { model: 'Qwen3-8B', tokens: hours => 410000 + 16000 * Math.sin(hours / 2.1 + 0.4) },
-    { model: 'gemma-4-26b-qat-4bit', tokens: hours => 24000 + 2800 * Math.sin(hours / 1.8 + 2.1) },
+    { model: 'DeepSeek-R1-Distill-Qwen-32B', tokens: (hours, recent) => 300000 + 18000 * Math.sin(hours / 3.2) + recent * 18000, providers: { all: 8.5, tier: 8.5 } },
+    { model: 'Qwen3-32B', tokens: (hours, recent) => 330000 + 14000 * Math.sin(hours / 2.7 + 1.2) - recent * 22000, providers: { all: 9, tier: 9 } },
+    { model: 'Qwen3-8B', tokens: hours => 410000 + 16000 * Math.sin(hours / 2.1 + 0.4), providers: { all: 22, tier: 1.2 } },
+    { model: 'gemma-4-26b-qat-4bit', tokens: hours => 24000 + 2800 * Math.sin(hours / 1.8 + 2.1), providers: { all: 12, tier: 12 } },
   ];
-  const seriesFor = scale => specs.map(spec => {
+  const seriesFor = (scale, cohort) => specs.map(spec => {
     const points = [];
     for (let at = start; at <= +clock; at += step) {
       const hours = (at - start) / 3_600_000;
       const recent = Math.max(0, hours - 20);
-      points.push({ at: new Date(at).toISOString(), tokens: Math.max(0, Math.round(spec.tokens(hours, recent) * scale)) });
+      const tokens = Math.max(0, Math.round(spec.tokens(hours, recent) * scale));
+      points.push({ at: new Date(at).toISOString(), tokens, total: Math.max(0, Math.round(tokens * spec.providers[cohort])) });
     }
     return { model: spec.model, points };
   });
-  const series = seriesFor(1);
-  return { series, all: seriesFor(0.72), tier: series };
+  const series = seriesFor(1, 'tier');
+  return { series, all: seriesFor(0.72, 'all'), tier: series };
 }
 
 function stateSample(id) {

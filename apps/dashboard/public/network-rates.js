@@ -380,6 +380,7 @@ function validateTokenTrendSeries(series) {
   if (!object(series) || typeof series.model !== 'string' || !Array.isArray(series.points) || series.points.length > 2000) throw new Error('invalid');
   for (const point of series.points) {
     if (!object(point) || !Number.isFinite(Date.parse(point.at)) || !Number.isSafeInteger(point.tokens) || point.tokens < 0) throw new Error('invalid');
+    if (Object.hasOwn(point, 'total') && (!Number.isSafeInteger(point.total) || point.total < 0)) throw new Error('invalid');
   }
 }
 
@@ -422,6 +423,14 @@ export function tokenTrendModels(payload) {
   return models;
 }
 
+export function tokenTrendSeriesForMetric(series, metric = 'tokens') {
+  if (metric !== 'total') return series || [];
+  return (series || []).map(item => ({
+    model: item.model,
+    points: (item.points || []).filter(point => Number.isSafeInteger(point.total) && point.total >= 0).map(point => ({ at: point.at, tokens: point.total })),
+  })).filter(item => item.points.length);
+}
+
 export function tokenTrendAxis(values) {
   let low = 0, high = 0;
   for (const value of values) {
@@ -458,7 +467,7 @@ export function renderTokenTrendModelChoices(models, selected, { escape, insuffi
   }).join('');
 }
 
-export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set(), colorFor, periodLabel = '所选时段' }) {
+export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set(), colorFor, periodLabel = '所选时段', metricLabel = '各模型每台每小时输出 token' }) {
   const lines = (series || []).map((item, index) => {
     const points = (item?.points || [])
       .map(point => ({ instant: Date.parse(point.at), tokens: point.tokens }))
@@ -513,7 +522,7 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
   return {
     series: drawn,
     instants: instants.map(instant => ({ instant, x: round(x(instant)), timeLabel: tokenClock.format(new Date(instant)) })),
-    markup: `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escape(periodLabel)}各模型每台每小时输出 token，最低 ${escape(tokenExact.format(low))}，最高 ${escape(tokenExact.format(peak))}">${svg}</svg><div class="chart-crosshair" hidden></div><div class="chart-tooltip home-revenue-tooltip" hidden></div>${drawn.map((_, index) => `<div class="network-token-dot" data-token-dot="${index}" hidden></div>`).join('')}`,
+    markup: `<svg viewBox="0 0 ${width} ${height}" role="img" aria-label="${escape(periodLabel)}${escape(metricLabel)}，最低 ${escape(tokenExact.format(low))}，最高 ${escape(tokenExact.format(peak))}">${svg}</svg><div class="chart-crosshair" hidden></div><div class="chart-tooltip home-revenue-tooltip" hidden></div>${drawn.map((_, index) => `<div class="network-token-dot" data-token-dot="${index}" hidden></div>`).join('')}`,
   };
 }
 
@@ -522,6 +531,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
   let deviceID, rates = null, trend = null, trendError = '', loading = false, error = '', unsupported = false, generation = 0;
   let tokenModels = [], tokenSelected = new Set(), tokenRange = null, networkScope = storedNetworkScope();
   const chart = $('#network-token-chart');
+  const totalChart = $('#network-token-total-chart');
   const tokenChoices = $('#network-token-models');
   const tokenFrom = $('#network-token-from');
   const tokenTo = $('#network-token-to');
@@ -625,11 +635,13 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
       ...candidateTableOptions(rates, activeScope()),
       actionFor: candidate => modelAction(candidate, { currentModel: rates.current_model, busy: switcher?.busy, demo }),
     }) : '';
-    $('.network-token-card').hidden = unsupported;
+    document.querySelectorAll('.network-token-card').forEach(card => { card.hidden = unsupported; });
     $('#network-token-period').hidden = unsupported;
+    const tokenModelsFieldset = $('.network-token-models');
+    if (tokenModelsFieldset) tokenModelsFieldset.hidden = unsupported;
     $('#network-chart-unsupported').hidden = !unsupported;
     renderTokenModelChoices();
-    renderTokenChart();
+    renderTrendCharts();
   }
 
   // Only the buttons depend on whether a submit is in flight; rewriting the whole
@@ -673,47 +685,48 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     };
   }
 
-  function renderTokenChart() {
-    if (!chart || unsupported || chart.clientWidth < 40) return;
-    const series = visibleTrend();
+  function paintTokenChart(el, { metric, metricLabel, sampleNoun, loadingText }) {
+    if (!el || unsupported || el.clientWidth < 40) return;
+    const series = tokenTrendSeriesForMetric(visibleTrend(), metric);
     const empty = !series?.length
-      ? '近 24 小时暂无各模型输出 token 样本'
-      : tokenRange ? '所选时段暂无各模型输出 token 样本' : '前 2 小时暂无各模型输出 token 样本';
+      ? `近 24 小时暂无各模型${sampleNoun}样本`
+      : tokenRange ? `所选时段暂无各模型${sampleNoun}样本` : `前 2 小时暂无各模型${sampleNoun}样本`;
     const noneSelected = '勾选模型以查看对应折线。';
     if (trendError) {
-      chart.innerHTML = `<div class="empty-state">${escape(trendError)}</div>`;
+      el.innerHTML = `<div class="empty-state">${escape(trendError)}</div>`;
       return;
     }
     if (!trend) {
-      chart.innerHTML = `<div class="empty-state">${loading ? '正在读取输出 token 趋势…' : ''}</div>`;
+      el.innerHTML = `<div class="empty-state">${loading ? loadingText : ''}</div>`;
       return;
     }
     if (!series.length) {
-      chart.innerHTML = `<div class="empty-state">${empty}</div>`;
+      el.innerHTML = `<div class="empty-state">${empty}</div>`;
       return;
     }
     if (!tokenSelected.size) {
-      chart.innerHTML = `<div class="empty-state">${noneSelected}</div>`;
+      el.innerHTML = `<div class="empty-state">${noneSelected}</div>`;
       return;
     }
     const window = activeTokenWindow();
     const range = activeTokenRange();
     const windowed = filterTokenTrendByRange(series, range);
     const visible = windowed.filter(item => tokenSelected.has(item.model));
-    const width = Math.max(560, chart.clientWidth);
-    const height = chart.clientHeight || 320;
+    const width = Math.max(560, el.clientWidth);
+    const height = el.clientHeight || 320;
     const figure = renderTokenTrendFigure(visible, {
       width, height, escape, insufficient: tokenInsufficient(), colorFor: tokenColorFor,
       periodLabel: tokenTrendRangeLabel(range, window),
+      metricLabel,
     });
     if (!figure) {
-      chart.innerHTML = `<div class="empty-state">${empty}</div>`;
+      el.innerHTML = `<div class="empty-state">${empty}</div>`;
       return;
     }
-    chart.innerHTML = figure.markup;
-    const tooltip = chart.querySelector('.chart-tooltip');
-    const crosshair = chart.querySelector('.chart-crosshair');
-    const svg = chart.querySelector('svg');
+    el.innerHTML = figure.markup;
+    const tooltip = el.querySelector('.chart-tooltip');
+    const crosshair = el.querySelector('.chart-crosshair');
+    const svg = el.querySelector('svg');
     const show = event => {
       const matrix = svg.getScreenCTM();
       if (!matrix) return;
@@ -729,15 +742,15 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
       const rows = figure.series.map((line, index) => ({ line, index, point: line.coords.find(coord => coord.instant === nearest.instant) }));
       tooltip.innerHTML = `<span class="tooltip-time">${escape(nearest.timeLabel)}</span>` + rows.map(row => `<span class="tooltip-row"><i style="background:${row.line.color}"></i>${escape(displayModelName(row.line.model))}<strong>${escape(row.point ? tokenExact.format(row.point.tokens) : '—')}</strong></span>`).join('');
       tooltip.hidden = false;
-      const bounds = chart.getBoundingClientRect();
+      const bounds = el.getBoundingClientRect();
       const svgBounds = svg.getBoundingClientRect();
       const scaleX = svgBounds.width / width;
       const scaleY = svgBounds.height / height;
-      const scroll = chart.scrollLeft;
+      const scroll = el.scrollLeft;
       const center = svgBounds.left - bounds.left + nearest.x * scaleX;
       let topAnchor = Infinity;
       for (const row of rows) {
-        const dot = chart.querySelector(`[data-token-dot="${row.index}"]`);
+        const dot = el.querySelector(`[data-token-dot="${row.index}"]`);
         if (!dot) continue;
         if (!row.point) { dot.hidden = true; continue; }
         const dotTop = svgBounds.top - bounds.top + row.point.y * scaleY;
@@ -753,16 +766,39 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
       const gap = 10, tooltipWidth = tooltip.offsetWidth, tooltipHeight = tooltip.offsetHeight;
       const left = center - tooltipWidth / 2;
       const above = topAnchor - tooltipHeight - gap;
-      tooltip.style.left = `${scroll + Math.max(gap, Math.min(left, chart.clientWidth - tooltipWidth - gap))}px`;
-      tooltip.style.top = `${above >= gap ? above : Math.min(topAnchor + gap, chart.clientHeight - tooltipHeight - gap)}px`;
+      tooltip.style.left = `${scroll + Math.max(gap, Math.min(left, el.clientWidth - tooltipWidth - gap))}px`;
+      tooltip.style.top = `${above >= gap ? above : Math.min(topAnchor + gap, el.clientHeight - tooltipHeight - gap)}px`;
     };
     const hide = () => {
       tooltip.hidden = true;
       crosshair.hidden = true;
-      chart.querySelectorAll('[data-token-dot]').forEach(dot => { dot.hidden = true; });
+      el.querySelectorAll('[data-token-dot]').forEach(dot => { dot.hidden = true; });
     };
-    chart.onpointermove = show;
-    chart.onpointerleave = hide;
+    el.onpointermove = show;
+    el.onpointerleave = hide;
+  }
+
+  function renderTokenChart() {
+    paintTokenChart(chart, {
+      metric: 'tokens',
+      metricLabel: '各模型每台每小时输出 token',
+      sampleNoun: '输出 token',
+      loadingText: '正在读取输出 token 趋势…',
+    });
+  }
+
+  function renderTokenTotalChart() {
+    paintTokenChart(totalChart, {
+      metric: 'total',
+      metricLabel: '各模型组总每小时输出 token',
+      sampleNoun: '组总输出 token',
+      loadingText: '正在读取组总输出 token 趋势…',
+    });
+  }
+
+  function renderTrendCharts() {
+    renderTokenChart();
+    renderTokenTotalChart();
   }
 
   function readTrend(id, signal) {
@@ -869,7 +905,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     }
     tokenRange = tokenTrendRangeMatches(next, tokenTrendRecentRange(window)) ? null : next;
     renderTokenPeriodControls();
-    renderTokenChart();
+    renderTrendCharts();
   };
   tokenFrom?.addEventListener('change', applyTokenRange);
   tokenTo?.addEventListener('change', applyTokenRange);
@@ -878,7 +914,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     if (!input.hasAttribute('data-network-token-model')) return;
     if (input.checked) tokenSelected.add(input.value);
     else tokenSelected.delete(input.value);
-    renderTokenChart();
+    renderTrendCharts();
   });
   // Right-clicking a chip offers the same switch as the table row. The chip keeps
   // its checkbox behaviour; only the menu is new.
@@ -906,6 +942,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     openModelAction(button.dataset.networkAction, button.dataset.model);
   });
   if (chart) new ResizeObserver(() => renderTokenChart()).observe(chart);
+  if (totalChart) new ResizeObserver(() => renderTokenTotalChart()).observe(totalChart);
 
   const networkTabs = [...document.querySelectorAll('[data-network-tab]')];
   function storedNetworkTab() {
@@ -924,9 +961,15 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     });
     if (focus) active.focus();
     try { localStorage.setItem('bloomer.networkTab', active.dataset.networkTab); } catch { /* 忽略无法写入的偏好 */ }
+    const trendTab = active.dataset.networkTab === 'chart' || active.dataset.networkTab === 'total';
+    const shared = $('#network-token-shared');
+    if (shared) shared.hidden = !trendTab;
     if (active.dataset.networkTab === 'chart') {
       renderTokenChart();
       if (chart && chart.clientWidth < 40) requestAnimationFrame(() => renderTokenChart());
+    } else if (active.dataset.networkTab === 'total') {
+      renderTokenTotalChart();
+      if (totalChart && totalChart.clientWidth < 40) requestAnimationFrame(() => renderTokenTotalChart());
     }
   }
   function showNetworkTab(tab, options) {

@@ -2105,8 +2105,14 @@ tbody tr.reward-row td {
   background: var(--surface)
 }
 
-#network-chart-panel .network-rates-content {
-  padding-top: 18px
+#network-token-shared.network-rates-content {
+  padding-top: 18px;
+  padding-bottom: 0
+}
+
+#network-chart-panel .network-rates-content,
+#network-total-panel .network-rates-content {
+  padding-top: 8px
 }
 
 .network-token-range {

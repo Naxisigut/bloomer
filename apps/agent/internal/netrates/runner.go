@@ -117,6 +117,7 @@ type StatusView struct {
 type TokenTrendPointView struct {
 	At     string `json:"at"`
 	Tokens int64  `json:"tokens"`
+	Total  int64  `json:"total"`
 }
 
 type TokenTrendSeriesView struct {
@@ -372,7 +373,7 @@ func tokenTrendSeriesViews(computed []TokenTrendSeries) []TokenTrendSeriesView {
 	for _, series := range computed {
 		points := make([]TokenTrendPointView, 0, len(series.Points))
 		for _, point := range series.Points {
-			points = append(points, TokenTrendPointView{At: point.At.UTC().Format(time.RFC3339Nano), Tokens: point.Tokens})
+			points = append(points, TokenTrendPointView{At: point.At.UTC().Format(time.RFC3339Nano), Tokens: point.Tokens, Total: point.Total})
 		}
 		view = append(view, TokenTrendSeriesView{Model: series.Model, Points: points})
 	}
