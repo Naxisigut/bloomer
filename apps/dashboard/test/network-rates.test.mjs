@@ -11,6 +11,7 @@ import {
   validateNetworkRatesResponse,
   renderCandidatesTable,
   renderTokenTrendFigure,
+  renderTokenShareCards,
   renderTokenTrendModelChoices,
   tokenTrendAxis,
   clampTokenTrendRange,
@@ -279,6 +280,21 @@ test('token trend share baseline, summary lift and polyline', () => {
   ], { width: 640, height: 220, escape: String });
   assert.match(curve.markup, / C/);
   assert.doesNotMatch(curve.markup, /network-token-baseline/);
+  const aligned = renderTokenTrendFigure([
+    { model: 'a', points: [{ at: at(0), tokens: 10 }] },
+  ], { width: 640, height: 220, escape: String, xRange: { start: Date.parse(at(0)), end: Date.parse(at(2)) } });
+  assert.ok(aligned.series[0].coords[0].x < 80);
+  const cards = renderTokenShareCards(['a', 'b'], {
+    escape: String,
+    colorFor: () => '#5b8def',
+    labelFor: model => model === 'a' ? 'A' : 'B',
+    summaryFor: model => model === 'a' ? { share: 42, baseline: 28, lift: 1.5 } : null,
+  });
+  assert.match(cards, /data-share-chart="a"/);
+  assert.match(cards, /data-share-chart="b"/);
+  assert.match(cards, /A 同档\/全组token占比/);
+  assert.match(cards, /42% · 基线 28% · 1\.5×/);
+  assert.doesNotMatch(cards, /data-share-chart="c"/);
 });
 
 test('token trend total is optional and plots cohort totals', () => {

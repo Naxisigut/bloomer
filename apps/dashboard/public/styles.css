@@ -2174,6 +2174,64 @@ tbody tr.reward-row td {
   height: 100%
 }
 
+.network-token-share-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 14px
+}
+
+.network-token-share-grid>.empty-state {
+  grid-column: 1 / -1
+}
+
+.network-token-share-grid .network-token-card {
+  margin: 0
+}
+
+.network-token-share-head {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+  margin: 0 0 4px
+}
+
+.network-token-share-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap
+}
+
+.network-token-share-title i {
+  flex-shrink: 0;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--series-color)
+}
+
+.network-token-share-head small {
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums
+}
+
+.network-token-share-card .network-token-chart {
+  height: 220px
+}
+
+.network-token-share-card .network-token-chart>svg {
+  min-width: 0
+}
+
 .network-token-line {
   fill: none;
   stroke-width: 2.5;
@@ -2186,35 +2244,6 @@ tbody tr.reward-row td {
   stroke-width: 1.25;
   stroke-dasharray: 5 4;
   stroke-linecap: round
-}
-
-#network-token-share-summary {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 14px;
-  margin: 0 0 2px;
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--muted)
-}
-
-#network-token-share-summary[hidden] {
-  display: none
-}
-
-.network-token-share-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-variant-numeric: tabular-nums
-}
-
-.network-token-share-chip i {
-  flex-shrink: 0;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--series-color)
 }
 
 .network-token-chart .chart-crosshair {
@@ -2535,6 +2564,10 @@ dialog input::placeholder {
 }
 
 @media(max-width:900px) {
+  .network-token-share-grid {
+    grid-template-columns: minmax(0, 1fr)
+  }
+
   .app-frame {
     grid-template-columns: minmax(0, 1fr)
   }

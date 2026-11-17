@@ -544,6 +544,20 @@ function tokenTrendShareStatsText(share, baseline, lift) {
   return `${text} · ${lift.toFixed(1)}×`;
 }
 
+export function renderTokenShareCards(models, { escape, colorFor, labelFor, summaryFor } = {}) {
+  const label = typeof labelFor === 'function' ? labelFor : model => model;
+  const color = typeof colorFor === 'function' ? colorFor : () => TOKEN_COLORS[0];
+  return (models || []).map(model => {
+    const summary = typeof summaryFor === 'function' ? summaryFor(model) : null;
+    const stats = summary ? tokenTrendShareStatsText(summary.share, summary.baseline, summary.lift) : '';
+    const name = label(model);
+    return `<section class="network-token-card network-token-share-card" aria-label="${escape(name)} 同档/全组token占比">`
+      + `<div class="network-token-share-head"><strong class="network-token-share-title" style="--series-color:${color(model)}" title="${escape(model)}"><i aria-hidden="true"></i>${escape(name)}</strong>`
+      + (stats ? `<small>${escape(stats)}</small>` : '')
+      + `</div><div class="network-token-chart" data-share-chart="${escape(model)}"></div></section>`;
+  }).join('');
+}
+
 function polylinePath(points) {
   if (!points.length) return '';
   let path = `M${points[0].x},${points[0].y}`;
@@ -589,7 +603,7 @@ export function renderTokenTrendModelChoices(models, selected, { escape, insuffi
   }).join('');
 }
 
-export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set(), colorFor, periodLabel = '所选时段', metricLabel = '各模型每台每小时输出 token', formatTick, formatValue, smooth = true, baselineFor } = {}) {
+export function renderTokenTrendFigure(series, { width, height, escape, insufficient = new Set(), colorFor, periodLabel = '所选时段', metricLabel = '各模型每台每小时输出 token', formatTick, formatValue, smooth = true, baselineFor, xRange } = {}) {
   const tickLabel = tick => (formatTick || (value => tokenCompact.format(value)))(tick);
   const valueLabel = value => (formatValue || (tokens => tokenExact.format(tokens)))(value);
   const lines = (series || []).map((item, index) => {
@@ -620,9 +634,12 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
   const plotWidth = Math.max(1, width - left - right), plotHeight = Math.max(1, height - top - bottom);
   const y = value => top + (axis.high - value) / (axis.high - axis.low) * plotHeight;
   const instants = [...new Set(lines.flatMap(line => line.points.map(point => point.instant)))].sort((a, b) => a - b);
-  const start = instants[0], end = instants.at(-1), span = Math.max(1, end - start);
+  const ranged = Number.isFinite(xRange?.start) && Number.isFinite(xRange?.end) && xRange.end > xRange.start;
+  const start = ranged ? xRange.start : instants[0];
+  const end = ranged ? xRange.end : instants.at(-1);
+  const span = Math.max(1, end - start);
   const axisTime = tokenAxisClock;
-  const x = instant => instants.length === 1 ? left + plotWidth / 2 : left + (instant - start) / span * plotWidth;
+  const x = instant => !ranged && instants.length === 1 ? left + plotWidth / 2 : left + (instant - start) / span * plotWidth;
   const round = value => Math.round(value * 10) / 10;
   const drawn = lines.map(line => ({
     ...line,
@@ -636,9 +653,14 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
     svg += `<line class="chart-grid" x1="${left}" x2="${width - right}" y1="${yPos}" y2="${yPos}"/><text class="chart-label" x="${left - 8}" y="${yPos + 3}" text-anchor="end">${escape(tickLabel(tick))}</text>`;
   }
   const labelCount = plotWidth < 420 ? 4 : 6;
+  const labelSource = ranged
+    ? Array.from({ length: labelCount }, (_, index) => start + (end - start) * index / Math.max(1, labelCount - 1))
+    : instants;
   const seen = new Set();
   for (let index = 0; index < labelCount; index++) {
-    const instant = instants[Math.round(index * (instants.length - 1) / Math.max(1, labelCount - 1))];
+    const instant = ranged
+      ? labelSource[index]
+      : instants[Math.round(index * (instants.length - 1) / Math.max(1, labelCount - 1))];
     if (instant == null || seen.has(instant)) continue;
     seen.add(instant);
     svg += `<text class="chart-label" x="${round(x(instant))}" y="${height - 8}" text-anchor="middle">${escape(axisTime.format(new Date(instant)))}</text>`;
@@ -668,7 +690,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
   let deviceID, rates = null, trend = null, trendError = '', loading = false, error = '', unsupported = false, generation = 0;
   let tokenModels = [], tokenSelected = new Set(), tokenRange = null, networkScope = storedNetworkScope();
   const totalChart = $('#network-token-total-chart');
-  const shareChart = $('#network-token-share-chart');
+  const shareGrid = $('#network-token-share-grid');
   const tokenChoices = $('#network-token-models');
   const tokenFrom = $('#network-token-from');
   const tokenTo = $('#network-token-to');
@@ -822,12 +844,13 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     };
   }
 
-  function paintTokenChart(el, { metric, metricLabel, sampleNoun, loadingText, formatTick, formatValue, formatTooltip, smooth = true, baselineFor } = {}) {
+  function paintTokenChart(el, { metric, metricLabel, sampleNoun, loadingText, formatTick, formatValue, formatTooltip, smooth = true, baselineFor, onlyModel, minWidth = 560, xRange } = {}) {
     if (!el || unsupported || el.clientWidth < 40) return;
     const series = metric === 'share' ? tokenTrendSeriesForShare(trend) : tokenTrendSeriesForMetric(visibleTrend(), metric);
+    const who = onlyModel ? '该模型' : '各模型';
     const empty = !series?.length
-      ? `近 24 小时暂无各模型${sampleNoun}样本`
-      : tokenRange ? `所选时段暂无各模型${sampleNoun}样本` : `前 2 小时暂无各模型${sampleNoun}样本`;
+      ? `近 24 小时暂无${who}${sampleNoun}样本`
+      : tokenRange ? `所选时段暂无${who}${sampleNoun}样本` : `前 2 小时暂无${who}${sampleNoun}样本`;
     const noneSelected = '勾选模型以查看对应折线。';
     if (trendError) {
       el.innerHTML = `<div class="empty-state">${escape(trendError)}</div>`;
@@ -841,22 +864,23 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
       el.innerHTML = `<div class="empty-state">${empty}</div>`;
       return;
     }
-    if (!tokenSelected.size) {
+    if (!onlyModel && !tokenSelected.size) {
       el.innerHTML = `<div class="empty-state">${noneSelected}</div>`;
       return;
     }
     const window = activeTokenWindow();
     const range = activeTokenRange();
     const windowed = filterTokenTrendByRange(series, range);
-    const visible = windowed.filter(item => tokenSelected.has(item.model)).map(item => (
+    const wanted = onlyModel ? new Set([onlyModel]) : tokenSelected;
+    const visible = windowed.filter(item => wanted.has(item.model)).map(item => (
       typeof baselineFor === 'function' ? { ...item, baseline: baselineFor(item.model) } : item
     ));
-    const width = Math.max(560, el.clientWidth);
+    const width = Math.max(minWidth, el.clientWidth);
     const height = el.clientHeight || 320;
     const figure = renderTokenTrendFigure(visible, {
       width, height, escape, insufficient: tokenInsufficient(), colorFor: tokenColorFor,
       periodLabel: tokenTrendRangeLabel(range, window),
-      metricLabel, formatTick, formatValue, smooth,
+      metricLabel, formatTick, formatValue, smooth, xRange,
     });
     if (!figure) {
       el.innerHTML = `<div class="empty-state">${empty}</div>`;
@@ -929,29 +953,52 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     });
   }
 
-  function renderTokenShareSummary() {
-    const el = $('#network-token-share-summary');
-    if (!el) return;
-    const hide = () => { el.hidden = true; el.innerHTML = ''; };
-    if (unsupported || !trend || trendError || !tokenSelected.size) return hide();
-    const items = tokenTrendShareSummary(trend, {
-      range: activeTokenRange(),
-      models: tokenModels.filter(model => tokenSelected.has(model)),
-      candidates: rates?.candidates || [],
-    });
-    if (!items.length) return hide();
-    const labels = displayModelNames(items.map(item => item.model));
-    el.hidden = false;
-    el.innerHTML = items.map(item => {
-      const stats = tokenTrendShareStatsText(item.share, item.baseline, item.lift);
-      return `<span class="network-token-share-chip" style="--series-color:${tokenColorFor(item.model)}" title="${escape(item.model)}"><i aria-hidden="true"></i>${escape(labels.get(item.model))}  ${escape(stats)}</span>`;
-    }).join('');
-  }
-
   function renderTokenShareChart() {
-    paintTokenChart(shareChart, {
+    const grid = shareGrid;
+    if (!grid) return;
+    if (unsupported) {
+      grid.innerHTML = '';
+      grid.dataset.key = 'unsupported';
+      return;
+    }
+    if (grid.clientWidth < 40) return;
+    const selected = tokenModels.filter(model => tokenSelected.has(model));
+    const emptyMessage = () => {
+      if (trendError) return trendError;
+      if (!trend) return loading ? '正在读取同档/全组 token 占比…' : '';
+      if (!selected.length) return '勾选模型以查看对应折线。';
+      if (!tokenTrendSeriesForShare(trend).length) return '近 24 小时暂无各模型同档/全组 token 占比样本';
+      return '';
+    };
+    const blank = emptyMessage();
+    if (blank || !trend) {
+      const key = `empty:${blank}`;
+      if (grid.dataset.key !== key) {
+        grid.dataset.key = key;
+        grid.innerHTML = `<div class="empty-state">${escape(blank)}</div>`;
+      }
+      return;
+    }
+    const range = activeTokenRange();
+    const key = `cards:${selected.join('\0')}:${range?.start || ''}:${range?.end || ''}`;
+    if (grid.dataset.key !== key) {
+      grid.dataset.key = key;
+      const labels = displayModelNames(selected);
+      const byModel = new Map(tokenTrendShareSummary(trend, {
+        range,
+        models: selected,
+        candidates: rates?.candidates || [],
+      }).map(item => [item.model, item]));
+      grid.innerHTML = renderTokenShareCards(selected, {
+        escape,
+        colorFor: tokenColorFor,
+        labelFor: model => labels.get(model) ?? model,
+        summaryFor: model => byModel.get(model) || null,
+      });
+    }
+    const sharePaint = {
       metric: 'share',
-      metricLabel: '各模型同档组总 token 占全组近 30 分钟滚动比例',
+      metricLabel: '同档组总 token 占全组近 30 分钟滚动比例',
       sampleNoun: '同档/全组 token 占比',
       loadingText: '正在读取同档/全组 token 占比…',
       formatTick: tick => `${tokenCompact.format(tick)}%`,
@@ -962,9 +1009,13 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
         Number.isFinite(line.baseline) && line.baseline > 0 ? tokens / line.baseline : null,
       ),
       smooth: false,
+      minWidth: 0,
+      xRange: range,
       baselineFor: model => tokenTrendShareBaselinePercent((rates?.candidates || []).find(candidate => candidate.model === model)),
+    };
+    grid.querySelectorAll('[data-share-chart]').forEach(el => {
+      paintTokenChart(el, { ...sharePaint, onlyModel: el.dataset.shareChart });
     });
-    renderTokenShareSummary();
   }
 
   function renderTrendCharts() {
@@ -1113,7 +1164,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     openModelAction(button.dataset.networkAction, button.dataset.model);
   });
   if (totalChart) new ResizeObserver(() => renderTokenTotalChart()).observe(totalChart);
-  if (shareChart) new ResizeObserver(() => renderTokenShareChart()).observe(shareChart);
+  if (shareGrid) new ResizeObserver(() => renderTokenShareChart()).observe(shareGrid);
 
   const networkTabs = [...document.querySelectorAll('[data-network-tab]')];
   function storedNetworkTab() {
@@ -1143,7 +1194,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
       if (totalChart && totalChart.clientWidth < 40) requestAnimationFrame(() => renderTokenTotalChart());
     } else if (active.dataset.networkTab === 'share') {
       renderTokenShareChart();
-      if (shareChart && shareChart.clientWidth < 40) requestAnimationFrame(() => renderTokenShareChart());
+      if (shareGrid && shareGrid.clientWidth < 40) requestAnimationFrame(() => renderTokenShareChart());
     }
   }
   function showNetworkTab(tab, options) {
