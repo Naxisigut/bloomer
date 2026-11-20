@@ -214,7 +214,7 @@ export function demoQuery(route, params = new URLSearchParams(), clock = new Dat
   if (route === 'alerts') return { items: [{ id: 1, type: 'coordinator_disconnected', event: 'recovered', level: 'active', device_name: '演示 Mac', title: '演示 Mac · 协调器连接已恢复', body: '设备：演示 Mac\n告警：协调器连接中断\n已恢复，持续 4 小时 21 分钟。', created_at: clock.toISOString(), first_triggered_at: new Date(+clock - 261 * 60_000).toISOString(), last_push_at: clock.toISOString(), recovered: true, duration_seconds: 261 * 60, delivery_status: 'sent', attempts: 1, last_attempt_at: clock.toISOString(), next_attempt_at: null }] };
 
   if (route.startsWith('control')) throw new AppError(403, 'demo_read_only', '演示设备不执行远程操作。');
-  if (route === 'long-task-restart') return { enabled: false };
+  if (route === 'long-task-restart' || route === 'no-task-restart') return { enabled: false };
   if (!['health', 'overview', 'summary', 'earnings', 'stats', 'analysis', 'device-state', 'network-rates', 'network-rates-token-trend'].includes(route)) throw new AppError(404, 'not_found', '接口不存在。');
   if (route === 'device-state') return demoState(clock);
   if (route === 'network-rates') return demoNetworkRates(clock);

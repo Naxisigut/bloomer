@@ -230,6 +230,17 @@ func (m *Manager) ForceRestart() (Job, error) {
 	return m.enqueue(Request{RequestID: id, Action: "force_restart"}, []string{"restart", "--force", "--timeout", "600", "--startup-timeout", "180"})
 }
 
+// IdleRestart restarts Darkbloom without --force after a stretch of no new
+// work. It is not reachable from the public control API.
+func (m *Manager) IdleRestart() (Job, error) {
+	buf := make([]byte, 8)
+	if _, err := rand.Read(buf); err != nil {
+		return Job{}, fail("control_unavailable", 503)
+	}
+	id := fmt.Sprintf("idle-%d-%s", time.Now().UnixNano(), hex.EncodeToString(buf))
+	return m.enqueue(Request{RequestID: id, Action: "idle_restart"}, []string{"restart", "--timeout", "600", "--startup-timeout", "180"})
+}
+
 func (m *Manager) enqueue(r Request, args []string) (Job, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()

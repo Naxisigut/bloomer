@@ -19,6 +19,7 @@ import (
 	"bloomer/agent/internal/health"
 	"bloomer/agent/internal/longtask"
 	"bloomer/agent/internal/netrates"
+	"bloomer/agent/internal/notask"
 	"bloomer/agent/internal/store"
 )
 
@@ -27,6 +28,7 @@ type Handler struct {
 	control            *control.Manager
 	networkRates       *netrates.Runner
 	longTask           *longtask.Watch
+	noTask             *notask.Watch
 	store              *store.Store
 	tokenHash          [32]byte
 	version, accountID string
@@ -91,6 +93,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/v1/device/long-task-restart" {
 		h.longTaskRestart(w, r, requestID)
+		return
+	}
+	if r.URL.Path == "/v1/device/no-task-restart" {
+		h.noTaskRestart(w, r, requestID)
 		return
 	}
 	if r.URL.Path == "/v1/alerts" || r.URL.Path == "/v1/alerts/test" {

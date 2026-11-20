@@ -2,7 +2,7 @@ import { randomID } from './identifiers.js';
 import { displayModelName } from './models.js';
 import { isPermanentControlError, isTransientControlError, nextControlPollDelayMs, shouldControlAutoPoll } from './control-poll.js';
 
-const actions = { start: '开启 Darkbloom', stop: '关闭 Darkbloom', restart: '重启 Darkbloom', force_restart: '强制重启 Darkbloom', switch: '切换模型', download: '下载模型' };
+const actions = { start: '开启 Darkbloom', stop: '关闭 Darkbloom', restart: '重启 Darkbloom', force_restart: '强制重启 Darkbloom', idle_restart: '无任务自动重启', switch: '切换模型', download: '下载模型' };
 const RECENT_JOB_LIMIT = 5;
 const statuses = { running: '执行中', succeeded: '已完成', failed: '执行失败', unconfirmed: '结果未确认' };
 const reasons = {
@@ -23,11 +23,13 @@ function renderControlJob(job, escape, dateTime) {
   return `<div class="control-job"><span>${escape(actions[job.action] || job.action)}${meta}${error}</span><span class="status-tag${tagClass}">${escape(statuses[job.status] || '未知')}</span></div>`;
 }
 
-export function createControlUI({ submitControl, submitLongTaskRestart, models: modelsStore, query, selectedDevice, currentView, escape, dateTime, refreshState }) {
+export function createControlUI({ submitControl, submitLongTaskRestart, submitNoTaskRestart, models: modelsStore, query, selectedDevice, currentView, escape, dateTime, refreshState }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, status = null, modelsLoading = false, loading = false, submitting = false, pending = null, confirmation = null, error = '', requestGeneration = 0;
   let lastFailure = null, autoPollStopped = false, networkFailStreak = 0, runningSinceMs = null, pendingSinceMs = null, pollTimer = null;
   let longTaskEnabled = false, longTaskUnsupported = false, longTaskError = '', longTaskSubmitting = false, pendingLongTask = null;
+  let noTaskEnabled = false, noTaskUnsupported = false, noTaskError = '', noTaskSubmitting = false, pendingNoTask = null;
+  function settingsBusy() { return longTaskSubmitting || noTaskSubmitting; }
   const dialog = $('#control-confirm-dialog');
   function remember(value) {
     pending = value;
@@ -88,6 +90,7 @@ export function createControlUI({ submitControl, submitLongTaskRestart, models: 
     if (device?.id !== deviceID) {
       deviceID = device?.id; status = null; modelsLoading = false; loading = false; submitting = false; error = ''; confirmation = null; requestGeneration++;
       longTaskEnabled = false; longTaskUnsupported = false; longTaskError = ''; longTaskSubmitting = false; pendingLongTask = null;
+      noTaskEnabled = false; noTaskUnsupported = false; noTaskError = ''; noTaskSubmitting = false; pendingNoTask = null;
       resetPollState(); runningSinceMs = null; pendingSinceMs = null; clearPollTimer();
       if (dialog.open) dialog.close();
       try { pending = JSON.parse(localStorage.getItem(`bloomer.control.${deviceID}`) || 'null'); } catch { pending = null; }
@@ -99,12 +102,22 @@ export function createControlUI({ submitControl, submitLongTaskRestart, models: 
     const longTaskToggle = $('#long-task-restart');
     if (longTaskToggle) {
       longTaskToggle.checked = longTaskEnabled;
-      longTaskToggle.disabled = demo || longTaskUnsupported || longTaskSubmitting || loading || submitting;
+      longTaskToggle.disabled = demo || longTaskUnsupported || settingsBusy() || loading || submitting;
       $('#long-task-restart-note').textContent = demo
         ? '演示设备不会因任务超时强制重启。'
         : longTaskUnsupported
           ? '当前设备 Agent 不支持此开关，请升级 Agent。'
           : longTaskError || '开启后，当前模型为 Qwen3.5 9B 且同一任务连续执行超过 10 分钟时，Agent 会强制重启 Darkbloom，未完成任务会被中断。';
+    }
+    const noTaskToggle = $('#no-task-restart');
+    if (noTaskToggle) {
+      noTaskToggle.checked = noTaskEnabled;
+      noTaskToggle.disabled = demo || noTaskUnsupported || settingsBusy() || loading || submitting;
+      $('#no-task-restart-note').textContent = demo
+        ? '演示设备不会因没有接到任务自动重启。'
+        : noTaskUnsupported
+          ? '当前设备 Agent 不支持此开关，请升级 Agent。'
+          : noTaskError || '开启后，Darkbloom 连续 10 分钟没有接到新任务时，Agent 会自动重启。重启后重新计时，不会连续重启。';
     }
     $('#control-panel').setAttribute('aria-busy', String(loading || submitting));
     $('#control-refresh').disabled = demo || loading || submitting;
@@ -152,6 +165,19 @@ export function createControlUI({ submitControl, submitLongTaskRestart, models: 
       else longTaskError = failure.message;
     }
   }
+  async function loadNoTask(id, generation) {
+    try {
+      const settings = await query('no-task-restart', null, id);
+      if (id !== deviceID || generation !== requestGeneration) return;
+      noTaskEnabled = Boolean(settings.enabled);
+      noTaskUnsupported = false;
+      noTaskError = '';
+    } catch (failure) {
+      if (id !== deviceID || generation !== requestGeneration) return;
+      if (failure.code === 'no_task_restart_unsupported') { noTaskUnsupported = true; noTaskError = ''; }
+      else noTaskError = failure.message;
+    }
+  }
   async function applyLongTask(enabled) {
     const id = deviceID;
     if (!id || id === 'demo' || longTaskSubmitting || !submitLongTaskRestart) return;
@@ -171,6 +197,25 @@ export function createControlUI({ submitControl, submitLongTaskRestart, models: 
       if (id === deviceID && generation === requestGeneration) { longTaskSubmitting = false; render(); }
     }
   }
+  async function applyNoTask(enabled) {
+    const id = deviceID;
+    if (!id || id === 'demo' || noTaskSubmitting || !submitNoTaskRestart) return;
+    const generation = requestGeneration;
+    const previous = noTaskEnabled;
+    noTaskEnabled = enabled;
+    noTaskSubmitting = true; noTaskError = ''; render();
+    try {
+      const settings = await submitNoTaskRestart(id, enabled);
+      if (id !== deviceID || generation !== requestGeneration) return;
+      noTaskEnabled = Boolean(settings.enabled);
+    } catch (failure) {
+      if (id !== deviceID || generation !== requestGeneration) return;
+      noTaskEnabled = previous;
+      noTaskError = failure.message;
+    } finally {
+      if (id === deviceID && generation === requestGeneration) { noTaskSubmitting = false; render(); }
+    }
+  }
   // Discovery runs only when this device has no snapshot, or when a caller asks
   // for fresh lists. Cached lists render immediately and never block stop/restart.
   async function discover(id, generation, force) {
@@ -182,15 +227,17 @@ export function createControlUI({ submitControl, submitLongTaskRestart, models: 
   }
   async function refresh({ models = false } = {}) {
     render();
-    if (!deviceID || loading || submitting || longTaskSubmitting) return;
+    if (!deviceID || loading || submitting || settingsBusy()) return;
     if (deviceID === 'demo') {
       longTaskEnabled = false; longTaskUnsupported = false; longTaskError = '';
+      noTaskEnabled = false; noTaskUnsupported = false; noTaskError = '';
       render();
       return;
     }
     const id = deviceID, generation = ++requestGeneration;
     loading = true; error = ''; render();
     const switchDone = loadLongTask(id, generation);
+    const noTaskDone = loadNoTask(id, generation);
     const modelsDone = discover(id, generation, models);
     try {
       const response = await query('control', null, id);
@@ -210,7 +257,7 @@ export function createControlUI({ submitControl, submitLongTaskRestart, models: 
     }
     finally {
       if (id === deviceID && generation === requestGeneration) {
-        await switchDone; await modelsDone;
+        await switchDone; await noTaskDone; await modelsDone;
         loading = false; render(); maybeSchedulePoll();
       }
     }
@@ -275,6 +322,21 @@ export function createControlUI({ submitControl, submitLongTaskRestart, models: 
   longDialog?.addEventListener('close', () => {
     const next = pendingLongTask; pendingLongTask = null;
     if (longDialog.returnValue === 'confirm' && next !== null) applyLongTask(next);
+  });
+  const noTaskDialog = $('#no-task-restart-dialog');
+  $('#no-task-restart')?.addEventListener('change', event => {
+    const input = event.target;
+    const next = input.checked;
+    input.checked = !next;
+    pendingNoTask = next;
+    $('#no-task-restart-confirm-message').textContent = next
+      ? '确认开启连续 10 分钟无任务自动重启？\n\n开启后，若 Darkbloom 连续 10 分钟没有接到新任务，Agent 会自动重启。重启后重新计时，不会连续重启。'
+      : '确认关闭连续 10 分钟无任务自动重启？\n\n关闭后不再因没有接到任务自动重启。';
+    noTaskDialog.returnValue = ''; noTaskDialog.showModal();
+  });
+  noTaskDialog?.addEventListener('close', () => {
+    const next = pendingNoTask; pendingNoTask = null;
+    if (noTaskDialog.returnValue === 'confirm' && next !== null) applyNoTask(next);
   });
   document.addEventListener('visibilitychange', () => { if (!document.hidden) maybeSchedulePoll(); else clearPollTimer(); });
   return { render, refresh, refreshModels };

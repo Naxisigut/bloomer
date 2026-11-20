@@ -21,6 +21,7 @@ import (
 	"bloomer/agent/internal/logging"
 	"bloomer/agent/internal/longtask"
 	"bloomer/agent/internal/netrates"
+	"bloomer/agent/internal/notask"
 	"bloomer/agent/internal/retention"
 	"bloomer/agent/internal/store"
 	"bloomer/agent/internal/telemetry"
@@ -96,12 +97,16 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 	} else {
 		defer controls.Close()
 	}
-	var restarter longtask.Restarter
+	var longRestarter longtask.Restarter
+	var idleRestarter notask.Restarter
 	if controls != nil {
-		restarter = controls
+		longRestarter = controls
+		idleRestarter = controls
 	}
-	taskWatch := longtask.New(c.DataDir, c.LongTaskRestartEnabled, restarter, logger)
+	taskWatch := longtask.New(c.DataDir, c.LongTaskRestartEnabled, longRestarter, logger)
 	taskWatch.Load(clock.Now())
+	idleWatch := notask.New(c.DataDir, c.NoTaskRestartEnabled, idleRestarter, logger)
+	idleWatch.Load(clock.Now())
 	alerts := alert.New(db, c.Alert, logger)
 	var ratesRunner *netrates.Runner
 	if c.NetworkRates.Enabled {
@@ -130,7 +135,7 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 				return db.ModelTokenTotals(ctx, c.AccountID, since)
 			})
 	}
-	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls).WithAlerts(alerts).WithNetworkRates(ratesRunner).WithLongTask(taskWatch).WithDeviceStateEnabled(c.DeviceStateEnabled)
+	handler := httpapi.New(db, token, version, c.AccountID, runtime).WithControl(controls).WithAlerts(alerts).WithNetworkRates(ratesRunner).WithLongTask(taskWatch).WithNoTask(idleWatch).WithDeviceStateEnabled(c.DeviceStateEnabled)
 	server := &http.Server{Handler: handler, ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 30 * time.Second, MaxHeaderBytes: 16 << 10, ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError)}
 	serverErrors := make(chan error, 1)
 	go func() { serverErrors <- server.Serve(listener) }()
@@ -149,7 +154,7 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 		if c.DeviceStateEnabled {
 			sampler := telemetry.NewSampler(c.ProviderStateFile, c.DataDir)
 			sampler.LatestEarnings = deviceEarningsSource(db, identityClient)
-			runDeviceCollection(jobsCtx, sampler, db, clock, logger, alerts.Evaluate, taskWatch.Observe)
+			runDeviceCollection(jobsCtx, sampler, db, clock, logger, alerts.Evaluate, taskWatch.Observe, idleWatch.Observe)
 		}
 	}()
 	networkRatesDone := make(chan struct{})
@@ -162,7 +167,7 @@ func Run(ctx context.Context, c config.Config, version string) (result error) {
 	} else {
 		close(networkRatesDone)
 	}
-	logger.Info("agent started", "version", version, "phase", "P6", "listen", c.Listen, "collection_enabled", c.CollectionEnabled, "device_state_enabled", c.DeviceStateEnabled, "network_rates_enabled", c.NetworkRates.Enabled, "long_task_restart_enabled", taskWatch.Enabled())
+	logger.Info("agent started", "version", version, "phase", "P6", "listen", c.Listen, "collection_enabled", c.CollectionEnabled, "device_state_enabled", c.DeviceStateEnabled, "network_rates_enabled", c.NetworkRates.Enabled, "long_task_restart_enabled", taskWatch.Enabled(), "no_task_restart_enabled", idleWatch.Enabled())
 	select {
 	case <-ctx.Done():
 	case err = <-serverErrors:

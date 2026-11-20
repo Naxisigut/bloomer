@@ -25,6 +25,8 @@ test('Chinese errors cover 401, old agents, network and malformed or oversized r
   for (const route of ['control', 'control-models', 'control-jobs']) await assert.rejects(failure(new Response('old', { status: 404 }), route), { code: 'control_unsupported' });
   await assert.rejects(failure(new Response('old', { status: 404 }), 'long-task-restart'), { code: 'long_task_restart_unsupported' });
   await assert.rejects(failure(Response.json({ enabled: true, force: true }), 'long-task-restart'), { code: 'invalid_response' });
+  await assert.rejects(failure(new Response('old', { status: 404 }), 'no-task-restart'), { code: 'no_task_restart_unsupported' });
+  await assert.rejects(failure(Response.json({ enabled: true, force: true }), 'no-task-restart'), { code: 'invalid_response' });
   await assert.rejects(failure(new Response('old', { status: 501 }), 'device-state'), { code: 'device_state_unsupported' });
   for (const response of [new Response('not JSON'), Response.json(null), Response.json([]), Response.json({}), new Response('{}', { headers: { 'content-length': '8000001' } }), new Response(' '.repeat(8_000_001))]) await assert.rejects(failure(response), { code: 'invalid_response' });
   for (const [route, body] of [['earnings', { items: [{}] }], ['stats', { items: [{ key: 'm', amount_micro_usd: '1', record_count: -1 }] }], ['stats', { items: [{ key: 'm', amount_micro_usd: 9007199254740992, record_count: 1 }] }], ['control-models', { local: null, catalog: [] }]]) await assert.rejects(failure(Response.json(body), route), { code: 'invalid_response' });

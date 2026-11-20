@@ -27,6 +27,19 @@
 
 `long_task_restart_enabled` 只决定第一次没有 `long-task-restart.json` 时的默认值。看板开关立即写入该私有文件，重启 Agent 后仍然有效。
 
+## 无任务自动重启
+
+远程操作面板另有独立开关，默认关闭。开启后由 Agent 在本机判断，不依赖看板是否打开：
+
+- Darkbloom 进程正在运行，且官方状态同时提供有效的 `inference_active`、`request_work_pending` 和 `requests_served`。
+- 当前没有正在处理或排队的任务，且 `requests_served` 没有变化。计数变化、正在处理或排队都视为接到任务，重新计时。
+- 同一进程从最近一次接到任务（或开始观察空闲）起连续超过 10 分钟。恰好 10 分钟不重启。采样间隔约 60 秒，因此实际触发会落在 10 分钟之后的下一次采样。
+- 状态文件超过 90 秒、进程身份变化，或两次有效采样间隔超过 3 分钟，都无法证明仍是连续空闲，重新计时。
+
+满足条件时调用 `darkbloom restart --timeout 600 --startup-timeout 180`，等待已接收任务完成后重启，并记入操作记录，动作为无任务自动重启。提交成功后立即把空闲计时重置为当前采样时间，因此下一次采样不会立刻再重启；若重启后仍连续 10 分钟没有新任务，才会再次触发。它与其他远程操作互斥；正在执行别的操作时本轮跳过，下一轮再试。远程操作被配置关闭，或设备状态采集关闭时，开关可以保存，但不会发出重启。
+
+`no_task_restart_enabled` 只决定第一次没有 `no-task-restart.json` 时的默认值。看板开关立即写入该私有文件，重启 Agent 后仍然有效。
+
 本地模型来自 `models list --json --all`；目录来自 `models catalog --json`，两者独立处理错误。目录不可达时保留本地模型操作，界面提示网络问题。每次发现最多 4 秒，超时后可手动重试。设备运行时与内存预算仍由官方 CLI 校验，清单中的模型不保证能在当前设备上加载。
 
 模型清单在看板内是**每设备的全局数据**：一次请求同时返回本地模型与官方目录，看板按设备保留一份快照，整个会话复用。进入「我的设备」不会重复请求；「本地模型」和「下载模型」两个区块各有「获取最新」按钮，面板右上角的「刷新模型与记录」也会同时重取，此外不做定时刷新。自动轮询只更新操作记录，因此发现失败（含 409 冲突）不会在每次进入页面时反复重试，也不会清空已有列表。读取失败时两个区块显示失败原因并保留「获取最新」入口；单侧失败只影响对应区块，另一侧照常可用。正在读取时只有依赖清单的操作与选择框被禁用，关闭与重启不受影响。下载任务成功后自动重取一次，因为本地模型已变化。
@@ -39,6 +52,7 @@
 {
   "remote_control_enabled": true,
   "long_task_restart_enabled": false,
+  "no_task_restart_enabled": false,
   "darkbloom_binary": "~/.darkbloom/bin/darkbloom"
 }
 ```
@@ -61,6 +75,7 @@
 - `GET /v1/device/control/models`：返回 `local`、`catalog`；可带 `local_error` / `catalog_error`，不返回 CLI 输出里的私有路径。
 - `GET /v1/device/control/jobs`：返回最近操作，最新在前。
 - `POST /v1/device/control/jobs`：JSON 对象，必须提供 `request_id` 和 `action`；开启/切换需提供 1～16 个唯一 `models`，下载恰好一个，关闭/重启不接受模型。拒绝未知字段、额外 JSON、查询参数、非法模型及参数注入。
+- `GET` / `POST /v1/device/no-task-restart`：返回或设置 `enabled`。
 
 ```json
 {

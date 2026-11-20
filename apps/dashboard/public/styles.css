@@ -1858,8 +1858,16 @@ tbody tr.reward-row td {
 }
 
 .control-panel-heading {
+  align-items: flex-start;
   justify-content: space-between;
   padding-bottom: 16px
+}
+
+.control-toggles {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px
 }
 
 .control-job {
@@ -1909,7 +1917,8 @@ tbody tr.reward-row td {
 }
 
 #control-confirm-message,
-#long-task-restart-confirm-message {
+#long-task-restart-confirm-message,
+#no-task-restart-confirm-message {
   margin-top: 12px;
   color: var(--ink-2);
   line-height: 1.8;

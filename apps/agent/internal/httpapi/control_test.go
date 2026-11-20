@@ -47,6 +47,7 @@ func TestControlAuthenticationMethodsAndStrictRequests(t *testing.T) {
 		{"POST", "/v1/device/control/jobs", valid + ` {}`, auth, "", 400},
 		{"POST", "/v1/device/control/jobs", `{"request_id":"0123456789abcdef","action":"stop","force":true}`, auth, "", 400},
 		{"POST", "/v1/device/control/jobs", `{"request_id":"0123456789abcdef","action":"force_restart"}`, auth, "", 400},
+		{"POST", "/v1/device/control/jobs", `{"request_id":"0123456789abcdef","action":"idle_restart"}`, auth, "", 400},
 		{"POST", "/v1/device/control/jobs", `{"request_id":"0123456789abcdef","action":"download","models":["--force"]}`, auth, "", 400},
 		{"POST", "/v1/device/control/jobs", valid, auth, "", 503},
 	} {

@@ -108,7 +108,7 @@ const alertUI = createAlertUI({ query, selectedDevice, currentView: () => state.
 // Model discovery is global per device and shared by both model blocks, so
 // re-entering the devices view never repeats the CLI probe.
 const controlModels = createControlModelsStore({ query });
-const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), submitLongTaskRestart: (id, enabled) => client.submitLongTaskRestart(id, enabled), models: controlModels, query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
+const controlUI = createControlUI({ submitControl: (id, body) => client.submit(id, body), submitLongTaskRestart: (id, enabled) => client.submitLongTaskRestart(id, enabled), submitNoTaskRestart: (id, enabled) => client.submitNoTaskRestart(id, enabled), models: controlModels, query, selectedDevice, currentView: () => state.view, escape, dateTime, refreshState: () => deviceUI.refresh() });
 const contextMenu = createContextMenu();
 // The switcher is created first because the network view renders its buttons;
 // its callbacks close over `networkRatesUI`, which is assigned just after.

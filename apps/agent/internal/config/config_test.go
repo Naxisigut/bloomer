@@ -22,7 +22,7 @@ func TestLoadPathsAndValidation(t *testing.T) {
 	if c.DataDir != filepath.Join(dir, "state") || c.LogDir != filepath.Join(home, "logs") || c.AccessTokenFile != filepath.Join(dir, "state", "access.token") {
 		t.Fatalf("incorrect path resolution: %+v", c)
 	}
-	if !c.RemoteControlEnabled || c.LongTaskRestartEnabled || c.DarkbloomBinary != filepath.Join(home, ".darkbloom", "bin", "darkbloom") {
+	if !c.RemoteControlEnabled || c.LongTaskRestartEnabled || c.NoTaskRestartEnabled || c.DarkbloomBinary != filepath.Join(home, ".darkbloom", "bin", "darkbloom") {
 		t.Fatal("remote control defaults not resolved")
 	}
 	if !c.DeviceStateEnabled || c.ProviderStateFile != filepath.Join(home, ".darkbloom", "daemon-state.json") {

@@ -4,7 +4,7 @@ import { demoQuery } from './demo.js';
 import { validateNetworkRatesResponse, validateNetworkRatesTokenTrendResponse } from './network-rates.js';
 import { MAX_MODELS } from './palette.js';
 
-const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', summary: '/v1/account/summary', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs', 'long-task-restart': '/v1/device/long-task-restart', 'network-rates': '/v1/device/network-rates', 'network-rates-token-trend': '/v1/device/network-rates/token-trend' };
+const routes = { alerts: '/v1/alerts', 'alert-test': '/v1/alerts/test', health: '/v1/health', overview: '/v1/account/overview', summary: '/v1/account/summary', earnings: '/v1/earnings', stats: '/v1/earnings/stats', analysis: '/v1/earnings/analysis', 'device-state': '/v1/device/state', control: '/v1/device/control', 'control-models': '/v1/device/control/models', 'control-jobs': '/v1/device/control/jobs', 'long-task-restart': '/v1/device/long-task-restart', 'no-task-restart': '/v1/device/no-task-restart', 'network-rates': '/v1/device/network-rates', 'network-rates-token-trend': '/v1/device/network-rates/token-trend' };
 const messages = {
   analysis_unsupported: '该设备 Agent 尚不支持收益分析，请升级 Agent。',
   device_identity_unavailable: '设备身份尚未识别，暂时无法统计本机收益。',
@@ -16,6 +16,7 @@ const messages = {
   network_rates_unsupported: '设备 Agent 版本过旧，不支持此功能。',
   summary_unsupported: '该设备 Agent 尚不支持合并摘要接口。',
   long_task_restart_unsupported: '该设备 Agent 尚不支持 Qwen3.5 9B 超时重启，请升级 Agent。',
+  no_task_restart_unsupported: '该设备 Agent 尚不支持无任务自动重启，请升级 Agent。',
   control_busy: '设备正在执行另一项操作，请等待结束后再试。',
   request_conflict: '此请求编号已用于其他操作，请刷新后重新提交。',
   origin_forbidden: '该设备仍限制网页来源，请升级 Agent 后重试。',
@@ -60,7 +61,7 @@ function validateResponse(route, body, operation) {
   if (route === 'control' && (typeof body.available !== 'boolean' || typeof body.enabled !== 'boolean' || !Array.isArray(body.jobs))) throw invalidResponse();
   if (route === 'control-models' && (!Array.isArray(body.local) || !Array.isArray(body.catalog))) throw invalidResponse();
   if (route === 'control-jobs' && (operation ? typeof body.id !== 'string' || typeof body.status !== 'string' : !Array.isArray(body.jobs))) throw invalidResponse();
-  if (route === 'long-task-restart' && (Object.keys(body).some(key => key !== 'enabled') || typeof body.enabled !== 'boolean')) throw invalidResponse();
+  if ((route === 'long-task-restart' || route === 'no-task-restart') && (Object.keys(body).some(key => key !== 'enabled') || typeof body.enabled !== 'boolean')) throw invalidResponse();
   if (route === 'network-rates') {
     try { return validateNetworkRatesResponse(body); } catch { throw invalidResponse(); }
   }
@@ -102,6 +103,7 @@ export async function queryAgent(device, route, params = new URLSearchParams(), 
     if (route === 'analysis' && [404, 405, 501].includes(response.status)) throw new AppError(404, 'analysis_unsupported', messages.analysis_unsupported);
     if (route.startsWith('network-rates') && [404, 405, 501].includes(response.status)) throw new AppError(404, 'network_rates_unsupported', messages.network_rates_unsupported);
     if (route === 'long-task-restart' && [404, 405, 501].includes(response.status)) throw new AppError(404, 'long_task_restart_unsupported', messages.long_task_restart_unsupported);
+    if (route === 'no-task-restart' && [404, 405, 501].includes(response.status)) throw new AppError(404, 'no_task_restart_unsupported', messages.no_task_restart_unsupported);
     if (Number(response.headers.get('content-length')) > 8_000_000) throw invalidResponse();
     if (!response.body) throw invalidResponse();
     reader = response.body.getReader();
@@ -153,6 +155,12 @@ export function validateLongTaskRestartSettings(body) {
 export function submitLongTaskRestart(device, enabled, options) {
   return queryAgent(device, 'long-task-restart', new URLSearchParams(), options, validateLongTaskRestartSettings({ enabled }));
 }
+export function validateNoTaskRestartSettings(body) {
+  return validateLongTaskRestartSettings(body);
+}
+export function submitNoTaskRestart(device, enabled, options) {
+  return queryAgent(device, 'no-task-restart', new URLSearchParams(), options, validateNoTaskRestartSettings({ enabled }));
+}
 export function createAgentClient(store, options = {}) {
   return {
     query(route, params, id = store.selected, signal) {
@@ -172,6 +180,10 @@ export function createAgentClient(store, options = {}) {
     submitLongTaskRestart(id, enabled) {
       if (id === 'demo') return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));
       return submitLongTaskRestart(store.get(id), enabled, options);
+    },
+    submitNoTaskRestart(id, enabled) {
+      if (id === 'demo') return Promise.reject(new AppError(403, 'demo_read_only', '演示设备不执行远程操作。'));
+      return submitNoTaskRestart(store.get(id), enabled, options);
     },
     async connect(input, save = false) {
       const device = validateDevice(input);

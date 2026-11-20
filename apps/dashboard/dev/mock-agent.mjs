@@ -2,7 +2,7 @@
 // node dev/mock-agent.mjs -- serves ports 18190/18191 for the static-browser checklist.
 import http from 'node:http';
 import { demoQuery } from '../public/demo.js';
-import { validateControl, validateLongTaskRestartSettings } from '../public/agent-client.js';
+import { validateControl, validateLongTaskRestartSettings, validateNoTaskRestartSettings } from '../public/agent-client.js';
 
 function mockNetworkRates(autoSwitch) {
   const now = new Date();
@@ -30,7 +30,7 @@ function mockNetworkRates(autoSwitch) {
 }
 
 for (const port of [18190, 18191]) {
-  const jobs = []; let loseFirstResponse = true; let longTaskRestart = false;
+  const jobs = []; let loseFirstResponse = true; let longTaskRestart = false; let noTaskRestart = false;
   const server = http.createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store'); res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
@@ -57,6 +57,19 @@ for (const port of [18190, 18191]) {
           const input = validateLongTaskRestartSettings(JSON.parse(Buffer.concat(chunks).toString()));
           longTaskRestart = input.enabled;
           send(200, { enabled: longTaskRestart });
+        } catch { send(400, { code: 'invalid_request' }); }
+        return;
+      }
+      send(405, { code: 'method_not_allowed' }); return;
+    }
+    if (url.pathname === '/v1/device/no-task-restart') {
+      if (req.method === 'GET') { send(200, { enabled: noTaskRestart }); return; }
+      if (req.method === 'POST') {
+        try {
+          const chunks = []; for await (const chunk of req) chunks.push(chunk);
+          const input = validateNoTaskRestartSettings(JSON.parse(Buffer.concat(chunks).toString()));
+          noTaskRestart = input.enabled;
+          send(200, { enabled: noTaskRestart });
         } catch { send(400, { code: 'invalid_request' }); }
         return;
       }

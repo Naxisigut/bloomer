@@ -36,6 +36,7 @@ type Config struct {
 	NetworkRates           NetworkRates `json:"network_rates"`
 	RemoteControlEnabled   bool         `json:"remote_control_enabled"`
 	LongTaskRestartEnabled bool         `json:"long_task_restart_enabled"`
+	NoTaskRestartEnabled   bool         `json:"no_task_restart_enabled"`
 	DarkbloomBinary        string       `json:"darkbloom_binary"`
 	CollectionEnabled      bool         `json:"collection_enabled"`
 	DeviceStateEnabled     bool         `json:"device_state_enabled"`
@@ -60,6 +61,7 @@ func Defaults() (Config, error) {
 		NetworkRates:           DefaultNetworkRates(),
 		RemoteControlEnabled:   true,
 		LongTaskRestartEnabled: false,
+		NoTaskRestartEnabled:   false,
 		DarkbloomBinary:        filepath.Join(home, ".darkbloom", "bin", "darkbloom"),
 		CollectionEnabled:      true,
 		DeviceStateEnabled:     true,

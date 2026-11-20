@@ -51,7 +51,7 @@ func TestAllowlist(t *testing.T) {
 		{"0123456789abcdef", "switch", nil},
 		{"0123456789abcdef", "download", []string{"a", "b"}},
 		{"0123456789abcdef", "switch", []string{"a", "a"}},
-		{"0123456789abcdef", "shell", nil}, {"0123456789abcdef", "force_restart", nil}, {"short", "stop", nil},
+		{"0123456789abcdef", "shell", nil}, {"0123456789abcdef", "force_restart", nil}, {"0123456789abcdef", "idle_restart", nil}, {"short", "stop", nil},
 	} {
 		if _, err := arguments(r); err == nil {
 			t.Fatalf("accepted %+v", r)
@@ -252,6 +252,32 @@ func TestForceRestartUsesForceFlag(t *testing.T) {
 	}
 	t.Cleanup(disabled.Close)
 	if _, err = disabled.ForceRestart(); err == nil || err.Error() != "control_disabled" {
+		t.Fatal(err)
+	}
+}
+
+func TestIdleRestartOmitsForceFlag(t *testing.T) {
+	m := manager(t)
+	var got []string
+	m.run = func(ctx context.Context, path string, args ...string) ([]byte, error) {
+		got = append([]string(nil), args...)
+		return nil, nil
+	}
+	job, err := m.IdleRestart()
+	if err != nil {
+		t.Fatal(err)
+	}
+	finished := waitJob(t, m)
+	want := []string{"restart", "--timeout", "600", "--startup-timeout", "180"}
+	if finished.ID != job.ID || finished.Action != "idle_restart" || finished.Status != "succeeded" || !reflect.DeepEqual(got, want) {
+		t.Fatal(finished, got)
+	}
+	disabled, err := New(context.Background(), t.TempDir(), m.binary, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(disabled.Close)
+	if _, err = disabled.IdleRestart(); err == nil || err.Error() != "control_disabled" {
 		t.Fatal(err)
 	}
 }
