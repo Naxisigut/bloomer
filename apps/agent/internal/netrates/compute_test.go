@@ -11,22 +11,23 @@ func TestOutputTokenTrendPerModelPerMachineHour(t *testing.T) {
 	end := base.Add(5 * time.Minute)
 	later := end.Add(5 * time.Minute)
 	intervals := []Interval{
-		{StartedAt: base, EndedAt: end, Model: "a", Providers: 2, DeltaTokens: 6000},
+		{StartedAt: base, EndedAt: end, Model: "a", Providers: 2, DeltaTokens: 6000, DeltaRequests: 10},
 		{StartedAt: base, EndedAt: end, Model: "b", Providers: 1, DeltaTokens: 3000},
 		{StartedAt: base, EndedAt: end, Model: "c", Providers: 1, DeltaTokens: 9000},
 		{StartedAt: end, EndedAt: later, Model: "a", Providers: 2, DeltaTokens: 3000},
 		{StartedAt: end, EndedAt: later, Model: "skip-providers", Providers: 0, DeltaTokens: 1000},
 		{StartedAt: later, EndedAt: later, Model: "skip-hours", Providers: 1, DeltaTokens: 1000},
 		{StartedAt: later, EndedAt: later.Add(5 * time.Minute), Model: "skip-neg", Providers: 1, DeltaTokens: -1},
+		{StartedAt: later, EndedAt: later.Add(5 * time.Minute), Model: "skip-neg-requests", Providers: 1, DeltaTokens: 1000, DeltaRequests: -1},
 	}
 	all := OutputTokenTrend(intervals, nil)
 	if len(all) != 3 || all[0].Model != "a" || all[1].Model != "b" || all[2].Model != "c" {
 		t.Fatalf("all models: %+v", all)
 	}
-	if len(all[0].Points) != 2 || !all[0].Points[0].At.Equal(end) || all[0].Points[0].Tokens != 36000 || all[0].Points[0].Total != 72000 || all[0].Points[1].Tokens != 18000 || all[0].Points[1].Total != 36000 {
+	if len(all[0].Points) != 2 || !all[0].Points[0].At.Equal(end) || all[0].Points[0].Tokens != 36000 || all[0].Points[0].Total != 72000 || all[0].Points[0].Requests != 60 || all[0].Points[0].RequestsTotal != 120 || all[0].Points[1].Tokens != 18000 || all[0].Points[1].Total != 36000 {
 		t.Fatalf("a: %+v", all[0])
 	}
-	if len(all[1].Points) != 1 || all[1].Points[0].Tokens != 36000 || all[1].Points[0].Total != 36000 || all[2].Points[0].Tokens != 108000 || all[2].Points[0].Total != 108000 {
+	if len(all[1].Points) != 1 || all[1].Points[0].Tokens != 36000 || all[1].Points[0].Total != 36000 || all[1].Points[0].Requests != 0 || all[1].Points[0].RequestsTotal != 0 || all[2].Points[0].Tokens != 108000 || all[2].Points[0].Total != 108000 || all[2].Points[0].Requests != 0 || all[2].Points[0].RequestsTotal != 0 {
 		t.Fatalf("b/c: %+v %+v", all[1], all[2])
 	}
 	selected := OutputTokenTrend(intervals, []string{"b", "a", "missing"})

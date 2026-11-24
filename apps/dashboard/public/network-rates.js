@@ -152,6 +152,7 @@ export function candidateTableOptions(rates, scope) {
 }
 
 export const NETWORK_SCOPE_STORAGE_KEY = 'bloomer.networkScope';
+export const NETWORK_METRIC_STORAGE_KEY = 'bloomer.networkMetric';
 
 export function storedNetworkScope() {
   try {
@@ -159,6 +160,15 @@ export function storedNetworkScope() {
     return value === 'all' || value === 'tier' ? value : 'tier';
   } catch {
     return 'tier';
+  }
+}
+
+export function storedNetworkMetric() {
+  try {
+    const value = localStorage.getItem(NETWORK_METRIC_STORAGE_KEY);
+    return value === 'requests' || value === 'tokens' ? value : 'tokens';
+  } catch {
+    return 'tokens';
   }
 }
 
@@ -171,6 +181,26 @@ export function networkScopeToggleAvailable(rates, trend) {
   if (!Array.isArray(rates?.chip_tiers) || !rates.chip_tiers.length) return false;
   if ((rates.candidates || []).some(candidate => object(candidate.all) || object(candidate.tier))) return true;
   return Boolean(trend && (Array.isArray(trend.all) || Array.isArray(trend.tier)));
+}
+
+export function networkMetricToggleAvailable(trend) {
+  const groups = Array.isArray(trend) ? [trend] : [trend?.series, trend?.all, trend?.tier];
+  for (const group of groups) {
+    for (const item of group || []) {
+      for (const point of item?.points || []) {
+        if (!object(point)) continue;
+        const hasRequests = Object.hasOwn(point, 'requests') && Number.isSafeInteger(point.requests) && point.requests >= 0;
+        const hasRequestsTotal = Object.hasOwn(point, 'requests_total') && Number.isSafeInteger(point.requests_total) && point.requests_total >= 0;
+        if (hasRequests || hasRequestsTotal) return true;
+      }
+    }
+  }
+  return false;
+}
+
+export function resolveNetworkMetric(preferred, trend) {
+  if (!networkMetricToggleAvailable(trend)) return 'tokens';
+  return preferred === 'requests' ? 'requests' : 'tokens';
 }
 
 export function candidateForScope(candidate, scope, minProviders = 3) {
@@ -383,6 +413,8 @@ function validateTokenTrendSeries(series) {
   for (const point of series.points) {
     if (!object(point) || !Number.isFinite(Date.parse(point.at)) || !Number.isSafeInteger(point.tokens) || point.tokens < 0) throw new Error('invalid');
     if (Object.hasOwn(point, 'total') && (!Number.isSafeInteger(point.total) || point.total < 0)) throw new Error('invalid');
+    if (Object.hasOwn(point, 'requests') && (!Number.isSafeInteger(point.requests) || point.requests < 0)) throw new Error('invalid');
+    if (Object.hasOwn(point, 'requests_total') && (!Number.isSafeInteger(point.requests_total) || point.requests_total < 0)) throw new Error('invalid');
   }
 }
 
@@ -426,15 +458,28 @@ export function tokenTrendModels(payload) {
 }
 
 export function tokenTrendSeriesForMetric(series, metric = 'tokens') {
-  if (metric !== 'total') return series || [];
-  return (series || []).map(item => ({
-    model: item.model,
-    points: (item.points || []).filter(point => Number.isSafeInteger(point.total) && point.total >= 0).map(point => ({ at: point.at, tokens: point.total })),
-  })).filter(item => item.points.length);
+  if (metric === 'total') {
+    return (series || []).map(item => ({
+      model: item.model,
+      points: (item.points || []).filter(point => Number.isSafeInteger(point.total) && point.total >= 0).map(point => ({ at: point.at, tokens: point.total })),
+    })).filter(item => item.points.length);
+  }
+  if (metric === 'requests_total') {
+    return (series || []).map(item => ({
+      model: item.model,
+      points: (item.points || []).filter(point => Number.isSafeInteger(point.requests_total) && point.requests_total >= 0).map(point => ({ at: point.at, tokens: point.requests_total })),
+    })).filter(item => item.points.length);
+  }
+  return series || [];
 }
 
-function alignedShareTotals(payload) {
+function shareTotalField(metric) {
+  return metric === 'requests' || metric === 'requests_total' ? 'requests_total' : 'total';
+}
+
+function alignedShareTotals(payload, metric = 'tokens') {
   if (!payload || Array.isArray(payload)) return [];
+  const field = shareTotalField(metric);
   const allByModel = new Map();
   for (const item of payload.all || []) {
     if (item?.model) allByModel.set(item.model, item);
@@ -459,11 +504,11 @@ function alignedShareTotals(payload) {
       seen.add(point.at);
       const allPoint = allByAt.get(point.at);
       if (!allPoint) continue;
-      if (!Number.isSafeInteger(point.total) || point.total < 0) continue;
-      if (!Number.isSafeInteger(allPoint.total) || allPoint.total < 0) continue;
+      if (!Number.isSafeInteger(point[field]) || point[field] < 0) continue;
+      if (!Number.isSafeInteger(allPoint[field]) || allPoint[field] < 0) continue;
       const instant = Date.parse(point.at);
       if (!Number.isFinite(instant)) continue;
-      points.push({ at: point.at, instant, tierTotal: point.total, allTotal: allPoint.total });
+      points.push({ at: point.at, instant, tierTotal: point[field], allTotal: allPoint[field] });
     }
     points.sort((left, right) => left.instant - right.instant);
     return { model, points };
@@ -493,8 +538,8 @@ function rollingSharePoints(points) {
   return result;
 }
 
-export function tokenTrendSeriesForShare(payload) {
-  return alignedShareTotals(payload).map(item => ({
+export function tokenTrendSeriesForShare(payload, metric = 'tokens') {
+  return alignedShareTotals(payload, metric).map(item => ({
     model: item.model,
     points: rollingSharePoints(item.points),
   })).filter(item => item.points.length);
@@ -507,8 +552,8 @@ export function tokenTrendShareBaselinePercent(candidate) {
   return Math.round(tier / all * 100);
 }
 
-export function tokenTrendShareSummary(payload, { range, models, candidates } = {}) {
-  const aligned = alignedShareTotals(payload);
+export function tokenTrendShareSummary(payload, { range, models, candidates, metric } = {}) {
+  const aligned = alignedShareTotals(payload, metric);
   const byModel = new Map(aligned.map(item => [item.model, item]));
   const candidateByModel = new Map((candidates || []).map(candidate => [candidate.model, candidate]));
   const order = models?.length ? models : aligned.map(item => item.model);
@@ -551,7 +596,7 @@ export function renderTokenShareCards(models, { escape, colorFor, labelFor, summ
     const summary = typeof summaryFor === 'function' ? summaryFor(model) : null;
     const stats = summary ? tokenTrendShareStatsText(summary.share, summary.baseline, summary.lift) : '';
     const name = label(model);
-    return `<section class="network-token-card network-token-share-card" aria-label="${escape(name)} 同档/全组token占比">`
+    return `<section class="network-token-card network-token-share-card" aria-label="${escape(name)} 同档/全组占比">`
       + `<div class="network-token-share-head"><strong class="network-token-share-title" style="--series-color:${color(model)}" title="${escape(model)}"><i aria-hidden="true"></i>${escape(name)}</strong>`
       + (stats ? `<small>${escape(stats)}</small>` : '')
       + `</div><div class="network-token-chart" data-share-chart="${escape(model)}"></div></section>`;
@@ -688,7 +733,7 @@ export function renderTokenTrendFigure(series, { width, height, escape, insuffic
 export function createNetworkRatesUI({ query, selectedDevice, escape, switcher = null, contextMenu = null }) {
   const $ = selector => document.querySelector(selector);
   let deviceID, rates = null, trend = null, trendError = '', loading = false, error = '', unsupported = false, generation = 0;
-  let tokenModels = [], tokenSelected = new Set(), tokenRange = null, networkScope = storedNetworkScope();
+  let tokenModels = [], tokenSelected = new Set(), tokenRange = null, networkScope = storedNetworkScope(), networkMetric = storedNetworkMetric();
   const totalChart = $('#network-token-total-chart');
   const shareGrid = $('#network-token-share-grid');
   const tokenChoices = $('#network-token-models');
@@ -696,6 +741,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
   const tokenTo = $('#network-token-to');
   const tokenColorFor = model => tokenTrendColorFor(model, tokenModels);
   const activeScope = () => resolveNetworkScope(networkScope, rates);
+  const activeMetric = () => resolveNetworkMetric(networkMetric, trend);
   const scopedCandidates = () => (rates?.candidates || []).map(candidate => candidateForScope(candidate, activeScope(), Number.isInteger(rates?.min_providers) ? rates.min_providers : 3));
   const tokenInsufficient = () => new Set(scopedCandidates().filter(candidate => candidate.insufficient).map(candidate => candidate.model));
   const visibleTrend = () => tokenTrendFromPayload(trend, activeScope());
@@ -720,6 +766,22 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
       button.title = button.dataset.networkScope === 'tier'
         ? (tiers ? `所有模型使用同档 ${tiers} 数据` : '所有模型使用同档数据')
         : '所有模型使用全组数据';
+    });
+  }
+
+  function renderMetricToggle() {
+    const group = $('#network-metric');
+    if (!group) return;
+    const available = !unsupported && networkMetricToggleAvailable(trend);
+    group.hidden = !available;
+    const selected = activeMetric();
+    group.querySelectorAll('[data-network-metric]').forEach(button => {
+      const on = button.dataset.networkMetric === selected;
+      button.classList.toggle('selected', on);
+      button.setAttribute('aria-pressed', String(on));
+      button.title = button.dataset.networkMetric === 'requests'
+        ? '趋势图按组总接单数统计'
+        : '趋势图按组总输出 token 统计';
     });
   }
 
@@ -778,6 +840,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     }
     renderTokenPeriodControls();
     renderScopeToggle();
+    renderMetricToggle();
     const demo = deviceID === 'demo';
     $('#network-rates-panel').setAttribute('aria-busy', String(loading));
     $('#network-rates-refresh').disabled = loading;
@@ -844,9 +907,9 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     };
   }
 
-  function paintTokenChart(el, { metric, metricLabel, sampleNoun, loadingText, formatTick, formatValue, formatTooltip, smooth = true, baselineFor, onlyModel, minWidth = 560, xRange } = {}) {
+  function paintTokenChart(el, { metric, metricLabel, sampleNoun, loadingText, formatTick, formatValue, formatTooltip, smooth = true, baselineFor, onlyModel, minWidth = 560, xRange, shareMetric } = {}) {
     if (!el || unsupported || el.clientWidth < 40) return;
-    const series = metric === 'share' ? tokenTrendSeriesForShare(trend) : tokenTrendSeriesForMetric(visibleTrend(), metric);
+    const series = metric === 'share' ? tokenTrendSeriesForShare(trend, shareMetric) : tokenTrendSeriesForMetric(visibleTrend(), metric);
     const who = onlyModel ? '该模型' : '各模型';
     const empty = !series?.length
       ? `近 24 小时暂无${who}${sampleNoun}样本`
@@ -945,7 +1008,13 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
   }
 
   function renderTokenTotalChart() {
-    paintTokenChart(totalChart, {
+    const requests = activeMetric() === 'requests';
+    paintTokenChart(totalChart, requests ? {
+      metric: 'requests_total',
+      metricLabel: '各模型组总每小时接单',
+      sampleNoun: '组总接单',
+      loadingText: '正在读取组总接单趋势…',
+    } : {
       metric: 'total',
       metricLabel: '各模型组总每小时输出 token',
       sampleNoun: '组总输出 token',
@@ -963,16 +1032,18 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     }
     if (grid.clientWidth < 40) return;
     const selected = tokenModels.filter(model => tokenSelected.has(model));
+    const metric = activeMetric();
+    const shareNoun = metric === 'requests' ? '同档/全组任务占比' : '同档/全组 token 占比';
     const emptyMessage = () => {
       if (trendError) return trendError;
-      if (!trend) return loading ? '正在读取同档/全组 token 占比…' : '';
+      if (!trend) return loading ? `正在读取${shareNoun}…` : '';
       if (!selected.length) return '勾选模型以查看对应折线。';
-      if (!tokenTrendSeriesForShare(trend).length) return '近 24 小时暂无各模型同档/全组 token 占比样本';
+      if (!tokenTrendSeriesForShare(trend, metric).length) return `近 24 小时暂无各模型${shareNoun}样本`;
       return '';
     };
     const blank = emptyMessage();
     if (blank || !trend) {
-      const key = `empty:${blank}`;
+      const key = `empty:${metric}:${blank}`;
       if (grid.dataset.key !== key) {
         grid.dataset.key = key;
         grid.innerHTML = `<div class="empty-state">${escape(blank)}</div>`;
@@ -980,7 +1051,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
       return;
     }
     const range = activeTokenRange();
-    const key = `cards:${selected.join('\0')}:${range?.start || ''}:${range?.end || ''}`;
+    const key = `cards:${metric}:${selected.join('\0')}:${range?.start || ''}:${range?.end || ''}`;
     if (grid.dataset.key !== key) {
       grid.dataset.key = key;
       const labels = displayModelNames(selected);
@@ -988,6 +1059,7 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
         range,
         models: selected,
         candidates: rates?.candidates || [],
+        metric,
       }).map(item => [item.model, item]));
       grid.innerHTML = renderTokenShareCards(selected, {
         escape,
@@ -998,9 +1070,12 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     }
     const sharePaint = {
       metric: 'share',
-      metricLabel: '同档组总 token 占全组近 30 分钟滚动比例',
-      sampleNoun: '同档/全组 token 占比',
-      loadingText: '正在读取同档/全组 token 占比…',
+      shareMetric: metric,
+      metricLabel: metric === 'requests'
+        ? '同档组总任务数占全组近 30 分钟滚动比例'
+        : '同档组总 token 占全组近 30 分钟滚动比例',
+      sampleNoun: shareNoun,
+      loadingText: `正在读取${shareNoun}…`,
       formatTick: tick => `${tokenCompact.format(tick)}%`,
       formatValue: tokens => `${tokenExact.format(tokens)}%`,
       formatTooltip: (tokens, line) => tokenTrendShareStatsText(
@@ -1115,6 +1190,15 @@ export function createNetworkRatesUI({ query, selectedDevice, escape, switcher =
     if (next === networkScope) return;
     networkScope = next;
     try { localStorage.setItem(NETWORK_SCOPE_STORAGE_KEY, networkScope); } catch { /* 忽略无法写入的偏好 */ }
+    render();
+  });
+  $('#network-metric')?.addEventListener('click', event => {
+    const button = event.target.closest('[data-network-metric]');
+    if (!button) return;
+    const next = button.dataset.networkMetric === 'requests' ? 'requests' : 'tokens';
+    if (next === networkMetric) return;
+    networkMetric = next;
+    try { localStorage.setItem(NETWORK_METRIC_STORAGE_KEY, networkMetric); } catch { /* 忽略无法写入的偏好 */ }
     render();
   });
   const applyTokenRange = () => {

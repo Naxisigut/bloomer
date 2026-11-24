@@ -344,12 +344,15 @@ func latestEndedAt(intervals []Interval, window int) map[time.Time]bool {
 	return out
 }
 
-// TokenTrendPoint is one model's output-token rates at one sample. Tokens is
-// per-machine hourly output; Total is the cohort hourly output.
+// TokenTrendPoint is one model's output-token and request rates at one sample.
+// Tokens is per-machine hourly output; Total is the cohort hourly output.
+// Requests is per-machine hourly requests; RequestsTotal is the cohort hourly requests.
 type TokenTrendPoint struct {
-	At     time.Time
-	Tokens int64
-	Total  int64
+	At            time.Time
+	Tokens        int64
+	Total         int64
+	Requests      int64
+	RequestsTotal int64
 }
 
 // TokenTrendSeries is one model's points, oldest first.
@@ -360,19 +363,22 @@ type TokenTrendSeries struct {
 
 // OutputTokenTrend groups intervals by model using the same per-machine hourly rate as the
 // candidate table: round(delta_tokens / (providers * hours)). Total is the cohort rate:
-// round(delta_tokens / hours). Intervals with providers<=0, hours<=0, or delta_tokens<0
-// are skipped and not filled with zeros. A non-empty models list keeps that order; an
-// empty list returns every remaining model sorted by name.
+// round(delta_tokens / hours). Requests and RequestsTotal use the same formulas with
+// delta_requests. Intervals with providers<=0, hours<=0, delta_tokens<0, or
+// delta_requests<0 are skipped and not filled with zeros. A non-empty models list keeps
+// that order; an empty list returns every remaining model sorted by name.
 func OutputTokenTrend(intervals []Interval, models []string) []TokenTrendSeries {
 	type sample struct {
-		at     time.Time
-		tokens int64
-		total  int64
+		at            time.Time
+		tokens        int64
+		total         int64
+		requests      int64
+		requestsTotal int64
 	}
 	byModel := map[string]map[int64]sample{}
 	for _, iv := range intervals {
 		hours := iv.EndedAt.Sub(iv.StartedAt).Hours()
-		if iv.Providers <= 0 || hours <= 0 || iv.DeltaTokens < 0 {
+		if iv.Providers <= 0 || hours <= 0 || iv.DeltaTokens < 0 || iv.DeltaRequests < 0 {
 			continue
 		}
 		key := iv.EndedAt.UTC().UnixMicro()
@@ -382,9 +388,11 @@ func OutputTokenTrend(intervals []Interval, models []string) []TokenTrendSeries 
 			byModel[iv.Model] = points
 		}
 		points[key] = sample{
-			at:     iv.EndedAt.UTC(),
-			tokens: int64(math.Round(float64(iv.DeltaTokens) / (float64(iv.Providers) * hours))),
-			total:  int64(math.Round(float64(iv.DeltaTokens) / hours)),
+			at:            iv.EndedAt.UTC(),
+			tokens:        int64(math.Round(float64(iv.DeltaTokens) / (float64(iv.Providers) * hours))),
+			total:         int64(math.Round(float64(iv.DeltaTokens) / hours)),
+			requests:      int64(math.Round(float64(iv.DeltaRequests) / (float64(iv.Providers) * hours))),
+			requestsTotal: int64(math.Round(float64(iv.DeltaRequests) / hours)),
 		}
 	}
 	var order []string
@@ -415,7 +423,7 @@ func OutputTokenTrend(intervals []Interval, models []string) []TokenTrendSeries 
 		series := TokenTrendSeries{Model: model, Points: make([]TokenTrendPoint, 0, len(keys))}
 		for _, key := range keys {
 			pt := points[key]
-			series.Points = append(series.Points, TokenTrendPoint{At: pt.at, Tokens: pt.tokens, Total: pt.total})
+			series.Points = append(series.Points, TokenTrendPoint{At: pt.at, Tokens: pt.tokens, Total: pt.total, Requests: pt.requests, RequestsTotal: pt.requestsTotal})
 		}
 		out = append(out, series)
 	}

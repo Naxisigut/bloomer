@@ -33,6 +33,10 @@ import {
   tokenTrendSeriesForShare,
   tokenTrendShareBaselinePercent,
   tokenTrendShareSummary,
+  NETWORK_METRIC_STORAGE_KEY,
+  storedNetworkMetric,
+  resolveNetworkMetric,
+  networkMetricToggleAvailable,
   TOKEN_TREND_SHARE_WINDOW_MS,
   TOKEN_TREND_SHARE_MIN_SAMPLES,
   NETWORK_RATES_REFRESH_MS,
@@ -292,7 +296,7 @@ test('token trend share baseline, summary lift and polyline', () => {
   });
   assert.match(cards, /data-share-chart="a"/);
   assert.match(cards, /data-share-chart="b"/);
-  assert.match(cards, /A 同档\/全组token占比/);
+  assert.match(cards, /A 同档\/全组占比/);
   assert.match(cards, /42% · 基线 28% · 1\.5×/);
   assert.doesNotMatch(cards, /data-share-chart="c"/);
 });
@@ -314,6 +318,77 @@ test('token trend total is optional and plots cohort totals', () => {
   assert.match(figure.markup, /各模型组总每小时输出 token/);
   assert.doesNotMatch(figure.markup, /每台每小时输出 token/);
   assert.equal(figure.series[0].coords[0].tokens, 72000);
+});
+
+test('token trend requests fields are optional and map like total', () => {
+  const at = '2026-10-23T01:00:00Z';
+  const omitted = { series: [{ model: 'a', points: [{ at, tokens: 36000 }] }] };
+  assert.equal(validateNetworkRatesTokenTrendResponse(omitted), omitted);
+  const zero = { series: [{ model: 'a', points: [{ at, tokens: 36000, requests: 0, requests_total: 0 }] }] };
+  assert.equal(validateNetworkRatesTokenTrendResponse(zero), zero);
+  assert.throws(() => validateNetworkRatesTokenTrendResponse({ series: [{ model: 'a', points: [{ at, tokens: 36000, requests: -1 }] }] }));
+  assert.throws(() => validateNetworkRatesTokenTrendResponse({ series: [{ model: 'a', points: [{ at, tokens: 36000, requests: 1.5 }] }] }));
+  assert.throws(() => validateNetworkRatesTokenTrendResponse({ series: [{ model: 'a', points: [{ at, tokens: 36000, requests_total: -1 }] }] }));
+  assert.throws(() => validateNetworkRatesTokenTrendResponse({ series: [{ model: 'a', points: [{ at, tokens: 36000, requests_total: 1.5 }] }] }));
+  const fixture = [{ model: 'a', points: [
+    { at, tokens: 36000, total: 72000, requests: 4, requests_total: 8 },
+    { at: '2026-10-23T01:05:00Z', tokens: 18000, total: 36000 },
+  ] }];
+  assert.deepEqual(tokenTrendSeriesForMetric(fixture, 'requests_total')[0].points, [{ at, tokens: 8 }]);
+  assert.deepEqual(tokenTrendSeriesForMetric(fixture)[0].points.map(point => point.tokens), [36000, 18000]);
+});
+
+test('token trend share can use requests_total instead of total', () => {
+  const start = Date.parse('2026-10-23T01:00:00Z');
+  const at = index => new Date(start + index * 2 * 60_000).toISOString();
+  const points = (totals, requestTotals) => totals.map((total, index) => ({
+    at: at(index), tokens: 1, total, requests: 1, requests_total: requestTotals[index],
+  }));
+  const payload = {
+    all: [{ model: 'a', points: points([100, 100, 100], [10, 10, 10]) }],
+    tier: [{ model: 'a', points: points([40, 40, 40], [8, 8, 8]) }],
+  };
+  assert.deepEqual(tokenTrendSeriesForShare(payload), [{ model: 'a', points: [{ at: at(2), tokens: 40 }] }]);
+  assert.deepEqual(tokenTrendSeriesForShare(payload, 'tokens'), [{ model: 'a', points: [{ at: at(2), tokens: 40 }] }]);
+  assert.deepEqual(tokenTrendSeriesForShare(payload, 'requests'), [{ model: 'a', points: [{ at: at(2), tokens: 80 }] }]);
+  assert.deepEqual(tokenTrendSeriesForShare(payload, 'requests_total'), [{ model: 'a', points: [{ at: at(2), tokens: 80 }] }]);
+  assert.equal(tokenTrendShareSummary(payload, { models: ['a'] })[0].share, 40);
+  assert.equal(tokenTrendShareSummary(payload, { models: ['a'], metric: 'requests' })[0].share, 80);
+  const missingRequests = {
+    all: [{ model: 'a', points: points([100, 100, 100], [10, 10, 10]).map(({ requests_total, ...point }) => point) }],
+    tier: [{ model: 'a', points: points([40, 40, 40], [8, 8, 8]).map(({ requests_total, ...point }) => point) }],
+  };
+  assert.deepEqual(tokenTrendSeriesForShare(missingRequests, 'requests'), []);
+});
+
+test('network metric preference falls back when request fields are missing', () => {
+  const at = '2026-10-23T01:00:00Z';
+  const without = { series: [{ model: 'a', points: [{ at, tokens: 1, total: 2 }] }] };
+  const withRequests = { series: [{ model: 'a', points: [{ at, tokens: 1, requests: 0 }] }] };
+  const withTotal = { series: [], all: [{ model: 'a', points: [{ at, tokens: 1, requests_total: 3 }] }], tier: [] };
+  assert.equal(networkMetricToggleAvailable(without), false);
+  assert.equal(networkMetricToggleAvailable({ series: [], all: [], tier: [] }), false);
+  assert.equal(networkMetricToggleAvailable(withRequests), true);
+  assert.equal(networkMetricToggleAvailable(withTotal), true);
+  assert.equal(resolveNetworkMetric('requests', without), 'tokens');
+  assert.equal(resolveNetworkMetric('requests', withRequests), 'requests');
+  assert.equal(resolveNetworkMetric('tokens', withRequests), 'tokens');
+  assert.equal(resolveNetworkMetric('bogus', withRequests), 'tokens');
+  const original = globalThis.localStorage;
+  const store = new Map();
+  globalThis.localStorage = {
+    getItem(key) { return store.has(key) ? store.get(key) : null; },
+    setItem(key, value) { store.set(key, String(value)); },
+  };
+  try {
+    assert.equal(storedNetworkMetric(), 'tokens');
+    localStorage.setItem(NETWORK_METRIC_STORAGE_KEY, 'requests');
+    assert.equal(storedNetworkMetric(), 'requests');
+    localStorage.setItem(NETWORK_METRIC_STORAGE_KEY, 'bogus');
+    assert.equal(storedNetworkMetric(), 'tokens');
+  } finally {
+    globalThis.localStorage = original;
+  }
 });
 
 test('token trend range filter slices within the latest 24h payload', () => {
